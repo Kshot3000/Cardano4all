@@ -78,6 +78,13 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   computed locally from hex input. The shared pure-JS BLAKE2b is now the
   general multi-block form, cross-checked against Python `hashlib.blake2b`
   for digest sizes 20/28/32/64 and inputs up to 1,000 bytes.
+- **Key hashes & address builder** — the blake2b-224 key hash of a public
+  payment/stake verification key, and the addresses built from key hashes
+  (CIP-19 layout): base, enterprise and reward, mainnet or testnet, locally
+  and offline. Key-hash maths cross-checked against Python
+  `hashlib.blake2b`; the builder is proven end-to-end by rebuilding a real
+  wallet-generated mainnet address byte-for-byte from its key hashes.
+  Public verification keys only — never a private/signing key.
 
 ## Guides
 

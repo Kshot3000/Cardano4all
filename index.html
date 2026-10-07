@@ -214,6 +214,21 @@
         <button type="submit" class="btn primary">Compute hash</button>
         <p id="hash-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="keyaddr">
+        <h3>Key hashes &amp; address builder</h3>
+        <p>Addresses are built from <strong>key hashes</strong> — the blake2b-224 hash of a public verification key — not from the keys themselves. Paste a payment verification key (and optionally a stake verification key) to get its key hash and the addresses it controls: the <strong>base</strong> address a wallet normally shows, the <strong>enterprise</strong> address (payment key only — it cannot earn staking rewards), and the <strong>reward</strong> address where staking rewards land. Everything is computed locally; this works on public verification keys only — <em>never paste a private or signing key into any website, including this one</em>.</p>
+        <label for="key-pay">Payment verification key (hex, 64 characters)</label>
+        <input id="key-pay" spellcheck="false" placeholder="e.g. the 32-byte public payment key, as hex" autocomplete="off">
+        <label for="key-stake">Stake verification key (hex, 64 characters, optional)</label>
+        <input id="key-stake" spellcheck="false" placeholder="Leave empty for the enterprise address only" autocomplete="off">
+        <label for="key-network">Network</label>
+        <select id="key-network">
+          <option value="mainnet">Mainnet</option>
+          <option value="testnet">Testnet</option>
+        </select>
+        <button type="submit" class="btn primary">Build addresses</button>
+        <p id="key-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
     </div>
   </section>
 
@@ -244,6 +259,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

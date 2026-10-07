@@ -437,6 +437,56 @@ function scriptHash(kind, scriptHex) {
   return digest === null ? null : bytesToHex(digest);
 }
 
+/* Key hashes & address builder. A Cardano key hash is blake2b-224 of the
+   32-byte Ed25519 verification key — the hash is what actually appears in
+   addresses, not the key itself. Addresses (CIP-19 layout) are a one-byte
+   header (address type in the high nibble, network id in the low nibble:
+   1 = mainnet, 0 = testnet) followed by the key hashes, bech32-encoded:
+   base (type 0) = payment + stake key hash, enterprise (type 6) = payment
+   key hash only, reward (type 14) = stake key hash only under the stake
+   prefix. Key-hash vectors in the tests were cross-checked against Python
+   hashlib.blake2b, and the base-address builder is proven end-to-end
+   against a real wallet-generated mainnet address (it rebuilds the
+   donation address on this page byte-for-byte from its key hashes). */
+function keyHash(vkeyRaw) {
+  var vkey = (vkeyRaw || "").trim().toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{64}$/.test(vkey)) return null;
+  var digest = blake2b(hexToBytes(vkey), 28);
+  return digest === null ? null : bytesToHex(digest);
+}
+
+var ADDRESS_BUILD_TYPES = { base: 0, enterprise: 6, reward: 14 };
+
+function keyHashHex(raw) {
+  var h = (raw || "").trim().toLowerCase();
+  return /^[0-9a-f]{56}$/.test(h) ? h : null;
+}
+
+function buildAddress(kind, network, payHashRaw, stakeHashRaw) {
+  if (!(kind in ADDRESS_BUILD_TYPES)) return null;
+  if (network !== "mainnet" && network !== "testnet") return null;
+  var header = (ADDRESS_BUILD_TYPES[kind] << 4) | (network === "mainnet" ? 1 : 0);
+  var payload, hrp;
+  if (kind === "reward") {
+    var stakeOnly = keyHashHex(stakeHashRaw);
+    if (stakeOnly === null) return null;
+    payload = [header].concat(hexToBytes(stakeOnly));
+    hrp = network === "mainnet" ? "stake" : "stake_test";
+  } else {
+    var pay = keyHashHex(payHashRaw);
+    if (pay === null) return null;
+    payload = [header].concat(hexToBytes(pay));
+    if (kind === "base") {
+      var stake = keyHashHex(stakeHashRaw);
+      if (stake === null) return null;
+      payload = payload.concat(hexToBytes(stake));
+    }
+    hrp = network === "mainnet" ? "addr" : "addr_test";
+  }
+  var groups = convertBits(payload, 8, 5, true);
+  return groups === null ? null : bech32Encode(hrp, groups);
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -449,7 +499,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress };
 }
 
 if (typeof document !== "undefined") {
@@ -609,6 +659,36 @@ if (typeof document !== "undefined") {
         var label = { native: "Native script", plutusv1: "PlutusV1", plutusv2: "PlutusV2", plutusv3: "PlutusV3" }[kind];
         out.textContent = label + " script hash (blake2b-224 of the language tag + script bytes): " + res + " — for a minting script this hash is its policy ID.";
       }
+    });
+
+    /* --- key hashes & address builder (offline, from verification keys) --- */
+    document.getElementById("keyaddr").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var network = document.getElementById("key-network").value;
+      var payKey = document.getElementById("key-pay").value;
+      var stakeKey = document.getElementById("key-stake").value;
+      var out = document.getElementById("key-result");
+      var payHash = keyHash(payKey);
+      if (payHash === null) {
+        out.textContent = "Enter the payment verification key as exactly 64 hex characters (32 bytes). This tool works on public verification keys only — never paste a private or signing key anywhere.";
+        return;
+      }
+      var lines = ["Payment key hash (blake2b-224 of the verification key): " + payHash];
+      lines.push("Enterprise address (" + network + ", payment key only, cannot earn staking rewards): " +
+        buildAddress("enterprise", network, payHash, null));
+      if (stakeKey.trim() !== "") {
+        var stakeHash = keyHash(stakeKey);
+        if (stakeHash === null) {
+          out.textContent = "The stake verification key must be exactly 64 hex characters (32 bytes), or left empty.";
+          return;
+        }
+        lines.push("Stake key hash: " + stakeHash);
+        lines.push("Base address (" + network + ", payment + stake — the normal wallet address): " +
+          buildAddress("base", network, payHash, stakeHash));
+        lines.push("Reward address (" + network + ", where staking rewards land): " +
+          buildAddress("reward", network, null, stakeHash));
+      }
+      out.textContent = lines.join("\n");
     });
 
     var now = nowSlotEpoch(Date.now());
