@@ -59,6 +59,16 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   assume, split evenly over Cardano's 73 five-day epochs a year and compounded
   per epoch in exact BigInt lovelace maths. An estimate only — not live chain
   data and not a promise of returns.
+- **Pool reward split calculator** — how one epoch's pool rewards divide
+  between the operator and delegators, by the Shelley ledger's own
+  reward-sharing rule: the fixed cost comes out first (if rewards don't
+  cover it, the operator takes them all), then the margin on what remains,
+  then the rest shared by stake — the operator's own stake included — with
+  each share floored to whole lovelace exactly as the ledger floors it,
+  in exact BigInt rational maths. Verified against the Cardano
+  Foundation reward calculator's published worked example (4,000 ADA
+  rewards, 340 ADA cost, 2% margin → operator 413.2 ADA). It divides a
+  reward total you supply — it does not predict what a pool will earn.
 - **Transaction fee calculator** — the mainnet minimum fee from the protocol
   formula (44 lovelace/byte × transaction size + 155,381 lovelace, parameters
   verified live via Koios for epoch 660), in exact BigInt lovelace maths.

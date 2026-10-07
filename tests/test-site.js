@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=17"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=18"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -114,6 +114,36 @@ check("epochs above sanity cap rejected", app.stakingEstimate("1000", "3.5", "36
 check("fractional epochs rejected", app.stakingEstimate("1000", "3.5", "1.5") === null);
 check("7-decimal stake rejected", app.stakingEstimate("1.0000001", "3.5", "1") === null);
 check("garbage staking inputs rejected", app.stakingEstimate("abc", "3.5", "1") === null && app.stakingEstimate("1000", "abc", "1") === null);
+
+/* Pool reward split — the Shelley ledger reward-sharing rule
+   (calcStakePoolOperatorReward / calcStakePoolMemberReward): one floor per
+   recipient over exact rationals; if rewards <= cost the operator takes all.
+   Anchor vector is the Cardano Foundation reward calculator's published
+   worked example: 4,000 ADA rewards, 340 ADA cost, 2% margin -> operator
+   340 + 2% x 3,660 = 413.2 ADA (with zero owner stake). */
+check("poolsplit in page", html.includes('id="poolsplit"') && html.includes('id="pool-split-result"'));
+const ps1 = app.poolRewardSplit("4000", "340", "2", "0", "1000000", "0");
+check("poolsplit: foundation example — operator 413.2 ADA", ps1.operatorLovelace === "413200000" && ps1.memberLovelace === "0");
+const ps2 = app.poolRewardSplit("4000", "340", "2", "0", "1000000", "10000");
+check("poolsplit: delegator with 1% of pool gets 3660 x 0.98 x 0.01 = 35.868 ADA", ps2.memberLovelace === "35868000" && ps2.othersLovelace === "3550932000");
+const ps3 = app.poolRewardSplit("1000", "340", "5", "100", "1000", "200");
+check("poolsplit: hand vector — operator 435.7, delegator 125.4 ADA", ps3.operatorLovelace === "435700000" && ps3.memberLovelace === "125400000" && ps3.othersLovelace === "438900000");
+const ps4 = app.poolRewardSplit("300", "340", "5", "0", "1000000", "500000");
+check("poolsplit: rewards below cost — operator takes all, delegator 0", ps4.operatorLovelace === "300000000" && ps4.memberLovelace === "0" && ps4.othersLovelace === "0");
+const ps5 = app.poolRewardSplit("340", "340", "5", "0", "1000000", "500000");
+check("poolsplit: rewards equal to cost — operator takes all", ps5.operatorLovelace === "340000000" && ps5.memberLovelace === "0");
+const ps6 = app.poolRewardSplit("1000", "340", "100", "100", "1000", "500");
+check("poolsplit: 100% margin — operator takes all", ps6.operatorLovelace === "1000000000" && ps6.memberLovelace === "0");
+const ps7 = app.poolRewardSplit("1000", "340", "5", "1000", "1000", "");
+check("poolsplit: owner is the whole pool — operator takes all", ps7.operatorLovelace === "1000000000" && ps7.othersLovelace === "0");
+const ps8 = app.poolRewardSplit("1000", "340", "2.5", "", "1000", "500");
+check("poolsplit: fractional margin 2.5%, empty owner stake = 0 — delegator 321.75 ADA", ps8.operatorLovelace === "356500000" && ps8.memberLovelace === "321750000");
+const ps9 = app.poolRewardSplit("340.000001", "340", "0", "0", "1000000", "1");
+check("poolsplit: one lovelace over cost floors a tiny share to 0", ps9.operatorLovelace === "340000000" && ps9.memberLovelace === "0" && ps9.othersLovelace === "1");
+check("poolsplit: parts always sum to the rewards", [ps1, ps2, ps3, ps4, ps5, ps6, ps7, ps8, ps9].every(r => BigInt(r.operatorLovelace) + BigInt(r.memberLovelace) + BigInt(r.othersLovelace) === BigInt(r.rewardsLovelace)));
+check("poolsplit rejects owner + delegator over total stake", app.poolRewardSplit("1000", "340", "5", "600", "1000", "500") === null);
+check("poolsplit rejects zero total stake", app.poolRewardSplit("1000", "340", "5", "0", "0", "0") === null);
+check("poolsplit rejects margin above 100% and bad amounts", app.poolRewardSplit("1000", "340", "101", "0", "1000", "0") === null && app.poolRewardSplit("abc", "340", "5", "0", "1000", "0") === null && app.poolRewardSplit("1000", "340", "5", "0", "1000", "1.0000001") === null);
 
 /* transaction minimum fee — mainnet protocol parameters verified live via
    Koios epoch_params for epoch 660 (2026-10-07): min_fee_a = 44 lovelace/byte,

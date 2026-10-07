@@ -170,6 +170,24 @@
         <button type="submit" class="btn primary">Estimate rewards</button>
         <p id="stake-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="poolsplit">
+        <h3>Pool reward split calculator</h3>
+        <p>How does one epoch's pool reward actually divide? By the ledger's own reward-sharing rule: the operator's <strong>fixed cost</strong> comes out first — if the rewards don't cover it, the operator takes them all and delegators get nothing that epoch — then the <strong>margin</strong> percentage of what remains goes to the operator, and the rest is shared by stake, the operator's own stake included, with each share floored to whole lovelace exactly as the ledger floors it. Enter a pool's figures to see the split for the operator and for one delegator. This divides a reward total <em>you</em> supply; it does not predict what a pool will earn, which depends on blocks minted, saturation and protocol parameters.</p>
+        <label for="pool-rewards">Pool rewards for the epoch (ADA)</label>
+        <input id="pool-rewards" inputmode="decimal" placeholder="e.g. 4000" autocomplete="off">
+        <label for="pool-cost">Pool fixed cost (ADA)</label>
+        <input id="pool-cost" inputmode="decimal" placeholder="e.g. 340" autocomplete="off">
+        <label for="pool-margin">Pool margin (%)</label>
+        <input id="pool-margin" inputmode="decimal" placeholder="e.g. 2" autocomplete="off">
+        <label for="pool-owner-stake">Operator's own stake (ADA, optional)</label>
+        <input id="pool-owner-stake" inputmode="decimal" placeholder="The operator's pledge + own delegation, or leave empty" autocomplete="off">
+        <label for="pool-total-stake">Total pool stake (ADA)</label>
+        <input id="pool-total-stake" inputmode="decimal" placeholder="e.g. 1000000" autocomplete="off">
+        <label for="pool-member-stake">One delegator's stake (ADA, optional)</label>
+        <input id="pool-member-stake" inputmode="decimal" placeholder="e.g. 10000 — leave empty to see just the operator's share" autocomplete="off">
+        <button type="submit" class="btn primary">Split the rewards</button>
+        <p id="pool-split-result" role="status" aria-live="polite"></p>
+      </form>
       <form class="tool" id="feecalc">
         <h3>Transaction fee calculator</h3>
         <p>Cardano's minimum fee is a fixed protocol formula: <strong>44 lovelace per byte of transaction size + 155,381 lovelace</strong> (mainnet parameters, checked against the live protocol parameters for epoch 660). Enter a transaction size — your wallet or <code>cardano-cli</code> reports it when building — and get the exact minimum in lovelace.</p>
@@ -369,6 +387,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

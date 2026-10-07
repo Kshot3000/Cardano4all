@@ -225,6 +225,59 @@ function stakingEstimate(stakeStr, rateStr, epochsStr) {
   };
 }
 
+/* Pool reward split — the ledger's own reward-sharing rule (Shelley ledger
+   calcStakePoolOperatorReward / calcStakePoolMemberReward), applied to ONE
+   epoch's pool rewards f, the pool's declared fixed cost and margin, and
+   stake amounts. Exact rational BigInt arithmetic with ONE floor per
+   recipient, exactly as the ledger floors:
+     if f <= cost:  operator gets all of f, every member gets 0
+     otherwise:     operator = cost + floor((f - cost) x (m + (1 - m) x owner/total))
+                    member   = floor((f - cost) x (1 - m) x member/total)
+   where m is the margin as a fraction and owner/member/total are stake
+   amounts (their ratio is what matters, so ADA or lovelace both work —
+   this tool takes ADA). Verified against the Cardano Foundation reward
+   calculator's published worked example: 4,000 ADA rewards, 340 ADA cost,
+   2% margin, zero owner stake -> operator 413.2 ADA. This splits a reward
+   total the user supplies; it does not predict what a pool will earn —
+   the total itself depends on blocks minted, saturation and protocol
+   parameters. "others" is the residual (the rest of the members together,
+   plus any lovelace the per-member flooring leaves undistributed when the
+   ledger pays each member separately). */
+/* poolRewardSplit(rewardsAda, costAda, marginPercent, ownerStakeAda,
+   totalStakeAda, memberStakeAda) -> { rewardsLovelace, operatorLovelace,
+   memberLovelace, othersLovelace } (decimal strings) or null.
+   Owner and member stake may be left empty (= 0). */
+function poolRewardSplit(rewardsStr, costStr, marginStr, ownerStr, totalStr, memberStr) {
+  var fStr = adaToLovelace(rewardsStr);
+  var costStrL = adaToLovelace(costStr);
+  var totalStrL = adaToLovelace(totalStr);
+  if (fStr === null || costStrL === null || totalStrL === null) return null;
+  var ownerStrL = (ownerStr || "").trim() === "" ? "0" : adaToLovelace(ownerStr);
+  var memberStrL = (memberStr || "").trim() === "" ? "0" : adaToLovelace(memberStr);
+  if (ownerStrL === null || memberStrL === null) return null;
+  var margin = parseAnnualRate(marginStr); /* a percent parser: 0-100%, up to 4 decimals */
+  if (margin === null) return null;
+  var f = BigInt(fStr), cost = BigInt(costStrL), total = BigInt(totalStrL);
+  var owner = BigInt(ownerStrL), member = BigInt(memberStrL);
+  if (total <= 0n || owner > total || member > total - owner) return null;
+  var operator, memberOut;
+  if (f <= cost) {
+    operator = f; memberOut = 0n;
+  } else {
+    var rest = f - cost;
+    var md = 100n * (10n ** BigInt(margin.scale)); /* margin fraction denominator */
+    var mn = margin.digits;                        /* margin fraction numerator */
+    operator = cost + (rest * (mn * total + (md - mn) * owner)) / (md * total);
+    memberOut = (rest * (md - mn) * member) / (md * total);
+  }
+  return {
+    rewardsLovelace: f.toString(),
+    operatorLovelace: operator.toString(),
+    memberLovelace: memberOut.toString(),
+    othersLovelace: (f - operator - memberOut).toString()
+  };
+}
+
 /* Transaction minimum fee — mainnet protocol parameters, verified against
    the Koios epoch_params endpoint for epoch 660 on 2026-10-07
    (min_fee_a = 44, min_fee_b = 155381, max_tx_size = 16384):
@@ -1436,7 +1489,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1533,6 +1586,27 @@ if (typeof document !== "undefined") {
         res.epochs + (res.epochs === 1 ? " epoch" : " epochs") + " ≈ " + lovelaceToAda(res.totalRewardLovelace) +
         " ADA · ending stake ≈ " + lovelaceToAda(res.finalLovelace) +
         " ADA. Modelled estimate only — actual pool rewards vary and are not promised.";
+    });
+
+    /* --- pool reward split (ledger reward-sharing rule, exact BigInt maths) --- */
+    document.getElementById("poolsplit").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = poolRewardSplit(
+        document.getElementById("pool-rewards").value,
+        document.getElementById("pool-cost").value,
+        document.getElementById("pool-margin").value,
+        document.getElementById("pool-owner-stake").value,
+        document.getElementById("pool-total-stake").value,
+        document.getElementById("pool-member-stake").value);
+      var out = document.getElementById("pool-split-result");
+      if (!res) {
+        out.textContent = "Enter the epoch rewards, the pool's fixed cost and margin (0 to 100%), and stake amounts — the total pool stake must be above zero, and the operator's stake plus the delegator's stake cannot exceed it. Amounts take up to 6 decimals.";
+        return;
+      }
+      out.textContent = "Of " + lovelaceToAda(res.rewardsLovelace) + " ADA in pool rewards: the operator receives " +
+        lovelaceToAda(res.operatorLovelace) + " ADA (fixed cost + margin + the operator's own stake share) · this delegator receives " +
+        lovelaceToAda(res.memberLovelace) + " ADA · all other delegators together receive " +
+        lovelaceToAda(res.othersLovelace) + " ADA. Split by the ledger's reward-sharing rule — it divides a reward total you supply, it does not predict what a pool will earn.";
     });
 
     /* --- transaction minimum fee (size-based, exact BigInt maths) --- */
