@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cardano4All — Building for the Cardano Blockchain</title>
+<meta name="description" content="Cardano4All by Kyle Cox (@kshot9000): open-source apps, tools and guides for the Cardano blockchain — analytics, DeFi, CIP-113 programmable tokens, smart-contract insurance, staking and developer utilities.">
+<meta property="og:title" content="Cardano4All — Building for the Cardano Blockchain">
+<meta property="og:description" content="Open-source Cardano apps, tools and guides by Kyle Cox (@kshot9000).">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://kshot3000.github.io/Cardano4all/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="site-head">
+  <a class="brand" href="./" aria-label="Cardano4All home">
+    <span class="brand-mark" aria-hidden="true">₳</span>
+    <span>Cardano<strong>4All</strong></span>
+  </a>
+  <nav aria-label="Main">
+    <a href="#projects">Projects</a>
+    <a href="#tools">Tools</a>
+    <a href="#guides">Guides</a>
+    <a href="#support">Support</a>
+    <a href="https://github.com/Kshot3000/Cardano4all">GitHub</a>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
+  <section class="hero">
+    <p class="eyebrow">Open source · Built in public · By <a href="https://x.com/kshot9000">@kshot9000</a></p>
+    <h1>Building for the Cardano blockchain — for everyone.</h1>
+    <p class="lede">Cardano4All is my builder hub for Cardano: live analytics, DeFi front-ends,
+    programmable-token research, smart-contract insurance, staking trackers and developer
+    tools — every project open source, every claim on this page checked against the live site.</p>
+    <div class="hero-cta">
+      <a class="btn primary" href="#projects">Browse the projects</a>
+      <a class="btn" href="#tools">Try the tools</a>
+    </div>
+    <dl class="stats">
+      <div><dt>Flagship projects</dt><dd>5 live sites</dd></div>
+      <div><dt>Catalogued repos</dt><dd>16 Cardano / Midnight</dd></div>
+      <div><dt>Builder loop</dt><dd>Hourly, tested + verified</dd></div>
+    </dl>
+  </section>
+
+  <section id="projects" aria-labelledby="projects-h">
+    <h2 id="projects-h">Projects</h2>
+    <p>Start with the live flagships, then dig into the full catalogue. Filter by what you need:</p>
+    <div class="filter-row" role="group" aria-label="Filter projects">
+      <label for="q">Search projects</label>
+      <input id="q" type="search" placeholder="e.g. staking, DEX, wallet…" autocomplete="off">
+      <div class="chips" role="group" aria-label="Filter by category">
+        <button type="button" class="chip active" data-filter="all">All</button>
+        <button type="button" class="chip" data-filter="analytics">Analytics</button>
+        <button type="button" class="chip" data-filter="defi">DeFi</button>
+        <button type="button" class="chip" data-filter="tokens">Tokens &amp; standards</button>
+        <button type="button" class="chip" data-filter="privacy">Privacy / Midnight</button>
+        <button type="button" class="chip" data-filter="dev">Developer tools</button>
+      </div>
+    </div>
+    <p id="filter-status" class="sr-status" role="status" aria-live="polite"></p>
+    <ul class="cards" id="cards">
+      <li class="card" data-cat="analytics" data-name="nightdream cardano analytics dex liquidity midnight night dust charts portfolio">
+        <h3><a href="https://nightdream.xyz/">NightDream</a> <span class="badge live">Live site</span></h3>
+        <p>Cardano analytics desk: live charts, DEX liquidity, CIP-30 portfolio views, a Midnight / NIGHT desk with DUST calculator, watchlist and command palette. Real live data, no demo figures.</p>
+        <p class="card-links"><a href="https://nightdream.xyz/">Visit site</a> · <a href="https://github.com/Kshot3000/nightdream.xyz">Source</a></p>
+      </li>
+      <li class="card" data-cat="tokens" data-name="prism cip-113 programmable tokens token studio koios cip-30">
+        <h3><a href="https://kshot3000.github.io/Grok-CIP-113/">PRISM — CIP-113 Studio</a> <span class="badge live">Live site</span></h3>
+        <p>Open-source design &amp; research studio for Cardano CIP-113 programmable tokens: token-rule studio, exact BigInt transfer modelling, CIP-30 read-only wallet connect and a live Koios explorer. Design/research only — no minting or signing.</p>
+        <p class="card-links"><a href="https://kshot3000.github.io/Grok-CIP-113/">Visit site</a> · <a href="https://github.com/Kshot3000/Grok-CIP-113">Source</a></p>
+      </li>
+      <li class="card" data-cat="defi" data-name="plutusshield insurance defi smart contract cover aiken preview preprod depeg exploit">
+        <h3><a href="https://kshot3000.github.io/PlutusShield/">PlutusShield</a> <span class="badge live">Live site</span></h3>
+        <p>DeFi and smart-contract insurance for Cardano Preview + Midnight Preprod: Aiken validators for depeg and exploit-cover pools, a Compact policy registry, SDK and oracle relay. Testnet only, unaudited, no real funds.</p>
+        <p class="card-links"><a href="https://kshot3000.github.io/PlutusShield/">Visit site</a> · <a href="https://github.com/Kshot3000/PlutusShield">Source</a></p>
+      </li>
+      <li class="card" data-cat="defi" data-name="adadrome dex ve33 concentrated liquidity amm">
+        <h3><a href="https://kshot3000.github.io/Adadrome/">Adadrome</a> <span class="badge live">Live site</span></h3>
+        <p>A ve(3,3) DEX on Cardano with concentrated liquidity — demo front-end exploring vote-escrowed emissions and gauge-style incentives on Cardano.</p>
+        <p class="card-links"><a href="https://kshot3000.github.io/Adadrome/">Visit site</a> · <a href="https://github.com/Kshot3000/Adadrome">Source</a></p>
+      </li>
+      <li class="card" data-cat="privacy" data-name="night messenger private dm midnight selective disclosure messaging">
+        <h3><a href="https://kshot3000.github.io/Night-Messenger-/">Night Messenger</a> <span class="badge live">Live site</span></h3>
+        <p>Free private direct messages on Midnight (Cardano's partner chain) with selective disclosure — web + Android.</p>
+        <p class="card-links"><a href="https://kshot3000.github.io/Night-Messenger-/">Visit site</a> · <a href="https://github.com/Kshot3000/Night-Messenger-">Source</a></p>
+      </li>
+      <li class="card" data-cat="analytics defi" data-name="ada staking rewards tracker epoch payouts cnt">
+        <h3><a href="https://github.com/Kshot3000/ADA-Staking-Rewards-Tracker">ADA Staking Rewards Tracker</a> <span class="badge repo">Repo</span></h3>
+        <p>Track staking rewards over time, plus an epoch tracker for payouts in ADA and native tokens (CNTs).</p>
+        <p class="card-links"><a href="https://github.com/Kshot3000/ADA-Staking-Rewards-Tracker">Rewards tracker</a> · <a href="https://github.com/Kshot3000/Epoch-Tracker">Epoch Tracker</a></p>
+      </li>
+      <li class="card" data-cat="defi" data-name="minswap sundaeswap dex aggregator lp fee tracker security">
+        <h3><a href="https://github.com/Kshot3000/Sundaeswap-Aggregator">Cardano DEX work</a> <span class="badge repo">Repos</span></h3>
+        <p>Hands-on work around Cardano's big DEXes: a SundaeSwap aggregator, Minswap LP trading-fee tracker, and Minswap security research &amp; fix notes.</p>
+        <p class="card-links"><a href="https://github.com/Kshot3000/Sundaeswap-Aggregator">SundaeSwap Aggregator</a> · <a href="https://github.com/Kshot3000/MInswap-LP">Minswap LP</a> · <a href="https://github.com/Kshot3000/Minswap-FIX">Minswap FIX</a> · <a href="https://github.com/Kshot3000/MInswap-Sec">Minswap Sec</a></p>
+      </li>
+      <li class="card" data-cat="privacy dev" data-name="midnight grokbot agent compact lace escrow starters">
+        <h3><a href="https://github.com/Kshot3000/Midnight-GrokBot-Agent">Midnight GrokBot Agent</a> <span class="badge repo">Repo</span></h3>
+        <p>A Midnight build lab: Compact contract starters, a Lace wallet kit and an agent-escrow prototype on Cardano's privacy partner chain.</p>
+        <p class="card-links"><a href="https://github.com/Kshot3000/Midnight-GrokBot-Agent">Source</a></p>
+      </li>
+      <li class="card" data-cat="privacy" data-name="nocturne private messaging email midnight">
+        <h3><a href="https://github.com/Kshot3000/nocturne">Nocturne</a> <span class="badge repo">Repo</span></h3>
+        <p>Private messaging and email on Midnight, built around selective disclosure.</p>
+        <p class="card-links"><a href="https://github.com/Kshot3000/nocturne">Source</a></p>
+      </li>
+      <li class="card" data-cat="dev" data-name="cardano midnight qwen builder escrow network monitor privacy dashboard hub">
+        <h3><a href="https://github.com/Kshot3000/Cardano-Midnight-Qwen-Builder">Cardano + Midnight Builder Hub</a> <span class="badge repo">Repo</span></h3>
+        <p>Earlier builder hub: agent escrow, live network monitors and privacy dashboards for Cardano and Midnight.</p>
+        <p class="card-links"><a href="https://github.com/Kshot3000/Cardano-Midnight-Qwen-Builder">Source</a></p>
+      </li>
+      <li class="card" data-cat="dev" data-name="ada browser ai agent cardano ai coder">
+        <h3><a href="https://github.com/Kshot3000/Ada">Ada — browser AI agent</a> <span class="badge repo">Repo</span></h3>
+        <p>A browser AI agent for the Cardano blockchain, plus a 24/7 AI coder that scans and builds for the Cardano ecosystem.</p>
+        <p class="card-links"><a href="https://github.com/Kshot3000/Ada">Ada</a> · <a href="https://github.com/Kshot3000/Cardano-Ai-24-7-coder">Cardano AI 24/7 Coder</a></p>
+      </li>
+      <li class="card" data-cat="dev" data-name="x402 payments protocol cardano http 402">
+        <h3><a href="https://github.com/Kshot3000/x402-cardano">x402 for Cardano (fork)</a> <span class="badge repo">Fork</span></h3>
+        <p>Fork of the x402 payments-protocol implementation for Cardano, kept for upstream fix work.</p>
+        <p class="card-links"><a href="https://github.com/Kshot3000/x402-cardano">Source</a></p>
+      </li>
+    </ul>
+    <p id="no-results" hidden>No projects match that filter yet — try “all”.</p>
+  </section>
+
+  <section id="tools" aria-labelledby="tools-h">
+    <h2 id="tools-h">Tools — right here, no wallet needed</h2>
+    <div class="tool-grid">
+      <form class="tool" id="inspector" >
+        <h3>Address inspector</h3>
+        <p>Paste any Cardano address. Checks the bech32 checksum <em>locally in your browser</em> and tells you the address type and network. Nothing is sent anywhere.</p>
+        <label for="addr">Cardano address</label>
+        <textarea id="addr" rows="3" spellcheck="false" placeholder="addr1… or stake1…"></textarea>
+        <button type="submit" class="btn primary">Inspect address</button>
+        <p id="addr-result" role="status" aria-live="polite"></p>
+      </form>
+      <form class="tool" id="converter">
+        <h3>ADA ⇄ lovelace converter</h3>
+        <p>1 ADA = 1,000,000 lovelace. Exact integer maths (BigInt) — no floating-point rounding, works offline.</p>
+        <label for="ada">ADA amount</label>
+        <input id="ada" inputmode="decimal" placeholder="e.g. 12.5" autocomplete="off">
+        <label for="lovelace">Lovelace</label>
+        <input id="lovelace" inputmode="numeric" placeholder="e.g. 12500000" autocomplete="off">
+        <p id="conv-result" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <section id="guides" aria-labelledby="guides-h">
+    <h2 id="guides-h">Guides</h2>
+    <ul class="guide-list">
+      <li><a href="guides/getting-started.md">Getting started building on Cardano</a> — the official docs, wallets, testnets and data APIs I actually use, in the order to learn them.</li>
+      <li><a href="https://github.com/Kshot3000/Cardano4all/blob/main/README.md">The full project catalogue</a> — every repo, what it does, and its honest status.</li>
+    </ul>
+  </section>
+
+  <section id="support" aria-labelledby="support-h">
+    <h2 id="support-h">Support this work</h2>
+    <p>Cardano4All is free and open source. If it helped you, tips in ADA keep the builder loop running:</p>
+    <p class="donate">
+      <code id="donation-address">addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</code>
+      <button type="button" id="copy-address" class="btn">Copy ADA address</button>
+    </p>
+    <p id="copy-status" role="status" aria-live="polite"></p>
+    <p>Built by Kyle Cox — <a href="https://x.com/kshot9000">@kshot9000 on X</a> · <a href="https://github.com/Kshot3000">github.com/Kshot3000</a></p>
+    <p class="team-tag">For the Cardano team — <a href="https://github.com/cardano-foundation">@cardano-foundation</a> and
+    <a href="https://github.com/IntersectMBO">@IntersectMBO</a>: this is an independent community builder hub.
+    Feedback and corrections are welcome in the <a href="https://github.com/Kshot3000/Cardano4all/issues">issues</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
+  <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
+</footer>
+<script src="app.js?v=1"></script>
+</body>
+</html>
