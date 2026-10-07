@@ -237,6 +237,31 @@
         <button type="submit" class="btn primary">Build addresses</button>
         <p id="key-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="hashaddr">
+        <h3>Address builder — from credential hashes</h3>
+        <p>The tool above starts from verification keys. This one starts one step later, from the <strong>credential hashes</strong> themselves — a payment or stake credential can be a <strong>key hash</strong> or a <strong>script hash</strong>, and which kind each part is decides the address type (CIP-19 types 0–3, 6–7, 14–15). The common script workflow: hash a Plutus script with the datum &amp; script hash tool, paste the script hash here as a script payment credential, and get the <strong>enterprise script address</strong> its funds lock to — no key can spend from it, only the script can. A minting script's hash doubles as its policy ID. Everything is computed locally, offline.</p>
+        <label for="cred-pay">Payment credential hash (hex, 56 characters)</label>
+        <input id="cred-pay" spellcheck="false" placeholder="e.g. a key hash, or a script hash from the hash tool above" autocomplete="off">
+        <label for="cred-pay-kind">Payment credential kind</label>
+        <select id="cred-pay-kind">
+          <option value="key">Key hash</option>
+          <option value="script">Script hash</option>
+        </select>
+        <label for="cred-stake">Stake credential hash (hex, 56 characters, optional)</label>
+        <input id="cred-stake" spellcheck="false" placeholder="Leave empty for the enterprise address only" autocomplete="off">
+        <label for="cred-stake-kind">Stake credential kind</label>
+        <select id="cred-stake-kind">
+          <option value="key">Key hash</option>
+          <option value="script">Script hash</option>
+        </select>
+        <label for="cred-network">Network</label>
+        <select id="cred-network">
+          <option value="mainnet">Mainnet</option>
+          <option value="testnet">Testnet</option>
+        </select>
+        <button type="submit" class="btn primary">Build addresses</button>
+        <p id="cred-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="addrdecode">
         <h3>Address decoder (CIP-19)</h3>
         <p>The builder above in reverse. Every Shelley address starts with a one-byte header — the address type in the high half, the network in the low half — followed by 28-byte credential hashes. Paste any base, pointer, enterprise or reward address to see its type, network and the <strong>payment and stake credential hashes</strong> inside it, plus the enterprise and reward addresses derived from those same hashes. Computed locally; Byron addresses predate this layout and are not decoded.</p>
@@ -292,6 +317,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=12"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=13"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -262,6 +262,43 @@ check("reward address requires a stake key hash", app.buildAddress("reward", "ma
 check("builder rejects unknown kind", app.buildAddress("byron", "mainnet", PAY_KH, STAKE_KH) === null);
 check("builder rejects unknown network", app.buildAddress("base", "preview", PAY_KH, STAKE_KH) === null);
 check("builder rejects short key hash", app.buildAddress("enterprise", "mainnet", "abcd", null) === null);
+
+/* credential-kind builder (CIP-19 types 0-3, 6-7, 14-15) — a credential is
+   a key hash or a script hash; the kinds pick the type nibble. Ground
+   truth is a real Aiken blueprint (Mesh giftcard, Plutus V3, from the
+   Mesh #763 investigation): the hub's scriptHash of each validator's
+   compiledCode reproduces the blueprint's published hash, and the script
+   addresses built from those hashes must be byte-exact (header || hashes,
+   via the proven hex converter) and decode back to the same hashes/kinds
+   via the proven CIP-19 decoder. Default creds stay key/key, unchanged. */
+check("credaddr tool in page", html.includes('id="hashaddr"') && html.includes('id="cred-result"') && html.includes('id="cred-pay-kind"'));
+const MINT_SH = "401c967008d42885400991f9225715e1c3a8e43757b1fd36a1328195";
+const REDEEM_SH = "b2386630f1b210c58d0e46f132e931b362c3f373685118018e4d956f";
+check("explicit key/key creds == default builder output", app.buildAddress("base", "mainnet", PAY_KH, STAKE_KH, "key", "key") === ADA);
+/* Compiled code copied verbatim from the blueprint (mesh-contract
+   giftcard aiken-workspace-v2/plutus.json, Plutus V3) so this suite is
+   self-contained; the hashes asserted below are the blueprint's own. */
+const MINT_CODE = "5901ae01010032323232323232232225333005323232323253323300b3001300c3754004264646464a66601e600a0022a66602460226ea801c540085854ccc03cc00c00454ccc048c044dd50038a8010b0b18079baa006132323232533301430170021323253330133009301437540162a666026601260286ea8c8cc004004018894ccc0600045300103d87a80001323253330173375e603860326ea80080504cdd2a40006603600497ae0133004004001301c002301a00115333013300700113371e00402229405854ccc04ccdc3800a4002266e3c0080445281bad3014002375c60240022c602a00264a666020600860226ea800452f5bded8c026eacc054c048dd500099198008009bab3015301630163016301600322533301400114c103d87a80001323232325333015337220140042a66602a66e3c0280084cdd2a4000660326e980052f5c02980103d87a80001330060060033756602c0066eb8c050008c060008c058004dd6180980098079baa007370e90011bae3010300d37540046e1d200016300e300f002300d001300d002300b0013007375400229309b2b1bae0015734aae7555cf2ab9f5740ae855d11";
+const REDEEM_CODE = "59011501010032323232323232232232253330063232323232533300b3370e900118061baa001132323232325333013301600213253330113370e6eb4c04c009200113371e00201e2940dd718088008b180a00099299980799b8748008c040dd50008a5eb7bdb1804dd5980a18089baa001323300100137566028602a602a602a602a60226ea8020894ccc04c004530103d87a80001323232325333014337220200042a66602866e3c0400084cdd2a4000660306e980052f5c02980103d87a80001330060060033756602a0066eb8c04c008c05c008c054004c048c04c008c044004c034dd50008b1807980800118070009807001180600098041baa00114984d958dd70009bae0015734aae7555cf2ab9f5740ae855d101";
+check("scriptHash of Aiken giftcard mint compiledCode == blueprint hash", app.scriptHash("plutusv3", MINT_CODE) === MINT_SH);
+check("scriptHash of Aiken giftcard redeem compiledCode == blueprint hash", app.scriptHash("plutusv3", REDEEM_CODE) === REDEEM_SH);
+check("enterprise script mainnet bytes = 71||redeem hash", app.addressToHex(app.buildAddress("enterprise", "mainnet", REDEEM_SH, null, "script")) === "71" + REDEEM_SH);
+check("enterprise script testnet bytes = 70||redeem hash", app.addressToHex(app.buildAddress("enterprise", "testnet", REDEEM_SH, null, "script")) === "70" + REDEEM_SH);
+check("base script/key bytes = 11||mint||stake key hash", app.addressToHex(app.buildAddress("base", "mainnet", MINT_SH, STAKE_KH, "script", "key")) === "11" + MINT_SH + STAKE_KH);
+check("base key/script bytes = 21||pay key hash||redeem", app.addressToHex(app.buildAddress("base", "mainnet", PAY_KH, REDEEM_SH, "key", "script")) === "21" + PAY_KH + REDEEM_SH);
+check("base script/script bytes = 31||mint||redeem", app.addressToHex(app.buildAddress("base", "mainnet", MINT_SH, REDEEM_SH, "script", "script")) === "31" + MINT_SH + REDEEM_SH);
+check("reward script bytes = f1||redeem", app.addressToHex(app.buildAddress("reward", "mainnet", null, REDEEM_SH, "key", "script")) === "f1" + REDEEM_SH);
+check("reward key ignores payCred (still type 14)", app.addressToHex(app.buildAddress("reward", "mainnet", null, STAKE_KH, "script", "key")) === "e1" + STAKE_KH);
+const dSS = app.decodeAddress(app.buildAddress("base", "mainnet", MINT_SH, REDEEM_SH, "script", "script"));
+check("decoder reads base script/script kinds + hashes back", dSS.paymentKind === "script" && dSS.stakeKind === "script" && dSS.paymentHash === MINT_SH && dSS.stakeHash === REDEEM_SH);
+check("decoder enterprise derivation == builder script enterprise", dSS.enterprise === app.buildAddress("enterprise", "mainnet", MINT_SH, null, "script"));
+check("decoder reward derivation == builder script reward", dSS.reward === app.buildAddress("reward", "mainnet", null, REDEEM_SH, "key", "script"));
+const dEnt = app.decodeAddress(app.buildAddress("enterprise", "mainnet", REDEEM_SH, null, "script"));
+check("decoder reads enterprise script (type 7)", dEnt.type === 7 && dEnt.paymentKind === "script" && dEnt.paymentHash === REDEEM_SH);
+check("enterprise key stays type 6 with explicit cred", app.addressToHex(app.buildAddress("enterprise", "mainnet", PAY_KH, null, "key")) === "61" + PAY_KH);
+check("builder rejects unknown pay cred kind", app.buildAddress("base", "mainnet", PAY_KH, STAKE_KH, "token", "key") === null);
+check("builder rejects unknown stake cred kind", app.buildAddress("reward", "mainnet", null, STAKE_KH, "key", "x") === null);
+check("script enterprise still requires a 56-hex hash", app.buildAddress("enterprise", "mainnet", "abcd", null, "script") === null);
 
 /* address decoder (CIP-19) — anchored to the same real wallet-generated
    address as the builder tests: decoding the donation address must return

@@ -92,6 +92,16 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   `hashlib.blake2b`; the builder is proven end-to-end by rebuilding a real
   wallet-generated mainnet address byte-for-byte from its key hashes.
   Public verification keys only — never a private/signing key.
+- **Address builder — from credential hashes** — builds addresses directly
+  from 28-byte credential hashes, where each credential can be a key hash
+  or a script hash (CIP-19 types 0–3, 6–7, 14–15): base, enterprise and
+  reward, mainnet or testnet, locally and offline. This closes the script
+  workflow on one page — hash a Plutus script with the tool above, paste
+  its script hash as a script payment credential, and get the enterprise
+  script address its funds lock to. Proven byte-for-byte (header ‖ hashes)
+  and end-to-end from a real Aiken blueprint: its compiled code hashes to
+  the blueprint's published script hashes, and the built script addresses
+  decode back to exactly those hashes and credential kinds.
 - **Address decoder (CIP-19)** — the builder in reverse: paste any Shelley
   base, pointer, enterprise or reward address to decode its one-byte header
   (type + network), extract the payment and stake credential hashes inside

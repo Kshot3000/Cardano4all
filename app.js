@@ -512,17 +512,35 @@ function keyHash(vkeyRaw) {
   return digest === null ? null : bytesToHex(digest);
 }
 
-var ADDRESS_BUILD_TYPES = { base: 0, enterprise: 6, reward: 14 };
-
 function keyHashHex(raw) {
   var h = (raw || "").trim().toLowerCase();
   return /^[0-9a-f]{56}$/.test(h) ? h : null;
 }
 
-function buildAddress(kind, network, payHashRaw, stakeHashRaw) {
-  if (!(kind in ADDRESS_BUILD_TYPES)) return null;
+/* The CIP-19 type nibble is fixed by WHICH credentials the address carries:
+   base = pay key/script x stake key/script (types 0-3), enterprise =
+   payment credential only (6 key / 7 script), reward = stake credential
+   only (14 key / 15 script). payCred / stakeCred default to "key", so
+   every call the key builder above makes behaves exactly as before;
+   passing "script" builds the script-credential forms — e.g. the
+   enterprise address a Plutus script's funds lock to, from the script
+   hash the datum & script hash tool computes. Proven in the tests
+   byte-for-byte (header || hashes via the hex converter) and end-to-end
+   from a real Aiken blueprint: its compiledCode hashes (Plutus V3) to
+   the blueprint's published script hashes, whose script addresses the
+   proven CIP-19 decoder reads back with the same hashes and kinds. */
+function buildAddress(kind, network, payHashRaw, stakeHashRaw, payCred, stakeCred) {
   if (network !== "mainnet" && network !== "testnet") return null;
-  var header = (ADDRESS_BUILD_TYPES[kind] << 4) | (network === "mainnet" ? 1 : 0);
+  payCred = payCred === undefined ? "key" : payCred;
+  stakeCred = stakeCred === undefined ? "key" : stakeCred;
+  if (payCred !== "key" && payCred !== "script") return null;
+  if (stakeCred !== "key" && stakeCred !== "script") return null;
+  var type;
+  if (kind === "base") type = (payCred === "script" ? 1 : 0) + (stakeCred === "script" ? 2 : 0);
+  else if (kind === "enterprise") type = payCred === "script" ? 7 : 6;
+  else if (kind === "reward") type = stakeCred === "script" ? 15 : 14;
+  else return null;
+  var header = (type << 4) | (network === "mainnet" ? 1 : 0);
   var payload, hrp;
   if (kind === "reward") {
     var stakeOnly = keyHashHex(stakeHashRaw);
@@ -1028,6 +1046,35 @@ if (typeof document !== "undefined") {
           buildAddress("base", network, payHash, stakeHash));
         lines.push("Reward address (" + network + ", where staking rewards land): " +
           buildAddress("reward", network, null, stakeHash));
+      }
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- address builder from credential hashes (key or script, offline) --- */
+    document.getElementById("hashaddr").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var network = document.getElementById("cred-network").value;
+      var payHash = document.getElementById("cred-pay").value;
+      var payCred = document.getElementById("cred-pay-kind").value;
+      var stakeHash = document.getElementById("cred-stake").value;
+      var stakeCred = document.getElementById("cred-stake-kind").value;
+      var out = document.getElementById("cred-result");
+      if (keyHashHex(payHash) === null) {
+        out.textContent = "Enter the payment credential hash as exactly 56 hex characters (28 bytes) — a key hash from the tool above, or a script hash (a minting script's hash is its policy ID).";
+        return;
+      }
+      var lines = ["Enterprise address (" + network + ", payment " + payCred + " only" +
+        (payCred === "script" ? " — funds sent here can only be spent by the script" : ", cannot earn staking rewards") + "): " +
+        buildAddress("enterprise", network, payHash, null, payCred, stakeCred)];
+      if (stakeHash.trim() !== "") {
+        if (keyHashHex(stakeHash) === null) {
+          out.textContent = "The stake credential hash must be exactly 56 hex characters (28 bytes), or left empty.";
+          return;
+        }
+        lines.push("Base address (" + network + ", payment " + payCred + " + stake " + stakeCred + " — the full address): " +
+          buildAddress("base", network, payHash, stakeHash, payCred, stakeCred));
+        lines.push("Reward address (" + network + ", stake " + stakeCred + ", where staking rewards land): " +
+          buildAddress("reward", network, null, stakeHash, payCred, stakeCred));
       }
       out.textContent = lines.join("\n");
     });
