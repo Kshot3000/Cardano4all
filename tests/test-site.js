@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=15"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=16"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -477,6 +477,45 @@ check("dataenc rejects malformed values", app.encodePlutusData('{"int":1.5}') ==
 check("dataenc rejects malformed constructors", app.encodePlutusData('{"constructor":-1,"fields":[]}') === null && app.encodePlutusData('{"constructor":0}') === null && app.encodePlutusData('{"constructor":0,"fields":[],"extra":1}') === null && app.encodePlutusData('{"constructor":18446744073709551616,"fields":[]}') === null);
 check("dataenc rejects malformed lists and maps", app.encodePlutusData('{"list":[1]}') === null && app.encodePlutusData('{"map":[{"k":{"int":1}}]}') === null && app.encodePlutusData('{"map":[{"k":{"int":1},"v":{"int":2},"x":{"int":3}}]}') === null);
 check("dataenc rejects an oversized integer", app.encodePlutusData('{"int":' + "9".repeat(200) + "}") === null);
+
+/* Minimum-UTxO calculator — the ledger rule (160 + serialised size) x
+   coins_per_utxo_size (4,310, mainnet epoch 660). Ground truth is the
+   reference implementation pycardano 0.19.2, whose
+   min_lovelace_post_alonzo is copied from the Haskell ledger, run in
+   scratch over 17 output shapes: the serialised bytes this code
+   constructs are byte-identical to pycardano's for every shape, and
+   pycardano confirms each minimum below passes at the minimum and
+   fails one lovelace below it. Every expected value is that verified
+   fixed point. */
+const POL_A = "aa".repeat(28), POL_B = "10".repeat(28);
+const PLUTUS_SMALL = "460100332233" + "07".repeat(40);
+check("minutxo in page", html.includes('id="minutxo"') && html.includes('id="minutxo-addr"') && html.includes('id="minutxo-assets"') && html.includes('id="minutxo-datum-kind"') && html.includes('id="minutxo-script-kind"') && html.includes('id="minutxo-result"'));
+check("minutxo: plain base address (the donation address)", app.minUtxo({ address: ADA }).lovelace === "978370" && app.minUtxo({ address: ADA }).sizeBytes === 67);
+check("minutxo: testnet base address has the same size", app.minUtxo({ address: app.buildAddress("base", "testnet", PAY_KH, STAKE_KH) }).lovelace === "978370");
+check("minutxo: enterprise address", app.minUtxo({ address: "addr1v8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9rgcshpl9" }).lovelace === "857690");
+check("minutxo: script enterprise address (giftcard mint hash)", app.minUtxo({ address: app.buildAddress("enterprise", "mainnet", "401c9670f4a65de10872a4b51fe806854644e2b13ea28b0a99a1f8f6", null, "script") }).lovelace === "857690");
+check("minutxo: pointer address", app.minUtxo({ address: pointerAddr }).lovelace === "870620" && app.minUtxo({ address: pointerAddr }).sizeBytes === 42);
+check("minutxo: datum hash", app.minUtxo({ address: ADA, datumKind: "hash", datumHex: "ab".repeat(32) }).lovelace === "1137840");
+check("minutxo: inline datum (the sample datum)", app.minUtxo({ address: ADA, datumKind: "inline", datumHex: "d8799f182a182bff" }).lovelace === "1038710");
+check("minutxo: inline datum with a chunked 99-byte payload", app.minUtxo({ address: ADA, datumKind: "inline", datumHex: "d8799f5f5840" + "cd".repeat(64) + "5823" + "cd".repeat(35) + "ffff" }).lovelace === "1478330");
+check("minutxo: one asset, empty name", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "", quantity: "1" }] }).lovelace === "1129220");
+check("minutxo: one asset, name PATATE", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "504154415445", quantity: "1" }] }).lovelace === "1155080");
+check("minutxo: 32-byte name, uint64-max quantity (width from decimal text)", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "ff".repeat(32), quantity: "18446744073709551615" }] }).lovelace === "1305930");
+check("minutxo: two assets under one policy", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "00", quantity: "5" }, { policy: POL_A, name: "01", quantity: "7" }] }).lovelace === "1146460");
+check("minutxo: two policies", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "00", quantity: "5" }, { policy: POL_B, name: "aabb", quantity: "1000000" }] }).lovelace === "1301620");
+check("minutxo: enterprise + assets + datum hash", app.minUtxo({ address: "addr1v8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9rgcshpl9", assets: [{ policy: POL_B, name: "cafe", quantity: "42" }], datumKind: "hash", datumHex: "00".repeat(32) }).lovelace === "1180940");
+check("minutxo: native reference script (all-of-one-signature)", app.minUtxo({ address: ADA, scriptKind: "native", scriptHex: "8201818200581c" + PAY_KH }).lovelace === "1159390");
+check("minutxo: Plutus V2 reference script", app.minUtxo({ address: ADA, scriptKind: "plutus2", scriptHex: PLUTUS_SMALL }).lovelace === "1215420");
+check("minutxo: Plutus V3 reference script, ~1 KB", app.minUtxo({ address: ADA, scriptKind: "plutus3", scriptHex: "5903e8" + "0b".repeat(1000) }).lovelace === "5348710" && app.minUtxo({ address: ADA, scriptKind: "plutus3", scriptHex: "5903e8" + "0b".repeat(1000) }).sizeBytes === 1081);
+check("minutxo: kitchen sink (assets + inline datum + Plutus V1 ref)", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "504154415445", quantity: "999" }], datumKind: "inline", datumHex: "d8799f182a182bff", scriptKind: "plutus1", scriptHex: PLUTUS_SMALL }).lovelace === "1461090");
+check("minutxo rejects a reward address (cannot receive outputs)", app.minUtxo({ address: "stake1u8ke0ya7at0s22z255al95huahj7xejt7t27mj4ql6rzeqsfy7dg5" }) === null);
+check("minutxo rejects a pool ID as the address", app.minUtxo({ address: "pool107k26e3wrqxwghju2py40ngngx2qcu48ppeg7lk0cm35jl2aenx" }) === null);
+check("minutxo rejects empty / garbage addresses", app.minUtxo({ address: "" }) === null && app.minUtxo({ address: "addr1qqqqqq" }) === null && app.minUtxo({}) === null);
+check("minutxo rejects bad quantities", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "", quantity: "0" }] }) === null && app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "", quantity: "18446744073709551616" }] }) === null && app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "", quantity: "1.5" }] }) === null && app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "", quantity: "" }] }) === null);
+check("minutxo rejects a short policy ID and an over-long asset name", app.minUtxo({ address: ADA, assets: [{ policy: "aa".repeat(27), name: "", quantity: "1" }] }) === null && app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "ff".repeat(33), quantity: "1" }] }) === null);
+check("minutxo rejects a duplicated asset", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "00", quantity: "1" }, { policy: POL_A, name: "00", quantity: "2" }] }) === null);
+check("minutxo rejects bad datum inputs", app.minUtxo({ address: ADA, datumKind: "hash", datumHex: "ab".repeat(31) }) === null && app.minUtxo({ address: ADA, datumKind: "inline", datumHex: "d8799" }) === null && app.minUtxo({ address: ADA, datumKind: "bogus", datumHex: "" }) === null);
+check("minutxo rejects bad script inputs", app.minUtxo({ address: ADA, scriptKind: "plutus2", scriptHex: "zz" }) === null && app.minUtxo({ address: ADA, scriptKind: "plutus9", scriptHex: "00" }) === null && app.minUtxo({ address: ADA, scriptKind: "native", scriptHex: "" }) === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

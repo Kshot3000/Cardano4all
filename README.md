@@ -64,6 +64,19 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   verified live via Koios for epoch 660), in exact BigInt lovelace maths.
   Labelled as the size-based floor: script execution and reference-script
   costs come on top.
+- **Minimum-UTxO calculator** — the least ADA a transaction output may
+  hold, by the ledger's own rule: (160 + the output's serialised size) ×
+  `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
+  Koios for epoch 660). The output's serialised bytes are constructed
+  exactly from the described contents — receiving address, native-asset
+  bundle, datum (hash or inline) and reference script (native or Plutus
+  V1/V2/V3) — never estimated from counts, and the result is the fixed
+  point whose own coin encoding satisfies the rule. Proven against the
+  reference implementation pycardano (whose minimum-UTxO function is
+  copied from the Haskell ledger): byte-identical serialisations across
+  17 output shapes, and each computed minimum passes pycardano's check
+  at the minimum and fails one lovelace below it. A plain output to a
+  base address needs 978,370 lovelace.
 - **Pool ID converter** — converts a stake pool ID between its 56-character
   hex form and its bech32 (`pool1…`) form, locally and offline, with full
   bech32 checksum verification on the way back.

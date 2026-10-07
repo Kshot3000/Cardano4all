@@ -179,6 +179,34 @@
         <p id="fee-result" role="status" aria-live="polite"></p>
         <p>Size-based minimum only: transactions that run Plutus scripts also pay for execution units, and reference scripts add a per-byte charge, so real script transactions cost more than this floor.</p>
       </form>
+      <form class="tool" id="minutxo">
+        <h3>Minimum-UTxO calculator</h3>
+        <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
+        <label for="minutxo-addr">Receiving address (bech32)</label>
+        <input id="minutxo-addr" spellcheck="false" placeholder="e.g. addr1… (base, enterprise or pointer — reward addresses can't receive outputs)" autocomplete="off">
+        <label for="minutxo-assets">Native assets in the output — one per line: policy ID hex, asset name hex, quantity (optional)</label>
+        <textarea id="minutxo-assets" rows="3" spellcheck="false" placeholder="e.g. aa…(56 hex)…, 504154415445, 1 — leave the name empty for an unnamed asset; leave the whole box empty for an ADA-only output"></textarea>
+        <label for="minutxo-datum-kind">Datum</label>
+        <select id="minutxo-datum-kind">
+          <option value="none">None</option>
+          <option value="hash">Datum hash</option>
+          <option value="inline">Inline datum</option>
+        </select>
+        <label for="minutxo-datum-hex">Datum hash (64 hex) or inline datum (CBOR hex)</label>
+        <input id="minutxo-datum-hex" spellcheck="false" placeholder="Leave empty when the datum is set to None" autocomplete="off">
+        <label for="minutxo-script-kind">Reference script</label>
+        <select id="minutxo-script-kind">
+          <option value="none">None</option>
+          <option value="native">Native script</option>
+          <option value="plutus1">Plutus V1</option>
+          <option value="plutus2">Plutus V2</option>
+          <option value="plutus3">Plutus V3</option>
+        </select>
+        <label for="minutxo-script-hex">Reference script (native: its CBOR hex; Plutus: its script-bytes hex)</label>
+        <textarea id="minutxo-script-hex" rows="2" spellcheck="false" placeholder="Leave empty when the reference script is set to None"></textarea>
+        <button type="submit" class="btn primary">Calculate minimum ADA</button>
+        <p id="minutxo-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="poolid">
         <h3>Pool ID converter</h3>
         <p>A stake pool ID is a 28-byte hash shown two ways: 56 hex characters, or bech32 starting <code>pool1…</code>. Convert between them locally — explorers, pool tooling and <code>cardano-cli</code> each prefer a different form.</p>
@@ -333,6 +361,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
