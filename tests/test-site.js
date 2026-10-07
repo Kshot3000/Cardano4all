@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=16"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=17"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -516,6 +516,30 @@ check("minutxo rejects a short policy ID and an over-long asset name", app.minUt
 check("minutxo rejects a duplicated asset", app.minUtxo({ address: ADA, assets: [{ policy: POL_A, name: "00", quantity: "1" }, { policy: POL_A, name: "00", quantity: "2" }] }) === null);
 check("minutxo rejects bad datum inputs", app.minUtxo({ address: ADA, datumKind: "hash", datumHex: "ab".repeat(31) }) === null && app.minUtxo({ address: ADA, datumKind: "inline", datumHex: "d8799" }) === null && app.minUtxo({ address: ADA, datumKind: "bogus", datumHex: "" }) === null);
 check("minutxo rejects bad script inputs", app.minUtxo({ address: ADA, scriptKind: "plutus2", scriptHex: "zz" }) === null && app.minUtxo({ address: ADA, scriptKind: "plutus9", scriptHex: "00" }) === null && app.minUtxo({ address: ADA, scriptKind: "native", scriptHex: "" }) === null);
+
+/* Native script policy ID — cardano-cli JSON in, ledger CBOR + blake2b-224
+   (0x00 || CBOR) out, which for a minting script is its policy ID. Every
+   expected CBOR string and hash below was produced by pycardano 0.19.2's
+   NativeScript classes (ScriptPubkey / ScriptAll / ScriptAny / ScriptNofK /
+   InvalidBefore / InvalidHereAfter) over the hub's known key hashes, and
+   the JS encoder matched all of them from the JSON form in scratch first. */
+const NS_SIG1 = JSON.stringify({ type: "sig", keyHash: PAY_KH });
+const NS_SIG2 = JSON.stringify({ type: "sig", keyHash: STAKE_KH });
+check("nativescript in page", html.includes('id="nativescript"') && html.includes('id="native-input"') && html.includes('id="native-result"'));
+check("nativescript: single signature", app.nativeScript(NS_SIG1).cbor === "8200581c" + PAY_KH && app.nativeScript(NS_SIG1).policyId === "c8474c67549027ddc3e30417ec6aa1d8983dee66d2f1ed4478aed55e");
+check("nativescript: all of two signatures", app.nativeScript(JSON.stringify({ type: "all", scripts: [{ type: "sig", keyHash: PAY_KH }, { type: "sig", keyHash: STAKE_KH }] })).policyId === "ad7b1190f4473fac81382ed1fee7a5336bc49dea9e046e926bb25c62");
+check("nativescript: any of two signatures", app.nativeScript(JSON.stringify({ type: "any", scripts: [{ type: "sig", keyHash: PAY_KH }, { type: "sig", keyHash: STAKE_KH }] })).policyId === "722deaa6bd5e537892e21baabd5bc562b4e89997ba6c33cef0616604");
+check("nativescript: after slot 1000", app.nativeScript('{"type":"after","slot":1000}').cbor === "82041903e8" && app.nativeScript('{"type":"after","slot":1000}').policyId === "592fb0f9d8ed15c06858118d134d5c4b7c77320507810fee9ac2ddf9");
+check("nativescript: before slot 2000", app.nativeScript('{"type":"before","slot":2000}').cbor === "82051907d0" && app.nativeScript('{"type":"before","slot":2000}').policyId === "52cd2f6d3d5416e6d28224f2dcd51e80a204bff4c46a0e4a1601c650");
+check("nativescript: atLeast 1 and 2 of two", app.nativeScript(JSON.stringify({ type: "atLeast", required: 1, scripts: [{ type: "sig", keyHash: PAY_KH }, { type: "sig", keyHash: STAKE_KH }] })).policyId === "5f7e84e920556934764e0e71ef8f4abf7fd2001a677e22e2edfc1a8a" && app.nativeScript(JSON.stringify({ type: "atLeast", required: 2, scripts: [{ type: "sig", keyHash: PAY_KH }, { type: "sig", keyHash: STAKE_KH }] })).policyId === "318ec788495cc739d7371c51b13fdff9856c68edf776d83437453736");
+check("nativescript: nested all / timelock / any", app.nativeScript(JSON.stringify({ type: "all", scripts: [{ type: "sig", keyHash: PAY_KH }, { type: "before", slot: 5000 }, { type: "any", scripts: [{ type: "sig", keyHash: STAKE_KH }, { type: "after", slot: 100 }] }] })).policyId === "1e7ca404e5a86cb3284e9c4f0f78c2bdf890dc88b91451e59d0bc799");
+check("nativescript: empty all", app.nativeScript('{"type":"all","scripts":[]}').cbor === "820180" && app.nativeScript('{"type":"all","scripts":[]}').policyId === "d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf");
+check("nativescript: big slot keeps its CBOR width", app.nativeScript('{"type":"before","slot":199846790}').cbor === "82051a0be96b86" && app.nativeScript('{"type":"before","slot":199846790}').policyId === "510d743ce62d621f775a7b4b60e0e9e7dbacf6a5675294538d90536e");
+check("nativescript: slot above 2^53 stays exact (read as decimal text, never a float)", app.nativeScript('{"type":"before","slot":9007199254740993}').cbor === "82051b0020000000000001");
+check("nativescript: script address is the type-7 enterprise address carrying the policy ID", app.nativeScript(NS_SIG1).mainnetAddress === "addr1w8yywnr82jgz0hwruvzp0mr258vfs00wvmf0rm2y0zhd2hs04gyf5" && app.decodeAddress(app.nativeScript(NS_SIG1).mainnetAddress).paymentHash === "c8474c67549027ddc3e30417ec6aa1d8983dee66d2f1ed4478aed55e" && app.decodeAddress(app.nativeScript(NS_SIG1).mainnetAddress).paymentKind === "script");
+check("nativescript rejects unknown types and bad JSON", app.nativeScript('{"type":"bogus"}') === null && app.nativeScript("{nope") === null && app.nativeScript("[1,2]") === null && app.nativeScript("") === null);
+check("nativescript rejects bad key hashes and missing lists", app.nativeScript('{"type":"sig","keyHash":"abcd"}') === null && app.nativeScript('{"type":"all"}') === null && app.nativeScript('{"type":"any","scripts":{}}') === null);
+check("nativescript rejects bad slots and counts", app.nativeScript('{"type":"after","slot":-5}') === null && app.nativeScript('{"type":"before","slot":18446744073709551616}') === null && app.nativeScript('{"type":"atLeast","required":1.5,"scripts":[]}') === null && app.nativeScript('{"type":"atLeast","scripts":[]}') === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

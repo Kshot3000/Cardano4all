@@ -331,6 +331,14 @@
         <button type="submit" class="btn primary">Decode &amp; convert</button>
         <p id="gov-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="nativescript">
+        <h3>Native script — policy ID &amp; script address (multisig / timelock)</h3>
+        <p>Native scripts are Cardano's built-in multisig and timelock rules — no Plutus, no contract audit: a script says which key signatures count (<code>all</code> / <code>any</code> / <code>atLeast</code> of a list) and the slots it is valid between (<code>after</code> / <code>before</code>). Paste one in the <code>cardano-cli</code> JSON form and get its <strong>policy ID</strong> — the script hash a minting script's assets live under — its exact CBOR, and the <strong>script address</strong> the script locks. Computed locally, offline, byte-for-byte the way the ledger serialises it.</p>
+        <label for="native-input">Native script (cardano-cli JSON)</label>
+        <textarea id="native-input" rows="4" spellcheck="false" placeholder="e.g. {&quot;type&quot;:&quot;all&quot;,&quot;scripts&quot;:[{&quot;type&quot;:&quot;sig&quot;,&quot;keyHash&quot;:&quot;…&quot;},{&quot;type&quot;:&quot;before&quot;,&quot;slot&quot;:2000}]}"></textarea>
+        <button type="submit" class="btn primary">Hash script</button>
+        <p id="native-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
     </div>
   </section>
 
@@ -361,6 +369,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

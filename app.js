@@ -1339,6 +1339,91 @@ function encodePlutusData(text) {
   return bytesToHex(out);
 }
 
+/* Native scripts (multisig / timelock) — the cardano-cli JSON form in,
+   the ledger CBOR and the policy ID out. A native script serialises as
+   a CBOR array whose first item names the constructor (ledger CDDL):
+   [0, key hash] a signature, [1, [scripts]] all-of, [2, [scripts]]
+   any-of, [3, n, [scripts]] at-least-n-of, [4, slot] valid after that
+   slot ("after"), [5, slot] valid before that slot ("before"). The
+   script hash — which is also the policy ID for a minting script — is
+   blake2b-224(0x00 || CBOR bytes), the hub's existing native scriptHash.
+   Slots and "required" counts travel as decimal TEXT into BigInt (the
+   JSON literals are pre-quoted before JSON.parse), so a slot above
+   2^53 stays exact instead of being rounded by a float. Every encoding
+   and hash here was proven against pycardano 0.19.2's NativeScript
+   classes in scratch before wiring. */
+var NATIVE_UINT64_MAX = 18446744073709551615n;
+function parseScriptUint(v) {
+  var b;
+  if (typeof v === "string") {
+    if (!/^\d+$/.test(v)) return null;
+    b = BigInt(v);
+  } else if (typeof v === "number") {
+    if (!Number.isSafeInteger(v) || v < 0) return null;
+    b = BigInt(v);
+  } else return null;
+  return b <= NATIVE_UINT64_MAX ? b : null;
+}
+function encodeNativeScript(node, depth, budget) {
+  if (depth > 100 || budget.n <= 0) return null;
+  budget.n--;
+  if (!node || typeof node !== "object" || Array.isArray(node)) return null;
+  function children(list) {
+    if (!Array.isArray(list)) return null;
+    var bytes = cborHead(4, BigInt(list.length)), j, c;
+    for (j = 0; j < list.length; j++) {
+      c = encodeNativeScript(list[j], depth + 1, budget);
+      if (c === null) return null;
+      bytes = bytes.concat(c);
+    }
+    return bytes;
+  }
+  switch (node.type) {
+    case "sig": {
+      var kh = typeof node.keyHash === "string" ? node.keyHash.trim().toLowerCase() : "";
+      if (!/^[0-9a-f]{56}$/.test(kh)) return null;
+      return cborHead(4, 2n).concat(cborHead(0, 0n), cborHead(2, 28n), hexToBytes(kh));
+    }
+    case "all":
+    case "any": {
+      var kids = children(node.scripts);
+      if (kids === null) return null;
+      return cborHead(4, 2n).concat(cborHead(0, node.type === "all" ? 1n : 2n), kids);
+    }
+    case "atLeast": {
+      var req = parseScriptUint(node.required);
+      if (req === null) return null;
+      var kids2 = children(node.scripts);
+      if (kids2 === null) return null;
+      return cborHead(4, 3n).concat(cborHead(0, 3n), cborHead(0, req), kids2);
+    }
+    case "after":
+    case "before": {
+      var slot = parseScriptUint(node.slot);
+      if (slot === null) return null;
+      return cborHead(4, 2n).concat(cborHead(0, node.type === "after" ? 4n : 5n), cborHead(0, slot));
+    }
+    default: return null;
+  }
+}
+function nativeScript(text) {
+  if (typeof text !== "string" || text.trim().length === 0 || text.length > 65536) return null;
+  var quoted = text.replace(/"(slot|required)"\s*:\s*(\d+)/g, "\"$1\":\"$2\"");
+  var root;
+  try { root = JSON.parse(quoted); } catch (e) { return null; }
+  var bytes = encodeNativeScript(root, 0, { n: 10000 });
+  if (bytes === null) return null;
+  var cborHex = bytesToHex(bytes);
+  var policyId = scriptHash("native", cborHex);
+  if (policyId === null) return null;
+  return {
+    cbor: cborHex,
+    policyId: policyId,
+    mainnetAddress: buildAddress("enterprise", "mainnet", policyId, null, "script"),
+    testnetAddress: buildAddress("enterprise", "testnet", policyId, null, "script")
+  };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -1351,7 +1436,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1701,6 +1786,18 @@ if (typeof document !== "undefined") {
         return;
       }
       out.textContent = "CBOR: " + hex + "\nDatum hash: " + datumHash(hex) + "\nReads back as: " + decodeCbor(hex) + "\nEncoded locally — integers are exact at any size (never read through a floating-point number), byte strings over 64 bytes are chunked the way Plutus requires, and the datum hash is the blake2b-256 of these exact CBOR bytes.";
+    });
+
+    /* --- native script (multisig / timelock): policy ID, CBOR, script address --- */
+    document.getElementById("nativescript").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var out = document.getElementById("native-result");
+      var res = nativeScript(document.getElementById("native-input").value);
+      if (res === null) {
+        out.textContent = "Enter one native script as cardano-cli JSON: {\"type\":\"sig\",\"keyHash\":\"…\"} (keyHash is exactly 56 hex characters), {\"type\":\"all\",\"scripts\":[…]}, {\"type\":\"any\",\"scripts\":[…]}, {\"type\":\"atLeast\",\"required\":2,\"scripts\":[…]}, {\"type\":\"after\",\"slot\":…} or {\"type\":\"before\",\"slot\":…}. Scripts nest freely; slots and counts are whole numbers.";
+        return;
+      }
+      out.textContent = "Policy ID (script hash): " + res.policyId + "\nCBOR: " + res.cbor + "\nScript address (mainnet): " + res.mainnetAddress + "\nScript address (testnet): " + res.testnetAddress + "\nComputed locally, offline. The script address is the enterprise address locked by this script — funds sent there can only be spent when the script's conditions are met.";
     });
 
     var now = nowSlotEpoch(Date.now());

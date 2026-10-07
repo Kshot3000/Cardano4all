@@ -165,6 +165,15 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   header, kind and credential hash. Proven against all five test vectors
   published in CIP-129 itself and against a real DRep's published ID pair
   (the same hash in its CIP-129 and legacy forms, reproduced both ways).
+- **Native script — policy ID & script address** — paste a native
+  (multisig / timelock) script in the `cardano-cli` JSON form (`sig`,
+  `all`, `any`, `atLeast`, `after`, `before`, nesting freely) and get its
+  exact ledger CBOR, its policy ID (the script hash a minting script's
+  assets live under) and the enterprise script address it locks. Slots
+  and counts are handled as exact integers at any size. Every encoding
+  and hash is proven against pycardano 0.19.2's NativeScript classes,
+  and the derived script address is proven by decoding it back through
+  the hub's own CIP-19 address decoder.
 
 ## Guides
 
