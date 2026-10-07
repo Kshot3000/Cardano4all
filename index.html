@@ -230,6 +230,14 @@
         <button type="submit" class="btn primary">Decode CBOR</button>
         <p id="cbor-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="dataencode">
+        <h3>Plutus Data encoder</h3>
+        <p>The write side of the decoder above. Datums and redeemers are built as <strong>Plutus Data</strong> and shown across Cardano tooling in a standard JSON form — <code>{"int": 42}</code>, <code>{"bytes": "deadbeef"}</code>, <code>{"list": […]}</code>, <code>{"map": [{"k": …, "v": …}]}</code>, <code>{"constructor": 0, "fields": […]}</code>. Paste one value in that form to get its exact CBOR and its <strong>datum hash</strong>, locally: integers are exact at any size, byte strings over 64 bytes are chunked the way Plutus requires, and constructors use the tag forms current tooling uses (121+, 1280+ and tag 102). For example <code>{"constructor":0,"fields":[{"int":42},{"int":43}]}</code> encodes to the sample datum the hash tool uses, <code>d8799f182a182bff</code>.</p>
+        <label for="data-input">Plutus Data (JSON)</label>
+        <textarea id="data-input" rows="3" spellcheck="false" placeholder="e.g. {&quot;constructor&quot;:0,&quot;fields&quot;:[{&quot;int&quot;:42},{&quot;int&quot;:43}]}"></textarea>
+        <button type="submit" class="btn primary">Encode to CBOR</button>
+        <p id="data-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="keyaddr">
         <h3>Key hashes &amp; address builder</h3>
         <p>Addresses are built from <strong>key hashes</strong> — the blake2b-224 hash of a public verification key — not from the keys themselves. Paste a payment verification key (and optionally a stake verification key) to get its key hash and the addresses it controls: the <strong>base</strong> address a wallet normally shows, the <strong>enterprise</strong> address (payment key only — it cannot earn staking rewards), and the <strong>reward</strong> address where staking rewards land. Everything is computed locally; this works on public verification keys only — <em>never paste a private or signing key into any website, including this one</em>.</p>
@@ -325,6 +333,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

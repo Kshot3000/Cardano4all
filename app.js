@@ -832,8 +832,9 @@ function parseGovId(raw) {
    the datum hash tool above: paste a datum's CBOR (or any CBOR) as hex
    and read back its structure. Integers decode as exact BigInt (no float
    rounding, however large); byte strings render as h'…'; Plutus
-   constructor tags render as Constr (tags 121–127 directly, tag 1280 in
-   its [index, fields] form), and bignum tags 2/3 render as the integer
+   constructor tags render as Constr (tags 121–127 directly, tags
+   1280–1400 as index + 7, tag 102 in its [index, fields] form), and
+   bignum tags 2/3 render as the integer
    they encode. Indefinite-length items (the 9f…ff style Plutus Data
    uses) are supported. Trailing bytes, truncation, reserved additional
    information and invalid UTF-8 in text strings are all rejected — the
@@ -985,12 +986,21 @@ function cborRender(node) {
     case "simple": return "simple(" + node.n + ")";
     case "tag": {
       var n = node.n;
-      /* Plutus Data constructors: tags 121–127 are Constr (tag − 121)
-         directly; tag 1280 wraps [alternative, fields]. */
+      /* Plutus Data constructors, in the encoding current tooling uses
+         (cross-checked against pycardano): tags 121–127 are Constr
+         (tag − 121) directly; tags 1280–1400 are Constr (tag − 1280 + 7)
+         with the fields list as the tagged item; tag 102 wraps
+         [alternative, fields]. An earlier version here read tag 1280
+         itself as the [alternative, fields] wrapper — obsolete: under
+         the current encoding the item after tag 1280 IS Constr 7's
+         fields list. */
       if (n >= 121n && n <= 127n && node.item.t === "array") {
         return "Constr " + (n - 121n).toString() + " " + cborRender(node.item);
       }
-      if (n === 1280n && node.item.t === "array" && node.item.items.length === 2 &&
+      if (n >= 1280n && n <= 1400n && node.item.t === "array") {
+        return "Constr " + (n - 1280n + 7n).toString() + " " + cborRender(node.item);
+      }
+      if (n === 102n && node.item.t === "array" && node.item.items.length === 2 &&
           node.item.items[0].t === "int" && node.item.items[1].t === "array") {
         return "Constr " + node.item.items[0].v.toString() + " " + cborRender(node.item.items[1]);
       }
@@ -1018,6 +1028,180 @@ function decodeCbor(raw) {
   return cborRender(r.node);
 }
 
+/* Plutus Data encoder — the write side of the decoder above. Input is
+   the detailed JSON schema used across Cardano tooling (the form
+   cardano-db-sync and Blockfrost show for datums):
+     {"int": 42}                          an integer, exact at any size
+     {"bytes": "deadbeef"}                a byte string, as hex
+     {"list": [ … ]}                      a list of data values
+     {"map": [{"k": …, "v": …}, …]}       a map of data values
+     {"constructor": 0, "fields": [ … ]}  a constructor with fields
+   Encoding rules, each pinned against the reference implementation
+   pycardano (0.19.2) in scratch before wiring, and end-to-end by the
+   datum-hash anchor below:
+   - integers use the shortest CBOR form; magnitudes at or beyond 2^64
+     use bignum tags 2 (positive) / 3 (negative) over the magnitude's
+     minimal big-endian bytes;
+   - byte strings of up to 64 bytes are definite-length; longer ones
+     are indefinite-length in 64-byte chunks (Plutus Core spec §D.5);
+   - lists are indefinite-length (9f…ff), maps definite-length;
+   - constructors use tag 121 + index (index 0–6), tag 1280 + index − 7
+     (index 7–127), or tag 102 wrapping [index, fields] (index ≥ 128);
+     a constructor's fields list is indefinite-length when non-empty
+     and the definite empty list (80) when empty, matching pycardano;
+   - {"constructor":0,"fields":[{"int":42},{"int":43}]} encodes to
+     d8799f182a182bff — the decoder's sample datum — and hashes to that
+     datum's known hash, tying encoder, decoder and hash tool together.
+   Numbers in the JSON are read as decimal text (never through a float),
+   so a 30-digit integer encodes exactly; "int" given as a quoted
+   decimal string is accepted too. Structure is validated strictly:
+   unknown keys, missing map keys/values, odd-length byte hex, negative
+   or oversized constructor indices and trailing JSON garbage are all
+   rejected. Caps: 64 KiB of JSON text, depth 100, 1,000 items per
+   list/map/fields, 128 digits per integer, 8 KiB per byte string. */
+function cborHead(major, v) { /* v: BigInt >= 0; shortest-form head */
+  var m = major << 5, out = [], s;
+  if (v < 24n) return [m | Number(v)];
+  if (v < 256n) return [m | 24, Number(v)];
+  if (v < 65536n) return [m | 25, Number(v >> 8n), Number(v & 255n)];
+  if (v < 4294967296n) { for (s = 24n; s >= 0n; s -= 8n) out.push(Number((v >> s) & 255n)); return [m | 26].concat(out); }
+  for (s = 56n; s >= 0n; s -= 8n) out.push(Number((v >> s) & 255n));
+  return [m | 27].concat(out);
+}
+function bigIntMagnitudeBytes(v) { /* v: BigInt > 0 -> minimal BE bytes */
+  var hex = v.toString(16); if (hex.length % 2) hex = "0" + hex;
+  return hexToBytes(hex);
+}
+function encodeDataInt(v) { /* v: BigInt -> CBOR integer bytes */
+  var mag;
+  if (v >= 0n) {
+    if (v < 18446744073709551616n) return cborHead(0, v);
+    mag = bigIntMagnitudeBytes(v);
+    return [0xc2].concat(cborHead(2, BigInt(mag.length)), mag);
+  }
+  mag = -1n - v;
+  if (mag < 18446744073709551616n) return cborHead(1, mag);
+  mag = bigIntMagnitudeBytes(mag);
+  return [0xc3].concat(cborHead(2, BigInt(mag.length)), mag);
+}
+function encodeDataBytes(bytes) {
+  var out, i, chunk;
+  if (bytes.length <= 64) return cborHead(2, BigInt(bytes.length)).concat(bytes);
+  out = [0x5f];
+  for (i = 0; i < bytes.length; i += 64) {
+    chunk = bytes.slice(i, i + 64);
+    out = out.concat(cborHead(2, BigInt(chunk.length)), chunk);
+  }
+  out.push(0xff);
+  return out;
+}
+function encodeDataListItems(items, depth) {
+  var out = [0x9f], i, e;
+  for (i = 0; i < items.length; i++) {
+    e = encodeDataNode(items[i], depth + 1);
+    if (!e) return null;
+    out = out.concat(e);
+  }
+  out.push(0xff);
+  return out;
+}
+function encodeDataNode(node, depth) {
+  var out, i, ek, ev, fieldsEnc;
+  if (depth > 100) return null;
+  switch (node.t) {
+    case "int": return encodeDataInt(node.v);
+    case "bytes": return encodeDataBytes(node.bytes);
+    case "list": return encodeDataListItems(node.items, depth);
+    case "map":
+      out = cborHead(5, BigInt(node.pairs.length));
+      for (i = 0; i < node.pairs.length; i++) {
+        ek = encodeDataNode(node.pairs[i][0], depth + 1);
+        ev = encodeDataNode(node.pairs[i][1], depth + 1);
+        if (!ek || !ev) return null;
+        out = out.concat(ek, ev);
+      }
+      return out;
+    case "constr":
+      if (node.index < 128n) {
+        fieldsEnc = node.fields.length === 0 ? [0x80] : encodeDataListItems(node.fields, depth);
+        if (!fieldsEnc) return null;
+        return cborHead(6, node.index < 7n ? 121n + node.index : 1280n + node.index - 7n).concat(fieldsEnc);
+      }
+      fieldsEnc = encodeDataListItems(node.fields, depth);
+      if (!fieldsEnc) return null;
+      return cborHead(6, 102n).concat([0x82], encodeDataInt(node.index), fieldsEnc);
+  }
+  return null;
+}
+function validateDataNode(obj, depth) {
+  var keys, s, items, pairs, fields, i, n, k, v, idx;
+  if (depth > 100 || obj === null || typeof obj !== "object" || Array.isArray(obj)) return null;
+  keys = Object.keys(obj);
+  if (keys.length === 1 && keys[0] === "int") {
+    s = obj.int;
+    if (typeof s !== "string" || !/^-?\d+$/.test(s) || s.replace("-", "").length > 128) return null;
+    return { t: "int", v: BigInt(s) };
+  }
+  if (keys.length === 1 && keys[0] === "bytes") {
+    s = obj.bytes;
+    if (typeof s !== "string") return null;
+    s = s.trim().toLowerCase().replace(/^0x/, "");
+    if (!/^([0-9a-f]{2})*$/.test(s) || s.length > 16384) return null;
+    return { t: "bytes", bytes: hexToBytes(s) };
+  }
+  if (keys.length === 1 && keys[0] === "list") {
+    if (!Array.isArray(obj.list) || obj.list.length > 1000) return null;
+    items = [];
+    for (i = 0; i < obj.list.length; i++) {
+      n = validateDataNode(obj.list[i], depth + 1);
+      if (!n) return null;
+      items.push(n);
+    }
+    return { t: "list", items: items };
+  }
+  if (keys.length === 1 && keys[0] === "map") {
+    if (!Array.isArray(obj.map) || obj.map.length > 1000) return null;
+    pairs = [];
+    for (i = 0; i < obj.map.length; i++) {
+      if (obj.map[i] === null || typeof obj.map[i] !== "object" || Array.isArray(obj.map[i])) return null;
+      if (Object.keys(obj.map[i]).length !== 2 || !("k" in obj.map[i]) || !("v" in obj.map[i])) return null;
+      k = validateDataNode(obj.map[i].k, depth + 1);
+      v = validateDataNode(obj.map[i].v, depth + 1);
+      if (!k || !v) return null;
+      pairs.push([k, v]);
+    }
+    return { t: "map", pairs: pairs };
+  }
+  if (keys.length === 2 && "constructor" in obj && "fields" in obj) {
+    s = obj.constructor;
+    if (typeof s !== "string" || !/^\d+$/.test(s)) return null;
+    idx = BigInt(s);
+    if (idx > 18446744073709551615n) return null;
+    if (!Array.isArray(obj.fields) || obj.fields.length > 1000) return null;
+    fields = [];
+    for (i = 0; i < obj.fields.length; i++) {
+      n = validateDataNode(obj.fields[i], depth + 1);
+      if (!n) return null;
+      fields.push(n);
+    }
+    return { t: "constr", index: idx, fields: fields };
+  }
+  return null;
+}
+/* encodePlutusData(jsonText) -> CBOR hex, or null for any input that is
+   not exactly one valid Plutus Data value in the detailed JSON schema. */
+function encodePlutusData(text) {
+  var quoted, root, node, out;
+  if (typeof text !== "string" || text.trim().length === 0 || text.length > 65536) return null;
+  quoted = text.replace(/"(int|constructor)"\s*:\s*(-?\d+)/g, "\"$1\":\"$2\"");
+  try { root = JSON.parse(quoted); } catch (e) { return null; }
+  node = validateDataNode(root, 0);
+  if (!node) return null;
+  out = encodeDataNode(node, 0);
+  if (!out) return null;
+  return bytesToHex(out);
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -1030,7 +1214,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1338,6 +1522,18 @@ if (typeof document !== "undefined") {
         return;
       }
       out.textContent = res + "\nDecoded locally from the CBOR bytes (RFC 8949) — integers are exact, byte strings show as h'…', and Plutus constructors show as Constr. Decoding shows structure only; it does not verify that a datum matches any particular script's schema.";
+    });
+
+    /* --- Plutus Data encoder (detailed JSON -> CBOR + datum hash) --- */
+    document.getElementById("dataencode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var out = document.getElementById("data-result");
+      var hex = encodePlutusData(document.getElementById("data-input").value);
+      if (hex === null) {
+        out.textContent = "Enter exactly one Plutus Data value in the detailed JSON form — {\"int\": …}, {\"bytes\": \"…\"}, {\"list\": […]}, {\"map\": [{\"k\": …, \"v\": …}]} or {\"constructor\": …, \"fields\": […]}. Unknown keys, odd-length byte hex and negative constructor indices are rejected.";
+        return;
+      }
+      out.textContent = "CBOR: " + hex + "\nDatum hash: " + datumHash(hex) + "\nReads back as: " + decodeCbor(hex) + "\nEncoded locally — integers are exact at any size (never read through a floating-point number), byte strings over 64 bytes are chunked the way Plutus requires, and the datum hash is the blake2b-256 of these exact CBOR bytes.";
     });
 
     var now = nowSlotEpoch(Date.now());

@@ -95,6 +95,21 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   rejected. Proven against the RFC 8949 Appendix A example set and real
   Plutus Data encodings (`d8799f182a182bff` = `Constr 0 [42, 43]`).
   Structure only — it does not validate a datum against a script's schema.
+  The decoder recognises all three Plutus constructor tag forms
+  (121–127, 1280–1400, and tag 102 wrapping `[index, fields]`).
+- **Plutus Data encoder** — the decoder's write side: paste one Plutus
+  Data value in the detailed JSON schema (`{"int": …}`, `{"bytes": "…"}`,
+  `{"list": […]}`, `{"map": [{"k": …, "v": …}]}`,
+  `{"constructor": …, "fields": […]}`) and get its exact CBOR plus its
+  datum hash, locally and offline. Integers are exact at any size
+  (never read through a float; magnitudes beyond 64 bits use the
+  bignum tags), byte strings over 64 bytes are chunked into 64-byte
+  pieces as Plutus requires, and constructors use the tag forms above.
+  Proven against the reference implementation pycardano: its encodings
+  match this encoder's across the test-vector set, it decodes this
+  encoder's output back to the identical structure, and the sample
+  datum `{"constructor":0,"fields":[{"int":42},{"int":43}]}` encodes to
+  `d8799f182a182bff` and hashes to that datum's known hash.
 - **Key hashes & address builder** — the blake2b-224 key hash of a public
   payment/stake verification key, and the addresses built from key hashes
   (CIP-19 layout): base, enterprise and reward, mainnet or testnet, locally

@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=14"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=15"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -430,7 +430,9 @@ check("cbor: generic tag renders as tag n (…)", app.decodeCbor("d74401020304")
 check("cbor: Plutus integer 42 (182a)", app.decodeCbor("182a") === "42");
 check("cbor: Plutus Constr 0 [42, 43] (the hash tool's sample datum)", app.decodeCbor("d8799f182a182bff") === "Constr 0 [42, 43]");
 check("cbor: Plutus Constr 0 [] and Constr 1 [1]", app.decodeCbor("d87980") === "Constr 0 []" && app.decodeCbor("d87a9f01ff") === "Constr 1 [1]");
-check("cbor: Plutus Constr via tag 1280 [index, fields]", app.decodeCbor("d90500820183020304") === "Constr 1 [2, 3, 4]");
+check("cbor: Plutus Constr via tag 1280+ (Constr 7, fields are the tagged item)", app.decodeCbor("d9050080") === "Constr 7 []" && app.decodeCbor("d905009f0102ff") === "Constr 7 [1, 2]" && app.decodeCbor("d9057880") === "Constr 127 []");
+check("cbor: Plutus Constr via tag 102 [index, fields]", app.decodeCbor("d8668219012c9f01ff") === "Constr 300 [1]" && app.decodeCbor("d866821905009fff") === "Constr 1280 []");
+check("cbor: tag 1280 is Constr 7, not the obsolete [index, fields] wrapper", app.decodeCbor("d90500820183020304") === "Constr 7 [1, [2, 3, 4]]");
 check("cbor: Plutus map datum (a1 = map of pairs used by Data)", app.decodeCbor("a10102") === "{1: 2}");
 check("cbor: decoded datum hashes back to the hub's known datum hash", app.datumHash("d8799f182a182bff") === "75e8eb9badfb369842b9796f1b2ef45e24f2b0e42d3f99b13639b2663dbf34ba" && app.decodeCbor("d8799f182a182bff") === "Constr 0 [42, 43]");
 check("cbor: 0x prefix + uppercase + whitespace accepted", app.decodeCbor(" 0xD8799F182A182BFF ") === "Constr 0 [42, 43]");
@@ -444,6 +446,37 @@ check("cbor rejects reserved additional info (1c)", app.decodeCbor("1c") === nul
 check("cbor rejects indefinite integer (1f)", app.decodeCbor("1f") === null);
 check("cbor rejects invalid UTF-8 text", app.decodeCbor("62c328") === null);
 check("cbor rejects a truncated array(3)", app.decodeCbor("8301820203") === null);
+
+/* Plutus Data encoder — the decoder's write side. Ground truth is the
+   reference implementation pycardano 0.19.2, run in scratch: every
+   vector below is pycardano's own to_cbor_hex() for the same JSON
+   (from_json), its datum hash for the sample datum matches the hub's
+   known hash, and pycardano decoded this encoder's output for the
+   full vector set back to the identical structure. The one place the
+   encoder deliberately differs from pycardano's from_json output is
+   a NESTED constructor's fields framing (definite there, indefinite
+   here at every depth) — a cbor2 serialisation quirk in that path;
+   the uniform indefinite rule matches pycardano's top-level output
+   and the ledger accepts both framings on decode. */
+check("data encoder in page", html.includes('id="dataencode"') && html.includes('id="data-input"') && html.includes('id="data-result"'));
+check("dataenc: integers at every width", app.encodePlutusData('{"int":0}') === "00" && app.encodePlutusData('{"int":42}') === "182a" && app.encodePlutusData('{"int":-1}') === "20" && app.encodePlutusData('{"int":24}') === "1818" && app.encodePlutusData('{"int":-25}') === "3818" && app.encodePlutusData('{"int":1000}') === "1903e8" && app.encodePlutusData('{"int":4294967296}') === "1b0000000100000000" && app.encodePlutusData('{"int":-18446744073709551616}') === "3bffffffffffffffff");
+check("dataenc: bignum integers beyond 64 bits (tags 2/3)", app.encodePlutusData('{"int":18446744073709551616}') === "c249010000000000000000" && app.encodePlutusData('{"int":-18446744073709551617}') === "c349010000000000000000" && app.encodePlutusData('{"int":1000000000000000000000000000000}') === "c24d0c9f2c9cd04674edea40000000");
+check("dataenc: quoted int accepted, exact beyond float precision", app.encodePlutusData('{"int":"18446744073709551616"}') === "c249010000000000000000" && app.encodePlutusData('{"int":18446744073709551616}') === "c249010000000000000000");
+check("dataenc: byte strings at the definite-length boundaries", app.encodePlutusData('{"bytes":""}') === "40" && app.encodePlutusData('{"bytes":"01020304"}') === "4401020304" && app.encodePlutusData('{"bytes":"' + "00".repeat(23) + '"}') === "57" + "00".repeat(23) && app.encodePlutusData('{"bytes":"' + "00".repeat(24) + '"}') === "5818" + "00".repeat(24));
+check("dataenc: byte strings over 64 bytes chunked (Plutus rule)", app.encodePlutusData('{"bytes":"' + "aa".repeat(65) + '"}') === "5f5840" + "aa".repeat(64) + "41aaff" && app.encodePlutusData('{"bytes":"' + "aa".repeat(130) + '"}') === "5f5840" + "aa".repeat(64) + "5840" + "aa".repeat(64) + "42aaaaff");
+check("dataenc: lists are indefinite, maps definite", app.encodePlutusData('{"list":[]}') === "9fff" && app.encodePlutusData('{"list":[{"int":1},{"int":2},{"int":3}]}') === "9f010203ff" && app.encodePlutusData('{"map":[]}') === "a0" && app.encodePlutusData('{"map":[{"k":{"int":1},"v":{"int":2}}]}') === "a10102");
+check("dataenc: map with mixed key/value types", app.encodePlutusData('{"map":[{"k":{"int":1},"v":{"bytes":"ff"}},{"k":{"bytes":"00"},"v":{"list":[]}}]}') === "a20141ff41009fff");
+check("dataenc: Constr tags 121+ for indices 0-6", app.encodePlutusData('{"constructor":0,"fields":[{"int":42},{"int":43}]}') === "d8799f182a182bff" && app.encodePlutusData('{"constructor":0,"fields":[]}') === "d87980" && app.encodePlutusData('{"constructor":1,"fields":[{"int":1}]}') === "d87a9f01ff" && app.encodePlutusData('{"constructor":6,"fields":[]}') === "d87f80");
+check("dataenc: Constr tags 1280+ for indices 7-127", app.encodePlutusData('{"constructor":7,"fields":[]}') === "d9050080" && app.encodePlutusData('{"constructor":7,"fields":[{"int":1},{"int":2}]}') === "d905009f0102ff" && app.encodePlutusData('{"constructor":127,"fields":[]}') === "d9057880");
+check("dataenc: Constr tag 102 for indices 128+", app.encodePlutusData('{"constructor":262,"fields":[]}') === "d866821901069fff" && app.encodePlutusData('{"constructor":262,"fields":[{"int":5}]}') === "d866821901069f05ff" && app.encodePlutusData('{"constructor":300,"fields":[{"int":1}]}') === "d8668219012c9f01ff" && app.encodePlutusData('{"constructor":1280,"fields":[]}') === "d866821905009fff");
+check("dataenc: chunked bytes nested inside a constructor", app.encodePlutusData('{"constructor":2,"fields":[{"bytes":"' + "ab".repeat(65) + '"}]}') === "d87b9f5f5840" + "ab".repeat(64) + "41abffff");
+check("dataenc: sample datum hashes to the hub's known datum hash", app.datumHash(app.encodePlutusData('{"constructor":0,"fields":[{"int":42},{"int":43}]}')) === "75e8eb9badfb369842b9796f1b2ef45e24f2b0e42d3f99b13639b2663dbf34ba");
+check("dataenc: round-trips through the hub decoder", app.decodeCbor(app.encodePlutusData('{"constructor":0,"fields":[{"int":42},{"int":43}]}')) === "Constr 0 [42, 43]" && app.decodeCbor(app.encodePlutusData('{"constructor":7,"fields":[{"int":1},{"int":2}]}')) === "Constr 7 [1, 2]" && app.decodeCbor(app.encodePlutusData('{"constructor":300,"fields":[{"int":1}]}')) === "Constr 300 [1]" && app.decodeCbor(app.encodePlutusData('{"map":[{"k":{"int":1},"v":{"bytes":"ff"}}]}')) === "{1: h'ff'}" && app.decodeCbor(app.encodePlutusData('{"list":[{"constructor":3,"fields":[{"bytes":"cafe"}]}]}')) === "[Constr 3 [h'cafe']]" && app.decodeCbor(app.encodePlutusData('{"bytes":"' + "aa".repeat(65) + '"}')) === "h'" + "aa".repeat(65) + "'");
+check("dataenc rejects empty / non-JSON input", app.encodePlutusData("") === null && app.encodePlutusData("not json") === null && app.encodePlutusData("[1,2]") === null && app.encodePlutusData("42") === null);
+check("dataenc rejects malformed values", app.encodePlutusData('{"int":1.5}') === null && app.encodePlutusData('{"int":1e3}') === null && app.encodePlutusData('{"bytes":"abc"}') === null && app.encodePlutusData('{"bytes":"zz"}') === null && app.encodePlutusData('{"foo":1}') === null);
+check("dataenc rejects malformed constructors", app.encodePlutusData('{"constructor":-1,"fields":[]}') === null && app.encodePlutusData('{"constructor":0}') === null && app.encodePlutusData('{"constructor":0,"fields":[],"extra":1}') === null && app.encodePlutusData('{"constructor":18446744073709551616,"fields":[]}') === null);
+check("dataenc rejects malformed lists and maps", app.encodePlutusData('{"list":[1]}') === null && app.encodePlutusData('{"map":[{"k":{"int":1}}]}') === null && app.encodePlutusData('{"map":[{"k":{"int":1},"v":{"int":2},"x":{"int":3}}]}') === null);
+check("dataenc rejects an oversized integer", app.encodePlutusData('{"int":' + "9".repeat(200) + "}") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
