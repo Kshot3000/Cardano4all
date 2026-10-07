@@ -28,6 +28,10 @@ check("has <main> landmark", /<main[\s>]/.test(html));
 check("all form controls labelled", ["addr", "ada", "lovelace", "q"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
 check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=1"));
+check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
+check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
+check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
+check("theme.css references bundled scene.svg (no external art)", fs.readFileSync(path.join(root, "visual-upgrade", "theme.css"), "utf8").includes('url("scene.svg")'));
 
 /* flagship links */
 for (const url of ["https://nightdream.xyz/", "https://kshot3000.github.io/Grok-CIP-113/",
