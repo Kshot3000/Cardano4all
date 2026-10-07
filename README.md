@@ -72,6 +72,12 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   blake2b-160 of the concatenated bytes, locally and offline (a pure-JS
   BLAKE2b proven against all eight official CIP-14 test vectors). One-way
   by design — a fingerprint cannot be reversed to the policy ID and name.
+- **Datum & script hashes** — a datum hash (blake2b-256 of the datum's CBOR
+  bytes) and script hashes (blake2b-224 of the language tag + script bytes:
+  native, PlutusV1/V2/V3 — for a minting script the hash is its policy ID),
+  computed locally from hex input. The shared pure-JS BLAKE2b is now the
+  general multi-block form, cross-checked against Python `hashlib.blake2b`
+  for digest sizes 20/28/32/64 and inputs up to 1,000 bytes.
 
 ## Guides
 

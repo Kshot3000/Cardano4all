@@ -319,49 +319,72 @@ function poolIdToHex(raw) {
    pure-JS implementation (RFC 7693, BigInt 64-bit words, unkeyed, fanout 1,
    depth 1) proven against ALL eight official CIP-14 test vectors in
    tests/test-site.js, and cross-checked against Python hashlib.blake2b.
-   Inputs stay tiny (28-byte policy + up to 32-byte name = 60 bytes max),
-   so a single compression block always suffices. */
+   Fingerprint inputs stay tiny (28-byte policy + up to 32-byte name), but
+   the implementation below is the general multi-block BLAKE2b, shared with
+   the datum/script hash tool. */
 var BLAKE2B_IV = [0x6a09e667f3bcc908n, 0xbb67ae8584caa73bn, 0x3c6ef372fe94f82bn, 0xa54ff53a5f1d36f1n, 0x510e527fade682d1n, 0x9b05688c2b3e6c1fn, 0x1f83d9abfb41bd6bn, 0x5be0cd19137e2179n];
 var BLAKE2B_SIGMA = [[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],[14,10,4,8,9,15,13,6,1,12,0,2,11,7,5,3],[11,8,12,0,5,2,15,13,10,14,3,6,7,1,9,4],[7,9,3,1,13,12,11,14,2,6,5,10,4,0,15,8],[9,0,5,7,2,4,10,15,14,1,11,12,6,8,3,13],[2,12,6,10,0,11,8,3,4,13,7,5,15,14,1,9],[12,5,1,15,14,13,4,10,0,7,6,3,9,2,8,11],[13,11,7,14,12,1,3,9,5,0,15,4,8,6,2,10],[6,15,14,9,11,3,0,8,12,2,13,7,1,4,10,5],[10,2,8,4,7,6,1,5,15,11,9,14,3,12,13,0]];
 var MASK64 = (1n << 64n) - 1n;
 function rotr64(x, n) { return ((x >> BigInt(n)) | (x << BigInt(64 - n))) & MASK64; }
 
-/* blake2b160(bytes) -> array of 20 bytes. Callers must pass <= 128 bytes
-   (asset fingerprint inputs are at most 60); returns null above that. */
-function blake2b160(input) {
-  if (!input || input.length > 128) return null;
+/* blake2b(bytes, outLen) -> array of outLen bytes (1..64), or null.
+   General multi-block BLAKE2b: inputs of any length are compressed block
+   by block with the running byte counter, the final block flagged. Proven
+   in tests/test-site.js against Python hashlib.blake2b for digest sizes
+   20/28/32/64 and input lengths 0..1000 bytes (block boundaries incl.). */
+function blake2b(input, outLen) {
+  if (!input || typeof outLen !== "number" || outLen < 1 || outLen > 64) return null;
   var h = BLAKE2B_IV.slice();
-  h[0] ^= 0x01010000n ^ 20n; /* param word: digest 20, key 0, fanout 1, depth 1 */
-  var block = []; for (var i = 0; i < 128; i++) block.push(i < input.length ? input[i] : 0);
-  var m = [];
-  for (var w = 0; w < 16; w++) {
-    var word = 0n;
-    for (var j = 7; j >= 0; j--) word = (word << 8n) | BigInt(block[w * 8 + j]);
-    m.push(word);
+  h[0] ^= 0x01010000n ^ BigInt(outLen); /* param word: digest len, key 0, fanout 1, depth 1 */
+  function compress(blockBytes, counter, isLast) {
+    var m = [];
+    for (var w = 0; w < 16; w++) {
+      var word = 0n;
+      for (var j = 7; j >= 0; j--) word = (word << 8n) | BigInt(blockBytes[w * 8 + j]);
+      m.push(word);
+    }
+    var v = h.concat(BLAKE2B_IV);
+    v[12] ^= BigInt(counter); /* bytes compressed so far (inputs < 2^64) */
+    if (isLast) v[14] ^= MASK64; /* final block flag */
+    function G(a, b, c, d, x, y) {
+      v[a] = (v[a] + v[b] + x) & MASK64; v[d] = rotr64(v[d] ^ v[a], 32);
+      v[c] = (v[c] + v[d]) & MASK64; v[b] = rotr64(v[b] ^ v[c], 24);
+      v[a] = (v[a] + v[b] + y) & MASK64; v[d] = rotr64(v[d] ^ v[a], 16);
+      v[c] = (v[c] + v[d]) & MASK64; v[b] = rotr64(v[b] ^ v[c], 63);
+    }
+    for (var r = 0; r < 12; r++) {
+      var s = BLAKE2B_SIGMA[r % 10];
+      G(0, 4, 8, 12, m[s[0]], m[s[1]]); G(1, 5, 9, 13, m[s[2]], m[s[3]]);
+      G(2, 6, 10, 14, m[s[4]], m[s[5]]); G(3, 7, 11, 15, m[s[6]], m[s[7]]);
+      G(0, 5, 10, 15, m[s[8]], m[s[9]]); G(1, 6, 11, 12, m[s[10]], m[s[11]]);
+      G(2, 7, 8, 13, m[s[12]], m[s[13]]); G(3, 4, 9, 14, m[s[14]], m[s[15]]);
+    }
+    for (var k = 0; k < 8; k++) h[k] ^= v[k] ^ v[k + 8];
   }
-  var v = h.concat(BLAKE2B_IV);
-  v[12] ^= BigInt(input.length); /* byte counter (inputs < 2^64) */
-  v[14] ^= MASK64; /* final block */
-  function G(a, b, c, d, x, y) {
-    v[a] = (v[a] + v[b] + x) & MASK64; v[d] = rotr64(v[d] ^ v[a], 32);
-    v[c] = (v[c] + v[d]) & MASK64; v[b] = rotr64(v[b] ^ v[c], 24);
-    v[a] = (v[a] + v[b] + y) & MASK64; v[d] = rotr64(v[d] ^ v[a], 16);
-    v[c] = (v[c] + v[d]) & MASK64; v[b] = rotr64(v[b] ^ v[c], 63);
+  var offset = 0;
+  var counter = 0;
+  while (input.length - offset > 128) {
+    counter += 128;
+    compress(input.slice(offset, offset + 128), counter, false);
+    offset += 128;
   }
-  for (var r = 0; r < 12; r++) {
-    var s = BLAKE2B_SIGMA[r % 10];
-    G(0, 4, 8, 12, m[s[0]], m[s[1]]); G(1, 5, 9, 13, m[s[2]], m[s[3]]);
-    G(2, 6, 10, 14, m[s[4]], m[s[5]]); G(3, 7, 11, 15, m[s[6]], m[s[7]]);
-    G(0, 5, 10, 15, m[s[8]], m[s[9]]); G(1, 6, 11, 12, m[s[10]], m[s[11]]);
-    G(2, 7, 8, 13, m[s[12]], m[s[13]]); G(3, 4, 9, 14, m[s[14]], m[s[15]]);
-  }
-  for (var k = 0; k < 8; k++) h[k] ^= v[k] ^ v[k + 8];
+  var lastLen = input.length - offset;
+  counter += lastLen;
+  var lastBlock = [];
+  for (var i = 0; i < 128; i++) lastBlock.push(i < lastLen ? input[offset + i] : 0);
+  compress(lastBlock, counter, true);
   var out = [];
-  for (var q = 0; q < 8 && out.length < 20; q++) {
+  for (var q = 0; q < 8 && out.length < outLen; q++) {
     var hv = h[q];
-    for (var b2 = 0; b2 < 8 && out.length < 20; b2++) { out.push(Number(hv & 255n)); hv >>= 8n; }
+    for (var b2 = 0; b2 < 8 && out.length < outLen; b2++) { out.push(Number(hv & 255n)); hv >>= 8n; }
   }
   return out;
+}
+
+/* blake2b160(bytes) -> array of 20 bytes (CIP-14 fingerprint digest). */
+function blake2b160(input) {
+  if (!input) return null;
+  return blake2b(input, 20);
 }
 
 /* assetFingerprint(policyIdHex, assetNameHex) -> "asset1…" or null.
@@ -378,6 +401,42 @@ function assetFingerprint(policyRaw, nameRaw) {
   return groups === null ? null : bech32Encode("asset", groups);
 }
 
+/* Datum & script hashes — the two hashes Cardano developers reach for
+   daily. A datum hash is blake2b-256 of the datum's CBOR bytes (the
+   serialised Plutus Data). A script hash is blake2b-224 of a one-byte
+   language tag followed by the script bytes: 0x00 native, 0x01 PlutusV1,
+   0x02 PlutusV2, 0x03 PlutusV3 (the ledger's hashScript rule — the same
+   rule the Mesh #763 fix shipped for Plutus scripts). A script hash IS
+   the script's policy ID when the script mints. Input is raw bytes as
+   hex: for Plutus scripts that means the flat-encoded script bytes (the
+   compiledCode from an Aiken blueprint), NOT the CBOR-wrapped form some
+   tools display. All vectors in tests/test-site.js were cross-checked
+   against Python hashlib.blake2b before this shipped. */
+var SCRIPT_HASH_TAGS = { native: 0, plutusv1: 1, plutusv2: 2, plutusv3: 3 };
+var HASH_MAX_HEX = 65536; /* 32 KiB of bytes — far above any real script */
+
+function hashHexBytes(raw) {
+  var hex = (raw || "").trim().toLowerCase().replace(/^0x/, "");
+  if (hex.length === 0 || hex.length > HASH_MAX_HEX) return null;
+  if (!/^([0-9a-f]{2})+$/.test(hex)) return null;
+  return hexToBytes(hex);
+}
+
+function datumHash(dataHex) {
+  var bytes = hashHexBytes(dataHex);
+  if (bytes === null) return null;
+  var digest = blake2b(bytes, 32);
+  return digest === null ? null : bytesToHex(digest);
+}
+
+function scriptHash(kind, scriptHex) {
+  if (!(kind in SCRIPT_HASH_TAGS)) return null;
+  var bytes = hashHexBytes(scriptHex);
+  if (bytes === null) return null;
+  var digest = blake2b([SCRIPT_HASH_TAGS[kind]].concat(bytes), 28);
+  return digest === null ? null : bytesToHex(digest);
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -390,7 +449,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, assetFingerprint };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash };
 }
 
 if (typeof document !== "undefined") {
@@ -531,6 +590,25 @@ if (typeof document !== "undefined") {
         return;
       }
       out.textContent = "Asset fingerprint (CIP-14): " + res + " — the one-way user-facing ID for this asset; it cannot be reversed back to the policy ID and asset name.";
+    });
+
+    /* --- datum & script hashes (blake2b, offline) --- */
+    document.getElementById("hashcalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var kind = document.getElementById("hash-kind").value;
+      var raw = document.getElementById("hash-bytes").value;
+      var out = document.getElementById("hash-result");
+      var res = kind === "datum" ? datumHash(raw) : scriptHash(kind, raw);
+      if (!res) {
+        out.textContent = "Enter the bytes as hex (whole bytes, at least one). For a datum that is the CBOR of the Plutus Data; for a Plutus script, the flat script bytes (a blueprint's compiledCode), not the CBOR-wrapped form.";
+        return;
+      }
+      if (kind === "datum") {
+        out.textContent = "Datum hash (blake2b-256 of the data CBOR): " + res;
+      } else {
+        var label = { native: "Native script", plutusv1: "PlutusV1", plutusv2: "PlutusV2", plutusv3: "PlutusV3" }[kind];
+        out.textContent = label + " script hash (blake2b-224 of the language tag + script bytes): " + res + " — for a minting script this hash is its policy ID.";
+      }
     });
 
     var now = nowSlotEpoch(Date.now());
