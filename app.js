@@ -225,6 +225,29 @@ function stakingEstimate(stakeStr, rateStr, epochsStr) {
   };
 }
 
+/* Transaction minimum fee — mainnet protocol parameters, verified against
+   the Koios epoch_params endpoint for epoch 660 on 2026-10-07
+   (min_fee_a = 44, min_fee_b = 155381, max_tx_size = 16384):
+   minFee = min_fee_a x txSizeBytes + min_fee_b, in lovelace, exact BigInt
+   arithmetic. This is the size-based minimum only: transactions that run
+   Plutus scripts also pay execution-unit costs, and transactions carrying
+   reference scripts pay an additional per-byte charge, so real fees for
+   script transactions are higher. Wallets may also pay above the minimum. */
+var MIN_FEE_A = 44n;
+var MIN_FEE_B = 155381n;
+var MAX_TX_SIZE = 16384;
+
+/* minFee(txSizeBytes) -> { sizeBytes, feeLovelace } (fee as decimal string)
+   or null for empty, fractional, non-numeric, zero or over-max sizes. */
+function minFee(sizeStr) {
+  var size = parseSlot(sizeStr);
+  if (size === null || size < 1 || size > MAX_TX_SIZE) return null;
+  return {
+    sizeBytes: size,
+    feeLovelace: (MIN_FEE_A * BigInt(size) + MIN_FEE_B).toString()
+  };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -237,7 +260,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee };
 }
 
 if (typeof document !== "undefined") {
@@ -334,6 +357,19 @@ if (typeof document !== "undefined") {
         res.epochs + (res.epochs === 1 ? " epoch" : " epochs") + " ≈ " + lovelaceToAda(res.totalRewardLovelace) +
         " ADA · ending stake ≈ " + lovelaceToAda(res.finalLovelace) +
         " ADA. Modelled estimate only — actual pool rewards vary and are not promised.";
+    });
+
+    /* --- transaction minimum fee (size-based, exact BigInt maths) --- */
+    document.getElementById("feecalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = minFee(document.getElementById("fee-size").value);
+      var out = document.getElementById("fee-result");
+      if (!res) {
+        out.textContent = "Enter a whole transaction size in bytes, from 1 to 16384 (the mainnet maximum transaction size).";
+        return;
+      }
+      out.textContent = "Minimum fee for a " + res.sizeBytes + "-byte transaction = " + res.feeLovelace +
+        " lovelace (" + lovelaceToAda(res.feeLovelace) + " ADA). Size-based minimum only — Plutus script execution and reference scripts cost extra, and a wallet may pay above the minimum.";
     });
 
     var now = nowSlotEpoch(Date.now());

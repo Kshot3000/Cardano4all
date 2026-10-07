@@ -59,6 +59,11 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   assume, split evenly over Cardano's 73 five-day epochs a year and compounded
   per epoch in exact BigInt lovelace maths. An estimate only — not live chain
   data and not a promise of returns.
+- **Transaction fee calculator** — the mainnet minimum fee from the protocol
+  formula (44 lovelace/byte × transaction size + 155,381 lovelace, parameters
+  verified live via Koios for epoch 660), in exact BigInt lovelace maths.
+  Labelled as the size-based floor: script execution and reference-script
+  costs come on top.
 
 ## Guides
 

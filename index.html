@@ -170,6 +170,15 @@
         <button type="submit" class="btn primary">Estimate rewards</button>
         <p id="stake-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="feecalc">
+        <h3>Transaction fee calculator</h3>
+        <p>Cardano's minimum fee is a fixed protocol formula: <strong>44 lovelace per byte of transaction size + 155,381 lovelace</strong> (mainnet parameters, checked against the live protocol parameters for epoch 660). Enter a transaction size — your wallet or <code>cardano-cli</code> reports it when building — and get the exact minimum in lovelace.</p>
+        <label for="fee-size">Transaction size (bytes)</label>
+        <input id="fee-size" inputmode="numeric" placeholder="e.g. 200" autocomplete="off">
+        <button type="submit" class="btn primary">Calculate minimum fee</button>
+        <p id="fee-result" role="status" aria-live="polite"></p>
+        <p>Size-based minimum only: transactions that run Plutus scripts also pay for execution units, and reference scripts add a per-byte charge, so real script transactions cost more than this floor.</p>
+      </form>
     </div>
   </section>
 
@@ -200,6 +209,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

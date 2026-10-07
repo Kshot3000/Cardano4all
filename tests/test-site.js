@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=3"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=4"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -114,6 +114,22 @@ check("epochs above sanity cap rejected", app.stakingEstimate("1000", "3.5", "36
 check("fractional epochs rejected", app.stakingEstimate("1000", "3.5", "1.5") === null);
 check("7-decimal stake rejected", app.stakingEstimate("1.0000001", "3.5", "1") === null);
 check("garbage staking inputs rejected", app.stakingEstimate("abc", "3.5", "1") === null && app.stakingEstimate("1000", "abc", "1") === null);
+
+/* transaction minimum fee — mainnet protocol parameters verified live via
+   Koios epoch_params for epoch 660 (2026-10-07): min_fee_a = 44 lovelace/byte,
+   min_fee_b = 155381 lovelace, max_tx_size = 16384 bytes.
+   fee = 44 x size + 155381. Hand-checked: 44x200 = 8800, +155381 = 164181. */
+check("fee calculator in page", html.includes('id="feecalc"') && html.includes('id="fee-result"'));
+check("fee for 200-byte tx = 164181 lovelace", app.minFee("200").feeLovelace === "164181");
+check("fee for 1-byte tx = 155425 lovelace", app.minFee("1").feeLovelace === "155425");
+check("fee for 1000-byte tx = 199381 lovelace", app.minFee("1000").feeLovelace === "199381");
+check("fee at max tx size 16384 = 876277 lovelace", app.minFee("16384").feeLovelace === "876277");
+check("size above max tx size rejected", app.minFee("16385") === null);
+check("zero size rejected", app.minFee("0") === null);
+check("fractional size rejected", app.minFee("200.5") === null);
+check("garbage size rejected", app.minFee("abc") === null);
+check("empty size rejected", app.minFee("") === null);
+check("fee result carries size echo", app.minFee("200").sizeBytes === 200);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
