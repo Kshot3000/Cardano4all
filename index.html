@@ -229,6 +229,14 @@
         <button type="submit" class="btn primary">Build addresses</button>
         <p id="key-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="addrdecode">
+        <h3>Address decoder (CIP-19)</h3>
+        <p>The builder above in reverse. Every Shelley address starts with a one-byte header — the address type in the high half, the network in the low half — followed by 28-byte credential hashes. Paste any base, pointer, enterprise or reward address to see its type, network and the <strong>payment and stake credential hashes</strong> inside it, plus the enterprise and reward addresses derived from those same hashes. Computed locally; Byron addresses predate this layout and are not decoded.</p>
+        <label for="decode-addr">Cardano address</label>
+        <textarea id="decode-addr" rows="3" spellcheck="false" placeholder="addr1… or stake1…"></textarea>
+        <button type="submit" class="btn primary">Decode address</button>
+        <p id="decode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
     </div>
   </section>
 
@@ -259,6 +267,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

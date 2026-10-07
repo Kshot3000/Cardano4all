@@ -85,6 +85,14 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   `hashlib.blake2b`; the builder is proven end-to-end by rebuilding a real
   wallet-generated mainnet address byte-for-byte from its key hashes.
   Public verification keys only — never a private/signing key.
+- **Address decoder (CIP-19)** — the builder in reverse: paste any Shelley
+  base, pointer, enterprise or reward address to decode its one-byte header
+  (type + network), extract the payment and stake credential hashes inside
+  it, and derive the related enterprise and reward addresses from the same
+  hashes, locally and offline. Proven against a real wallet-generated
+  address: decoding it returns exactly its known key hashes and re-derives
+  the builder's enterprise/reward outputs. Byron addresses predate the
+  header layout and are not decoded.
 
 ## Guides
 

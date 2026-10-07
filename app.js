@@ -487,6 +487,111 @@ function buildAddress(kind, network, payHashRaw, stakeHashRaw) {
   return groups === null ? null : bech32Encode(hrp, groups);
 }
 
+/* Address decoder (CIP-19) — the reverse of the builder above. A Shelley
+   address payload is a one-byte header (address type in the high nibble,
+   network id in the low nibble: 1 = mainnet, 0 = testnet) followed by
+   28-byte credential hashes. Types: 0-3 base (payment key/script x stake
+   key/script, 57-byte payload), 4-5 pointer (payment credential + a chain
+   pointer in place of the stake hash), 6-7 enterprise (payment credential
+   only, 29 bytes), 14-15 reward (stake credential only, 29 bytes, stake
+   prefix). The decoder extracts the credentials and derives the related
+   enterprise / reward addresses from the same hashes — derivations are
+   pure byte rearrangement + bech32, proven in the tests by decoding a real
+   wallet-generated mainnet address to its known key hashes and re-deriving
+   the exact enterprise and reward addresses the builder produces. Byron
+   addresses (no header byte, CBOR-wrapped payload) return null. */
+function bech32DecodeBytes(raw) {
+  var s = (raw || "").trim();
+  var check = verifyBech32(s);
+  if (!check.valid) return null;
+  var lower = s.toLowerCase();
+  var dataPart = lower.slice(lower.lastIndexOf("1") + 1, -6); /* strip checksum */
+  var values = [];
+  for (var i = 0; i < dataPart.length; i++) values.push(BECH32_CHARSET.indexOf(dataPart[i]));
+  var bytes = convertBits(values, 5, 8, false);
+  return bytes === null ? null : { hrp: check.hrp, bytes: bytes };
+}
+
+function encodeAddressBytes(hrp, bytes) {
+  var groups = convertBits(bytes, 8, 5, true);
+  return groups === null ? null : bech32Encode(hrp, groups);
+}
+
+/* decodeAddress("addr1…") -> { type, typeLabel, network, header,
+   paymentKind, paymentHash, stakeKind, stakeHash, pointerHex,
+   enterprise, reward } or null. Hashes are lowercase hex; fields that a
+   type does not carry are null. The hrp family and the header network bit
+   must agree (addr/stake = mainnet id 1, addr_test/stake_test = id 0). */
+function decodeAddress(raw) {
+  var dec = bech32DecodeBytes(raw);
+  if (dec === null) return null;
+  var isStakeHrp = dec.hrp === "stake" || dec.hrp === "stake_test";
+  var isAddrHrp = dec.hrp === "addr" || dec.hrp === "addr_test";
+  if (!isStakeHrp && !isAddrHrp) return null;
+  var bytes = dec.bytes;
+  if (bytes.length < 29) return null;
+  var header = bytes[0];
+  var type = header >> 4;
+  var netId = header & 15;
+  var network = netId === 1 ? "mainnet" : netId === 0 ? "testnet" : null;
+  if (network === null) return null;
+  if ((dec.hrp === "addr" || dec.hrp === "stake") !== (netId === 1)) return null;
+  if (isStakeHrp !== (type === 14 || type === 15)) return null;
+  var addrHrp = network === "mainnet" ? "addr" : "addr_test";
+  var stakeHrp = network === "mainnet" ? "stake" : "stake_test";
+  var out = {
+    type: type, network: network, header: header,
+    paymentKind: null, paymentHash: null,
+    stakeKind: null, stakeHash: null, pointerHex: null,
+    enterprise: null, reward: null
+  };
+  function enterpriseFrom(payKind, payBytes) {
+    var h = ((payKind === "script" ? 7 : 6) << 4) | netId;
+    return encodeAddressBytes(addrHrp, [h].concat(payBytes));
+  }
+  function rewardFrom(stakeKind, stakeBytes) {
+    var h = ((stakeKind === "script" ? 15 : 14) << 4) | netId;
+    return encodeAddressBytes(stakeHrp, [h].concat(stakeBytes));
+  }
+  if (type >= 0 && type <= 3) {
+    if (bytes.length !== 57) return null;
+    out.typeLabel = "Base address";
+    out.paymentKind = (type === 1 || type === 3) ? "script" : "key";
+    out.stakeKind = (type === 2 || type === 3) ? "script" : "key";
+    out.paymentHash = bytesToHex(bytes.slice(1, 29));
+    out.stakeHash = bytesToHex(bytes.slice(29, 57));
+    out.enterprise = enterpriseFrom(out.paymentKind, bytes.slice(1, 29));
+    out.reward = rewardFrom(out.stakeKind, bytes.slice(29, 57));
+    return out;
+  }
+  if (type === 4 || type === 5) {
+    if (bytes.length <= 29) return null;
+    out.typeLabel = "Pointer address";
+    out.paymentKind = type === 5 ? "script" : "key";
+    out.paymentHash = bytesToHex(bytes.slice(1, 29));
+    out.pointerHex = bytesToHex(bytes.slice(29));
+    out.enterprise = enterpriseFrom(out.paymentKind, bytes.slice(1, 29));
+    return out;
+  }
+  if (type === 6 || type === 7) {
+    if (bytes.length !== 29) return null;
+    out.typeLabel = "Enterprise address";
+    out.paymentKind = type === 7 ? "script" : "key";
+    out.paymentHash = bytesToHex(bytes.slice(1, 29));
+    out.enterprise = encodeAddressBytes(addrHrp, bytes);
+    return out;
+  }
+  if (type === 14 || type === 15) {
+    if (bytes.length !== 29) return null;
+    out.typeLabel = "Reward address";
+    out.stakeKind = type === 15 ? "script" : "key";
+    out.stakeHash = bytesToHex(bytes.slice(1, 29));
+    out.reward = encodeAddressBytes(stakeHrp, bytes);
+    return out;
+  }
+  return null; /* types 8-13: Byron / reserved — not Shelley header addresses */
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -499,7 +604,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -688,6 +793,24 @@ if (typeof document !== "undefined") {
         lines.push("Reward address (" + network + ", where staking rewards land): " +
           buildAddress("reward", network, null, stakeHash));
       }
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- address decoder (CIP-19 header + credentials, offline) --- */
+    document.getElementById("addrdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var out = document.getElementById("decode-result");
+      var res = decodeAddress(document.getElementById("decode-addr").value);
+      if (!res) {
+        out.textContent = "Enter a valid Shelley-era address (base, pointer, enterprise or reward, with a verifying bech32 checksum). Byron addresses predate the header-byte layout and are not decoded here.";
+        return;
+      }
+      var lines = [res.typeLabel + " · " + res.network + " · header byte 0x" + res.header.toString(16).padStart(2, "0") + " (type " + res.type + ")"];
+      if (res.paymentHash) lines.push("Payment credential (" + res.paymentKind + " hash): " + res.paymentHash);
+      if (res.stakeHash) lines.push("Stake credential (" + res.stakeKind + " hash): " + res.stakeHash);
+      if (res.pointerHex) lines.push("Stake pointer (raw bytes, a chain pointer instead of a stake credential): " + res.pointerHex);
+      if (res.enterprise && res.type !== 6 && res.type !== 7) lines.push("Its enterprise address (payment credential only — cannot earn staking rewards): " + res.enterprise);
+      if (res.reward && res.type !== 14 && res.type !== 15) lines.push("Its reward address (where this stake's rewards land): " + res.reward);
       out.textContent = lines.join("\n");
     });
 

@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=8"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=9"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -234,6 +234,39 @@ check("reward address requires a stake key hash", app.buildAddress("reward", "ma
 check("builder rejects unknown kind", app.buildAddress("byron", "mainnet", PAY_KH, STAKE_KH) === null);
 check("builder rejects unknown network", app.buildAddress("base", "preview", PAY_KH, STAKE_KH) === null);
 check("builder rejects short key hash", app.buildAddress("enterprise", "mainnet", "abcd", null) === null);
+
+/* address decoder (CIP-19) — anchored to the same real wallet-generated
+   address as the builder tests: decoding the donation address must return
+   exactly the key hashes the builder tests start from, and the derived
+   enterprise / reward addresses must equal the builder's known outputs. */
+check("decoder tool in page", html.includes('id="addrdecode"') && html.includes('id="decode-result"') && html.includes('id="decode-addr"'));
+const decOwn = app.decodeAddress(ADA);
+check("decoder: donation address is a mainnet base address (type 0)", decOwn.type === 0 && decOwn.typeLabel === "Base address" && decOwn.network === "mainnet" && decOwn.header === 1);
+check("decoder: payment key hash matches the builder anchor", decOwn.paymentKind === "key" && decOwn.paymentHash === PAY_KH);
+check("decoder: stake key hash matches the builder anchor", decOwn.stakeKind === "key" && decOwn.stakeHash === STAKE_KH);
+check("decoder: derived enterprise matches the builder output", decOwn.enterprise === "addr1v8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9rgcshpl9");
+check("decoder: derived reward matches the builder output", decOwn.reward === "stake1u8ke0ya7at0s22z255al95huahj7xejt7t27mj4ql6rzeqsfy7dg5");
+check("decoder: builder -> decoder round trip on a testnet base address", (() => { const d = app.decodeAddress(app.buildAddress("base", "testnet", PAY_KH, STAKE_KH)); return d.network === "testnet" && d.paymentHash === PAY_KH && d.stakeHash === STAKE_KH && d.enterprise === app.buildAddress("enterprise", "testnet", PAY_KH, null) && d.reward === app.buildAddress("reward", "testnet", null, STAKE_KH); })());
+const decEnt = app.decodeAddress("addr1v8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9rgcshpl9");
+check("decoder: enterprise address has no stake credential and no reward", decEnt.type === 6 && decEnt.paymentHash === PAY_KH && decEnt.stakeHash === null && decEnt.reward === null);
+const decRew = app.decodeAddress("stake1u8ke0ya7at0s22z255al95huahj7xejt7t27mj4ql6rzeqsfy7dg5");
+check("decoder: reward address carries only the stake credential", decRew.type === 14 && decRew.stakeHash === STAKE_KH && decRew.paymentHash === null);
+/* script-payment base address, built byte-by-byte in the test: header 0x11
+   (type 1 = script payment + key stake), a known script hash + STAKE_KH */
+const SCRIPT_HASH = "fd7593393aa158a50d69e5f0edf759c14d3cadbe469dd9b4bf473f1b";
+const scriptAddr = app.bech32Encode("addr", app.convertBits([0x11].concat(app.hexToBytes(SCRIPT_HASH), app.hexToBytes(STAKE_KH)), 8, 5, true));
+const decScript = app.decodeAddress(scriptAddr);
+check("decoder: script payment credential typed as script", decScript.type === 1 && decScript.paymentKind === "script" && decScript.paymentHash === SCRIPT_HASH && decScript.stakeKind === "key");
+check("decoder: script enterprise derivation uses type 7 header", app.decodeAddress(decScript.enterprise).type === 7);
+/* pointer address: header 0x41 (type 4) + payment hash + pointer bytes */
+const pointerAddr = app.bech32Encode("addr", app.convertBits([0x41].concat(app.hexToBytes(PAY_KH), [1, 2, 3]), 8, 5, true));
+const decPtr = app.decodeAddress(pointerAddr);
+check("decoder: pointer address exposes pointer bytes and no stake hash", decPtr.type === 4 && decPtr.paymentHash === PAY_KH && decPtr.pointerHex === "010203" && decPtr.stakeHash === null && decPtr.reward === null);
+check("decoder rejects a pool ID", app.decodeAddress(POOL_BECH) === null);
+check("decoder rejects a tampered address", app.decodeAddress(ADA.slice(0, -1) + "q") === null);
+check("decoder rejects garbage", app.decodeAddress("addr1garbage") === null);
+check("decoder rejects empty input", app.decodeAddress("") === null);
+check("decoder rejects a truncated base address", (() => { const full = app.bech32DecodeBytes(ADA); const trunc = app.bech32Encode("addr", app.convertBits(full.bytes.slice(0, 40), 8, 5, true)); return app.decodeAddress(trunc) === null; })());
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
