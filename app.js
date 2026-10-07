@@ -401,6 +401,63 @@ function assetFingerprint(policyRaw, nameRaw) {
   return groups === null ? null : bech32Encode("asset", groups);
 }
 
+/* Native asset unit decoder — APIs (Blockfrost, Koios, cardano-cli)
+   identify a native asset by its "unit": the policy ID hex concatenated
+   with the asset-name hex, one long hex string. This splits a unit back
+   into its parts and derives the CIP-14 fingerprint from them. The
+   reverse split is exact — a unit is a plain concatenation, first 28
+   bytes policy ID, the remaining 0–32 bytes the asset name. A CIP-14
+   fingerprint (asset1…) is a hash and is NOT a unit: it cannot be
+   decoded back, and this tool rejects it. The asset name is also shown
+   as text when its bytes are valid UTF-8 with no control characters —
+   many token names are plain text — otherwise only the hex is shown.
+   Proven against all eight official CIP-14 test vectors: each vector's
+   unit (policy ‖ name) decodes to exactly its published fingerprint. */
+function assetUnit(policyRaw, nameRaw) {
+  var policy = (policyRaw || "").trim().toLowerCase().replace(/^0x/, "");
+  var name = (nameRaw || "").trim().toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{56}$/.test(policy)) return null;
+  if (!/^([0-9a-f]{2}){0,32}$/.test(name)) return null;
+  return policy + name;
+}
+
+function assetNameText(nameHex) {
+  if (nameHex === "") return "";
+  var bytes = hexToBytes(nameHex);
+  if (bytes === null) return null;
+  if (typeof TextDecoder !== "undefined") {
+    var txt;
+    try { txt = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes)); }
+    catch (e) { return null; }
+    for (var i = 0; i < txt.length; i++) {
+      var c = txt.charCodeAt(i);
+      if (c < 0x20 || c === 0x7f) return null;
+    }
+    return txt;
+  }
+  var out = "";
+  for (var j = 0; j < bytes.length; j++) {
+    if (bytes[j] < 0x20 || bytes[j] > 0x7e) return null;
+    out += String.fromCharCode(bytes[j]);
+  }
+  return out;
+}
+
+/* parseAssetUnit(raw) -> { unit, policyHex, nameHex, nameText,
+   fingerprint } or null. Accepts the unit hex (56–120 hex chars, an
+   optional 0x prefix, any case). */
+function parseAssetUnit(raw) {
+  var s = (raw || "").trim().toLowerCase().replace(/^0x/, "");
+  if (!/^([0-9a-f]{2})+$/.test(s)) return null;
+  if (s.length < 56 || s.length > 120) return null;
+  var policyHex = s.slice(0, 56);
+  var nameHex = s.slice(56);
+  var fp = assetFingerprint(policyHex, nameHex);
+  if (fp === null) return null;
+  return { unit: s, policyHex: policyHex, nameHex: nameHex,
+    nameText: assetNameText(nameHex), fingerprint: fp };
+}
+
 /* Datum & script hashes — the two hashes Cardano developers reach for
    daily. A datum hash is blake2b-256 of the datum's CBOR bytes (the
    serialised Plutus Data). A script hash is blake2b-224 of a one-byte
@@ -765,7 +822,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -906,6 +963,24 @@ if (typeof document !== "undefined") {
         return;
       }
       out.textContent = "Asset fingerprint (CIP-14): " + res + " — the one-way user-facing ID for this asset; it cannot be reversed back to the policy ID and asset name.";
+    });
+
+    /* --- asset unit decoder (unit hex -> policy + name + CIP-14 fingerprint, offline) --- */
+    document.getElementById("assetunit").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var out = document.getElementById("unit-result");
+      var res = parseAssetUnit(document.getElementById("unit-input").value);
+      if (!res) {
+        out.textContent = "Enter an asset unit as hex: the 56-character policy ID followed by the asset name in hex (0 to 64 more characters). An asset1… fingerprint is a one-way hash, not a unit — it cannot be decoded back to the policy ID and name.";
+        return;
+      }
+      var lines = ["Policy ID: " + res.policyHex];
+      lines.push(res.nameHex === "" ? "Asset name: (empty — the asset has no name bytes)" :
+        "Asset name (hex): " + res.nameHex);
+      if (res.nameHex !== "" && res.nameText !== null) lines.push("Asset name as text: " + res.nameText);
+      if (res.nameHex !== "" && res.nameText === null) lines.push("Asset name as text: not readable text (the name bytes are not printable UTF-8) — the hex above is the exact name.");
+      lines.push("Fingerprint (CIP-14): " + res.fingerprint);
+      out.textContent = lines.join("\n");
     });
 
     /* --- datum & script hashes (blake2b, offline) --- */

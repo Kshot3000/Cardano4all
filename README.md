@@ -72,6 +72,13 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   blake2b-160 of the concatenated bytes, locally and offline (a pure-JS
   BLAKE2b proven against all eight official CIP-14 test vectors). One-way
   by design — a fingerprint cannot be reversed to the policy ID and name.
+- **Asset unit decoder** — splits a native asset's API "unit" (the long hex
+  string Blockfrost, Koios and `cardano-cli` use: policy ID hex concatenated
+  with asset-name hex) back into its policy ID and asset name — the name also
+  shown as text when its bytes are readable UTF-8 — and derives the asset's
+  CIP-14 fingerprint from the parts, locally and offline. Proven against all
+  eight official CIP-14 test vectors in both directions. A fingerprint
+  (`asset1…`) is a one-way hash, not a unit, and is rejected.
 - **Datum & script hashes** — a datum hash (blake2b-256 of the datum's CBOR
   bytes) and script hashes (blake2b-224 of the language tag + script bytes:
   native, PlutusV1/V2/V3 — for a minting script the hash is its policy ID),

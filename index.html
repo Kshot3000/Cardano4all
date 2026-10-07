@@ -198,6 +198,14 @@
         <button type="submit" class="btn primary">Compute fingerprint</button>
         <p id="asset-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="assetunit">
+        <h3>Asset unit decoder</h3>
+        <p>Data APIs identify a native asset by its <strong>unit</strong> — one long hex string: the policy ID followed directly by the asset name in hex. Paste a unit (from Blockfrost, Koios or <code>cardano-cli</code>) to split it back into the policy ID and the asset name — shown as text when the name bytes are readable text — plus its CIP-14 fingerprint, locally. An <code>asset1…</code> fingerprint is a one-way hash, not a unit, so it cannot be decoded this way.</p>
+        <label for="unit-input">Asset unit (hex)</label>
+        <input id="unit-input" spellcheck="false" placeholder="e.g. 7eae28af…dcc373 + 504154415445, as one hex string" autocomplete="off">
+        <button type="submit" class="btn primary">Decode unit</button>
+        <p id="unit-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="hashcalc">
         <h3>Datum &amp; script hashes</h3>
         <p>The two hashes Cardano developers reach for daily, computed locally. A <strong>datum hash</strong> is the blake2b-256 of a datum's CBOR bytes — what a transaction stores when it keeps the datum off-chain. A <strong>script hash</strong> is the blake2b-224 of a one-byte language tag plus the script bytes; for a minting script, that hash <em>is</em> its policy ID. For Plutus scripts, paste the flat script bytes (the <code>compiledCode</code> from an Aiken blueprint), not the CBOR-wrapped form some tools display.</p>
@@ -284,6 +292,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
