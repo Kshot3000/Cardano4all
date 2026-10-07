@@ -179,6 +179,15 @@
         <p id="fee-result" role="status" aria-live="polite"></p>
         <p>Size-based minimum only: transactions that run Plutus scripts also pay for execution units, and reference scripts add a per-byte charge, so real script transactions cost more than this floor.</p>
       </form>
+      <form class="tool" id="poolid">
+        <h3>Pool ID converter</h3>
+        <p>A stake pool ID is a 28-byte hash shown two ways: 56 hex characters, or bech32 starting <code>pool1…</code>. Convert between them locally — explorers, pool tooling and <code>cardano-cli</code> each prefer a different form.</p>
+        <label for="pool-hex">Pool ID (hex)</label>
+        <input id="pool-hex" spellcheck="false" placeholder="e.g. 7facad662e180ce45e5c504957cd1341940c72a708728f7ecfc6e349" autocomplete="off">
+        <label for="pool-bech32">Pool ID (bech32)</label>
+        <input id="pool-bech32" spellcheck="false" placeholder="pool1…" autocomplete="off">
+        <p id="pool-result" role="status" aria-live="polite"></p>
+      </form>
     </div>
   </section>
 
@@ -209,6 +218,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

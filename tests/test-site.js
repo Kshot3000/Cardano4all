@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=4"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=5"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -130,6 +130,24 @@ check("fractional size rejected", app.minFee("200.5") === null);
 check("garbage size rejected", app.minFee("abc") === null);
 check("empty size rejected", app.minFee("") === null);
 check("fee result carries size echo", app.minFee("200").sizeBytes === 200);
+
+/* pool ID converter — verified vector cross-checked against @cardano-sdk/core
+   (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the
+   hex beside it. Both directions must reproduce the pair exactly. */
+const POOL_HEX = "7facad662e180ce45e5c504957cd1341940c72a708728f7ecfc6e349";
+const POOL_BECH = "pool107k26e3wrqxwghju2py40ngngx2qcu48ppeg7lk0cm35jl2aenx";
+check("pool ID converter in page", html.includes('id="poolid"') && html.includes('id="pool-result"'));
+check("pool hex -> bech32 matches verified vector", app.poolIdFromHex(POOL_HEX) === POOL_BECH);
+check("pool bech32 -> hex matches verified vector", app.poolIdToHex(POOL_BECH) === POOL_HEX);
+check("pool round trip", app.poolIdToHex(app.poolIdFromHex(POOL_HEX)) === POOL_HEX);
+check("uppercase hex accepted", app.poolIdFromHex(POOL_HEX.toUpperCase()) === POOL_BECH);
+check("short hex rejected", app.poolIdFromHex(POOL_HEX.slice(0, 54)) === null);
+check("long hex rejected", app.poolIdFromHex(POOL_HEX + "ab") === null);
+check("non-hex rejected", app.poolIdFromHex("zz" + POOL_HEX.slice(2)) === null);
+check("empty hex rejected", app.poolIdFromHex("") === null);
+check("payment address is not a pool ID", app.poolIdToHex(ADA) === null);
+check("tampered pool ID rejected", app.poolIdToHex(POOL_BECH.slice(0, -1) + "q") === null);
+check("garbage pool ID rejected", app.poolIdToHex("pool1garbage") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

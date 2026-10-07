@@ -64,6 +64,9 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   verified live via Koios for epoch 660), in exact BigInt lovelace maths.
   Labelled as the size-based floor: script execution and reference-script
   costs come on top.
+- **Pool ID converter** — converts a stake pool ID between its 56-character
+  hex form and its bech32 (`pool1…`) form, locally and offline, with full
+  bech32 checksum verification on the way back.
 
 ## Guides
 

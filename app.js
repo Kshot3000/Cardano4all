@@ -248,6 +248,70 @@ function minFee(sizeStr) {
   };
 }
 
+/* Pool ID converter — a Cardano stake pool ID is a 28-byte blake2b-224
+   hash of the pool's cold verification key. Explorers and tooling show it
+   in two forms: 56 hex characters, or bech32 with the "pool" HRP (CIP-19).
+   Converting between them is pure regrouping: hex bytes -> 5-bit groups
+   (padded) -> bech32 with checksum; and back with strict padding checks.
+   Verified vector (cross-checked against @cardano-sdk/core in the Mesh
+   #692 investigation, 2026-10-07):
+   hex 7facad662e180ce45e5c504957cd1341940c72a708728f7ecfc6e349
+   <-> pool107k26e3wrqxwghju2py40ngngx2qcu48ppeg7lk0cm35jl2aenx */
+function convertBits(data, fromBits, toBits, pad) {
+  var acc = 0, bits = 0, out = [];
+  var maxv = (1 << toBits) - 1;
+  for (var i = 0; i < data.length; i++) {
+    var v = data[i];
+    if (v < 0 || (v >> fromBits) !== 0) return null;
+    acc = (acc << fromBits) | v;
+    bits += fromBits;
+    while (bits >= toBits) {
+      bits -= toBits;
+      out.push((acc >> bits) & maxv);
+    }
+  }
+  if (pad) {
+    if (bits > 0) out.push((acc << (toBits - bits)) & maxv);
+  } else {
+    if (bits >= fromBits) return null;
+    if (((acc << (toBits - bits)) & maxv) !== 0) return null;
+  }
+  return out;
+}
+
+function hexToBytes(hex) {
+  var out = [];
+  for (var i = 0; i < hex.length; i += 2) out.push(parseInt(hex.slice(i, i + 2), 16));
+  return out;
+}
+
+function bytesToHex(bytes) {
+  return bytes.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+}
+
+/* poolIdFromHex("7fac…") -> "pool1…" or null unless exactly 28 bytes of hex */
+function poolIdFromHex(raw) {
+  var s = (raw || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{56}$/.test(s)) return null;
+  var groups = convertBits(hexToBytes(s), 8, 5, true);
+  return groups === null ? null : bech32Encode("pool", groups);
+}
+
+/* poolIdToHex("pool1…") -> 56-char lowercase hex or null. Requires a valid
+   bech32 checksum, the "pool" HRP, and exactly 28 decoded bytes. */
+function poolIdToHex(raw) {
+  var s = (raw || "").trim();
+  var check = verifyBech32(s);
+  if (!check.valid || check.hrp !== "pool") return null;
+  var lower = s.toLowerCase();
+  var dataPart = lower.slice(lower.lastIndexOf("1") + 1, -6); /* strip checksum */
+  var values = [];
+  for (var i = 0; i < dataPart.length; i++) values.push(BECH32_CHARSET.indexOf(dataPart[i]));
+  var bytes = convertBits(values, 5, 8, false);
+  if (bytes === null || bytes.length !== 28) return null;
+  return bytesToHex(bytes);
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -260,7 +324,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex };
 }
 
 if (typeof document !== "undefined") {
@@ -370,6 +434,23 @@ if (typeof document !== "undefined") {
       }
       out.textContent = "Minimum fee for a " + res.sizeBytes + "-byte transaction = " + res.feeLovelace +
         " lovelace (" + lovelaceToAda(res.feeLovelace) + " ADA). Size-based minimum only — Plutus script execution and reference scripts cost extra, and a wallet may pay above the minimum.";
+    });
+
+    /* --- pool ID converter (two-way, offline bech32 <-> hex) --- */
+    var poolHexInput = document.getElementById("pool-hex");
+    var poolBechInput = document.getElementById("pool-bech32");
+    var poolResult = document.getElementById("pool-result");
+    poolHexInput.addEventListener("input", function () {
+      var out = poolIdFromHex(poolHexInput.value);
+      if (poolHexInput.value.trim() === "") { poolBechInput.value = ""; poolResult.textContent = ""; return; }
+      poolBechInput.value = out === null ? "" : out;
+      poolResult.textContent = out === null ? "Enter the pool ID as exactly 56 hex characters (28 bytes)." : "Pool ID in bech32 form: " + out;
+    });
+    poolBechInput.addEventListener("input", function () {
+      var out = poolIdToHex(poolBechInput.value);
+      if (poolBechInput.value.trim() === "") { poolHexInput.value = ""; poolResult.textContent = ""; return; }
+      poolHexInput.value = out === null ? "" : out;
+      poolResult.textContent = out === null ? "Enter a valid bech32 pool ID (starts with pool1, checksum must verify)." : "Pool ID in hex form: " + out;
     });
 
     var now = nowSlotEpoch(Date.now());
