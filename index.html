@@ -148,6 +148,16 @@
         <input id="lovelace" inputmode="numeric" placeholder="e.g. 12500000" autocomplete="off">
         <p id="conv-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="epochcalc">
+        <h3>Epoch / slot calculator</h3>
+        <p>Convert between Cardano mainnet slots and epochs, offline, from the fixed protocol parameters: Byron epochs held 21,600 slots of 20 seconds; since Shelley (epoch 208, slot 4,492,800) an epoch holds 432,000 slots of 1 second.</p>
+        <label for="slot">Slot number</label>
+        <input id="slot" inputmode="numeric" placeholder="e.g. 4492800" autocomplete="off">
+        <label for="epoch">Epoch number</label>
+        <input id="epoch" inputmode="numeric" placeholder="e.g. 208" autocomplete="off">
+        <p id="epoch-result" role="status" aria-live="polite"></p>
+        <p id="epoch-now" role="status"></p>
+      </form>
     </div>
   </section>
 
@@ -178,6 +188,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

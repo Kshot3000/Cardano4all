@@ -109,8 +109,83 @@ function lovelaceToAda(lovelaceStr) {
   return frac ? whole.toString() + "." + frac : whole.toString();
 }
 
+/* Cardano mainnet time parameters (protocol constants, not live data).
+   Byron era: 21,600 slots/epoch x 20s slots, system start 1506203091
+   (2017-09-23 21:44:51 UTC). Shelley began at absolute slot 4,492,800 =
+   epoch 208, unix 1596059091 (2020-07-29 21:44:51 UTC) — check:
+   1506203091 + 208 x 432,000 = 1596059091. Shelley and later:
+   432,000 slots/epoch x 1s slots. Absolute slot numbering is continuous
+   across the Byron -> Shelley transition. */
+var SYSTEM_START_UNIX = 1506203091;
+var BYRON_SLOTS_PER_EPOCH = 21600;
+var BYRON_SLOT_SECONDS = 20;
+var SHELLEY_START_SLOT = 4492800;
+var SHELLEY_START_EPOCH = 208;
+var SHELLEY_START_UNIX = 1596059091;
+var SLOTS_PER_EPOCH = 432000;
+var SLOT_SECONDS = 1;
+
+function parseSlot(raw) {
+  var s = (raw || "").trim();
+  if (!/^\d+$/.test(s)) return null;
+  var v = Number(s);
+  return Number.isSafeInteger(v) ? v : null;
+}
+
+/* slot -> {era, epoch, slotInEpoch, epochSlots, unixSeconds} or null */
+function slotToEpoch(raw) {
+  var slot = parseSlot(raw);
+  if (slot === null) return null;
+  if (slot < SHELLEY_START_SLOT) {
+    return {
+      slot: slot,
+      era: "Byron",
+      epoch: Math.floor(slot / BYRON_SLOTS_PER_EPOCH),
+      slotInEpoch: slot % BYRON_SLOTS_PER_EPOCH,
+      epochSlots: BYRON_SLOTS_PER_EPOCH,
+      unixSeconds: SYSTEM_START_UNIX + slot * BYRON_SLOT_SECONDS
+    };
+  }
+  var rel = slot - SHELLEY_START_SLOT;
+  return {
+    slot: slot,
+    era: "Shelley or later",
+    epoch: SHELLEY_START_EPOCH + Math.floor(rel / SLOTS_PER_EPOCH),
+    slotInEpoch: rel % SLOTS_PER_EPOCH,
+    epochSlots: SLOTS_PER_EPOCH,
+    unixSeconds: SHELLEY_START_UNIX + rel * SLOT_SECONDS
+  };
+}
+
+/* epoch -> {slot, unixSeconds} of that epoch's first slot, or null */
+function epochStart(raw) {
+  var epoch = parseSlot(raw);
+  if (epoch === null) return null;
+  if (epoch < SHELLEY_START_EPOCH) {
+    return {
+      slot: epoch * BYRON_SLOTS_PER_EPOCH,
+      unixSeconds: SYSTEM_START_UNIX + epoch * BYRON_SLOTS_PER_EPOCH * BYRON_SLOT_SECONDS
+    };
+  }
+  return {
+    slot: SHELLEY_START_SLOT + (epoch - SHELLEY_START_EPOCH) * SLOTS_PER_EPOCH,
+    unixSeconds: SHELLEY_START_UNIX + (epoch - SHELLEY_START_EPOCH) * SLOTS_PER_EPOCH * SLOT_SECONDS
+  };
+}
+
+/* Current slot/epoch derived from the local clock + the fixed parameters
+   above. An estimate from wall-clock time, NOT live chain data. */
+function nowSlotEpoch(nowMs) {
+  var unix = Math.floor((typeof nowMs === "number" ? nowMs : Date.now()) / 1000);
+  if (unix < SYSTEM_START_UNIX) return null;
+  if (unix < SHELLEY_START_UNIX) {
+    return slotToEpoch(String(Math.floor((unix - SYSTEM_START_UNIX) / BYRON_SLOT_SECONDS)));
+  }
+  return slotToEpoch(String(SHELLEY_START_SLOT + (unix - SHELLEY_START_UNIX)));
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch };
 }
 
 if (typeof document !== "undefined") {
@@ -168,6 +243,35 @@ if (typeof document !== "undefined") {
       adaInput.value = out === null ? "" : out;
       convResult.textContent = out === null ? "Lovelace must be a whole number." : lovInput.value.trim() + " lovelace = " + out + " ADA";
     });
+
+    /* --- epoch / slot calculator (two-way, offline from protocol constants) --- */
+    var slotInput = document.getElementById("slot");
+    var epochInput = document.getElementById("epoch");
+    var epochResult = document.getElementById("epoch-result");
+    function fmtUnix(u) { return new Date(u * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC"); }
+    slotInput.addEventListener("input", function () {
+      var res = slotToEpoch(slotInput.value);
+      if (slotInput.value.trim() === "") { epochInput.value = ""; epochResult.textContent = ""; return; }
+      if (!res) { epochResult.textContent = "Enter a whole slot number (0 or higher)."; return; }
+      epochInput.value = String(res.epoch);
+      epochResult.textContent = "Slot " + slotInput.value.trim() + " is in epoch " + res.epoch +
+        " (" + res.era + " era), slot " + res.slotInEpoch + " of " + res.epochSlots +
+        " in that epoch · " + fmtUnix(res.unixSeconds);
+    });
+    epochInput.addEventListener("input", function () {
+      var res = epochStart(epochInput.value);
+      if (epochInput.value.trim() === "") { slotInput.value = ""; epochResult.textContent = ""; return; }
+      if (!res) { epochResult.textContent = "Enter a whole epoch number (0 or higher)."; return; }
+      slotInput.value = String(res.slot);
+      epochResult.textContent = "Epoch " + epochInput.value.trim() + " starts at slot " + res.slot +
+        " · " + fmtUnix(res.unixSeconds);
+    });
+    var now = nowSlotEpoch(Date.now());
+    if (now) {
+      document.getElementById("epoch-now").textContent =
+        "By your device clock it is about slot " + now.slot +
+        ", epoch " + now.epoch + " — computed offline from the fixed protocol parameters, not live chain data.";
+    }
 
     /* --- copy donation address --- */
     document.getElementById("copy-address").addEventListener("click", function () {

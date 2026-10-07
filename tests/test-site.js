@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=1"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=2"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -62,6 +62,36 @@ check("7 decimals rejected", app.adaToLovelace("0.0000001") === null);
 check("lovelace -> ADA trims zeros", app.lovelaceToAda("12500000") === "12.5");
 check("lovelace -> ADA whole", app.lovelaceToAda("3000000") === "3");
 check("round trip", app.lovelaceToAda(app.adaToLovelace("987.654321")) === "987.654321");
+
+/* epoch / slot calculator — verified mainnet parameters:
+   system start 1506203091 (2017-09-23 21:44:51 UTC); Byron 21600 slots x 20s;
+   Shelley from slot 4492800 / epoch 208 / unix 1596059091 (2020-07-29
+   21:44:51 UTC); Shelley+ 432000 slots x 1s. Cross-check:
+   1506203091 + 208 x 432000 = 1596059091. */
+check("epoch calculator in page", html.includes('id="epochcalc"') && html.includes('id="epoch-now"'));
+const s0 = app.slotToEpoch("0");
+check("slot 0 = Byron epoch 0 at system start", s0.epoch === 0 && s0.era === "Byron" && s0.unixSeconds === 1506203091);
+const sByronEnd = app.slotToEpoch("4492799");
+check("last Byron slot = epoch 207, end of epoch", sByronEnd.epoch === 207 && sByronEnd.slotInEpoch === 21599 && sByronEnd.unixSeconds === 1596059091 - 20);
+const sShelley = app.slotToEpoch("4492800");
+check("slot 4492800 = Shelley epoch 208 start", sShelley.epoch === 208 && sShelley.slotInEpoch === 0 && sShelley.unixSeconds === 1596059091);
+const s209 = app.slotToEpoch(String(4492800 + 432000));
+check("one Shelley epoch later = epoch 209", s209.epoch === 209 && s209.slotInEpoch === 0 && s209.unixSeconds === 1596059091 + 432000);
+check("epoch 0 starts at slot 0 / system start", app.epochStart("0").slot === 0 && app.epochStart("0").unixSeconds === 1506203091);
+check("epoch 208 starts at slot 4492800 / Shelley start", app.epochStart("208").slot === 4492800 && app.epochStart("208").unixSeconds === 1596059091);
+check("epoch 207 starts in Byron", app.epochStart("207").slot === 207 * 21600 && app.epochStart("207").unixSeconds === 1506203091 + 207 * 432000);
+for (const probe of ["0", "100000", "4492799", "4492800", "5000000", "123456789"]) {
+  const r = app.slotToEpoch(probe);
+  const start = app.epochStart(String(r.epoch));
+  check("epoch start <= slot " + probe + " < next epoch start", start.slot <= r.slot && start.unixSeconds <= r.unixSeconds);
+}
+check("negative slot rejected", app.slotToEpoch("-1") === null);
+check("fractional slot rejected", app.slotToEpoch("1.5") === null);
+check("garbage epoch rejected", app.epochStart("abc") === null);
+check("empty slot rejected", app.slotToEpoch("") === null);
+const nowRes = app.nowSlotEpoch(1596059091000);
+check("clock at Shelley fork = slot 4492800 epoch 208", nowRes.slot === 4492800 && nowRes.epoch === 208);
+check("pre-genesis clock rejected", app.nowSlotEpoch(0) === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

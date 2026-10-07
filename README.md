@@ -53,6 +53,8 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
 - **Address inspector** — verifies the bech32 checksum of any Cardano address
   locally in your browser and identifies payment vs stake, mainnet vs testnet.
 - **ADA ⇄ lovelace converter** — exact BigInt conversion, no float rounding.
+- **Epoch / slot calculator** — slot ⇄ epoch conversion across the Byron and
+  Shelley eras from the fixed mainnet protocol parameters, fully offline.
 
 ## Guides
 
