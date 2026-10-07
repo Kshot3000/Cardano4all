@@ -222,6 +222,14 @@
         <button type="submit" class="btn primary">Compute hash</button>
         <p id="hash-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="cbordecode">
+        <h3>CBOR / Plutus Data decoder</h3>
+        <p>The read side of the hash tool above. Datums, redeemers and script parameters all travel as <strong>CBOR</strong> (RFC 8949) — explorers show the hex, but not what it means. Paste one CBOR item as hex to read its structure locally: integers decode exactly (no floating-point rounding, however large), byte strings show as <code>h'…'</code>, and Plutus constructors show as <code>Constr</code> — <code>d8799f182a182bff</code>, the sample datum from the hash tool, reads as <code>Constr 0 [42, 43]</code>. Indefinite-length items (the style Plutus Data uses) are supported; truncated input and trailing bytes are rejected. Structure only — this does not check a datum against any script's schema.</p>
+        <label for="cbor-input">CBOR (hex)</label>
+        <textarea id="cbor-input" rows="3" spellcheck="false" placeholder="e.g. d8799f182a182bff"></textarea>
+        <button type="submit" class="btn primary">Decode CBOR</button>
+        <p id="cbor-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="keyaddr">
         <h3>Key hashes &amp; address builder</h3>
         <p>Addresses are built from <strong>key hashes</strong> — the blake2b-224 hash of a public verification key — not from the keys themselves. Paste a payment verification key (and optionally a stake verification key) to get its key hash and the addresses it controls: the <strong>base</strong> address a wallet normally shows, the <strong>enterprise</strong> address (payment key only — it cannot earn staking rewards), and the <strong>reward</strong> address where staking rewards land. Everything is computed locally; this works on public verification keys only — <em>never paste a private or signing key into any website, including this one</em>.</p>
@@ -317,6 +325,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

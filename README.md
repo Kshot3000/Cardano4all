@@ -85,6 +85,16 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   computed locally from hex input. The shared pure-JS BLAKE2b is now the
   general multi-block form, cross-checked against Python `hashlib.blake2b`
   for digest sizes 20/28/32/64 and inputs up to 1,000 bytes.
+- **CBOR / Plutus Data decoder** — reads one CBOR item (RFC 8949) from hex
+  back into its structure, locally and offline: the read side of the datum
+  hash tool above. Integers decode exactly as BigInt, byte strings render
+  as `h'…'`, and Plutus constructors render as `Constr` (tags 121–127 and
+  the tag-1280 `[index, fields]` form; bignum tags 2/3 render as the integer
+  they encode). Indefinite-length items — the style Plutus Data uses — are
+  supported; truncated input, trailing bytes and invalid-UTF-8 text are
+  rejected. Proven against the RFC 8949 Appendix A example set and real
+  Plutus Data encodings (`d8799f182a182bff` = `Constr 0 [42, 43]`).
+  Structure only — it does not validate a datum against a script's schema.
 - **Key hashes & address builder** — the blake2b-224 key hash of a public
   payment/stake verification key, and the addresses built from key hashes
   (CIP-19 layout): base, enterprise and reward, mainnet or testnet, locally

@@ -828,6 +828,196 @@ function parseGovId(raw) {
   return null;
 }
 
+/* CBOR decoder (RFC 8949) with Plutus Data awareness — the read side of
+   the datum hash tool above: paste a datum's CBOR (or any CBOR) as hex
+   and read back its structure. Integers decode as exact BigInt (no float
+   rounding, however large); byte strings render as h'…'; Plutus
+   constructor tags render as Constr (tags 121–127 directly, tag 1280 in
+   its [index, fields] form), and bignum tags 2/3 render as the integer
+   they encode. Indefinite-length items (the 9f…ff style Plutus Data
+   uses) are supported. Trailing bytes, truncation, reserved additional
+   information and invalid UTF-8 in text strings are all rejected — the
+   input must be exactly one complete CBOR item. Proven against the
+   RFC 8949 Appendix A example set and real Plutus Data encodings
+   (d8799f182a182bff = Constr 0 [42, 43]) in tests/test-site.js; the
+   decoder was prototyped in scratch and every vector hand-verified
+   before it was wired in. Display only — nothing is signed or sent. */
+var CBOR_MAX_DEPTH = 100;
+var CBOR_MAX_LENGTH = 100000;
+
+function cborReadUint(bytes, pos, ai) {
+  if (ai < 24) return { v: BigInt(ai), next: pos };
+  var n = ai === 24 ? 1 : ai === 25 ? 2 : ai === 26 ? 4 : ai === 27 ? 8 : -1;
+  if (n < 0 || pos + n > bytes.length) return null;
+  var v = 0n;
+  for (var i = 0; i < n; i++) v = (v << 8n) | BigInt(bytes[pos + i]);
+  return { v: v, next: pos + n };
+}
+
+function cborHalfToNumber(h) {
+  var sign = (h & 0x8000) ? -1 : 1;
+  var exp = (h >> 10) & 0x1f;
+  var frac = h & 0x03ff;
+  if (exp === 0) return sign * (frac / 1024) * Math.pow(2, -14);
+  if (exp === 31) return frac === 0 ? sign * Infinity : NaN;
+  return sign * (1 + frac / 1024) * Math.pow(2, exp - 15);
+}
+
+/* Parse one CBOR item at bytes[pos]; returns { node, next } or null.
+   Node: { t:"int", v:BigInt } | { t:"bytes", bytes:[…] } |
+   { t:"text", v } | { t:"array", items } | { t:"map", pairs:[[k,v]] } |
+   { t:"tag", n:BigInt, item } | { t:"bool", v } | { t:"null" } |
+   { t:"undef" } | { t:"float", v } | { t:"simple", n } */
+function cborParseItem(bytes, pos, depth) {
+  if (depth > CBOR_MAX_DEPTH || pos >= bytes.length) return null;
+  var ib = bytes[pos];
+  var major = ib >> 5, ai = ib & 31;
+  pos += 1;
+  if (ai === 28 || ai === 29 || ai === 30) return null; /* reserved */
+
+  if (major === 0 || major === 1) {
+    if (ai === 31) return null;
+    var ri = cborReadUint(bytes, pos, ai);
+    if (!ri) return null;
+    return { node: { t: "int", v: major === 0 ? ri.v : -1n - ri.v }, next: ri.next };
+  }
+  if (major === 2 || major === 3) {
+    var isText = major === 3;
+    if (ai === 31) {
+      var chunks = [], nextIndef = pos;
+      for (;;) {
+        if (nextIndef >= bytes.length) return null;
+        if (bytes[nextIndef] === 0xff) { nextIndef += 1; break; }
+        var sub = cborParseItem(bytes, nextIndef, depth + 1);
+        if (!sub || sub.node.t !== (isText ? "text" : "bytes")) return null;
+        chunks.push(sub.node);
+        nextIndef = sub.next;
+      }
+      if (isText) return { node: { t: "text", v: chunks.map(function (c) { return c.v; }).join("") }, next: nextIndef };
+      var allBytes = [];
+      chunks.forEach(function (c) { allBytes = allBytes.concat(c.bytes); });
+      return { node: { t: "bytes", bytes: allBytes }, next: nextIndef };
+    }
+    var rb = cborReadUint(bytes, pos, ai);
+    if (!rb || rb.v > BigInt(CBOR_MAX_LENGTH)) return null;
+    var len = Number(rb.v);
+    if (rb.next + len > bytes.length) return null;
+    var rawBytes = bytes.slice(rb.next, rb.next + len);
+    if (isText) {
+      var text;
+      try { text = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(rawBytes)); }
+      catch (e) { return null; }
+      return { node: { t: "text", v: text }, next: rb.next + len };
+    }
+    return { node: { t: "bytes", bytes: rawBytes }, next: rb.next + len };
+  }
+  if (major === 4 || major === 5) {
+    var isMap = major === 5;
+    var count = null, nextSeq = pos;
+    if (ai !== 31) {
+      var rc = cborReadUint(bytes, pos, ai);
+      if (!rc || rc.v > BigInt(CBOR_MAX_LENGTH)) return null;
+      count = Number(rc.v);
+      nextSeq = rc.next;
+    }
+    var items = [], pairs = [];
+    for (;;) {
+      if (count !== null && (isMap ? pairs.length >= count : items.length >= count)) break;
+      if (count === null) {
+        if (nextSeq >= bytes.length) return null;
+        if (bytes[nextSeq] === 0xff) { nextSeq += 1; break; }
+      }
+      var first = cborParseItem(bytes, nextSeq, depth + 1);
+      if (!first) return null;
+      nextSeq = first.next;
+      if (isMap) {
+        var second = cborParseItem(bytes, nextSeq, depth + 1);
+        if (!second) return null;
+        nextSeq = second.next;
+        pairs.push([first.node, second.node]);
+      } else items.push(first.node);
+    }
+    return { node: isMap ? { t: "map", pairs: pairs } : { t: "array", items: items }, next: nextSeq };
+  }
+  if (major === 6) {
+    if (ai === 31) return null;
+    var rt = cborReadUint(bytes, pos, ai);
+    if (!rt) return null;
+    var inner = cborParseItem(bytes, rt.next, depth + 1);
+    if (!inner) return null;
+    return { node: { t: "tag", n: rt.v, item: inner.node }, next: inner.next };
+  }
+  /* major 7: simple values and floats */
+  if (ai < 20) return { node: { t: "simple", n: ai }, next: pos };
+  if (ai === 20) return { node: { t: "bool", v: false }, next: pos };
+  if (ai === 21) return { node: { t: "bool", v: true }, next: pos };
+  if (ai === 22) return { node: { t: "null" }, next: pos };
+  if (ai === 23) return { node: { t: "undef" }, next: pos };
+  if (ai === 24) {
+    if (pos >= bytes.length) return null;
+    if (bytes[pos] < 32) return null;
+    return { node: { t: "simple", n: bytes[pos] }, next: pos + 1 };
+  }
+  if (ai === 25) {
+    if (pos + 2 > bytes.length) return null;
+    return { node: { t: "float", v: cborHalfToNumber((bytes[pos] << 8) | bytes[pos + 1]) }, next: pos + 2 };
+  }
+  if (ai === 26 || ai === 27) {
+    var nf = ai === 26 ? 4 : 8;
+    if (pos + nf > bytes.length) return null;
+    var view = new DataView(new Uint8Array(bytes.slice(pos, pos + nf)).buffer);
+    return { node: { t: "float", v: nf === 4 ? view.getFloat32(0) : view.getFloat64(0) }, next: pos + nf };
+  }
+  return null; /* ai === 31 here is a stray break */
+}
+
+function cborRender(node) {
+  switch (node.t) {
+    case "int": return node.v.toString();
+    case "bytes": return "h'" + bytesToHex(node.bytes) + "'";
+    case "text": return JSON.stringify(node.v);
+    case "array": return "[" + node.items.map(cborRender).join(", ") + "]";
+    case "map": return "{" + node.pairs.map(function (p) { return cborRender(p[0]) + ": " + cborRender(p[1]); }).join(", ") + "}";
+    case "bool": return node.v ? "true" : "false";
+    case "null": return "null";
+    case "undef": return "undefined";
+    case "float": return isNaN(node.v) ? "NaN" : String(node.v);
+    case "simple": return "simple(" + node.n + ")";
+    case "tag": {
+      var n = node.n;
+      /* Plutus Data constructors: tags 121–127 are Constr (tag − 121)
+         directly; tag 1280 wraps [alternative, fields]. */
+      if (n >= 121n && n <= 127n && node.item.t === "array") {
+        return "Constr " + (n - 121n).toString() + " " + cborRender(node.item);
+      }
+      if (n === 1280n && node.item.t === "array" && node.item.items.length === 2 &&
+          node.item.items[0].t === "int" && node.item.items[1].t === "array") {
+        return "Constr " + node.item.items[0].v.toString() + " " + cborRender(node.item.items[1]);
+      }
+      /* Bignum tags 2 (positive) / 3 (negative, −1 − n) over a byte string. */
+      if ((n === 2n || n === 3n) && node.item.t === "bytes" && node.item.bytes.length > 0) {
+        var mag = 0n;
+        node.item.bytes.forEach(function (b) { mag = (mag << 8n) | BigInt(b); });
+        return (n === 2n ? mag : -1n - mag).toString();
+      }
+      return "tag " + n.toString() + " (" + cborRender(node.item) + ")";
+    }
+  }
+  return null;
+}
+
+/* decodeCbor(hex) -> the rendered structure of exactly one CBOR item,
+   or null for malformed, truncated or trailing-garbage input. */
+function decodeCbor(raw) {
+  var s = (raw || "").trim().toLowerCase().replace(/^0x/, "");
+  if (!/^([0-9a-f]{2})+$/.test(s)) return null;
+  var bytes = hexToBytes(s);
+  if (bytes.length === 0 || bytes.length > 65536) return null;
+  var r = cborParseItem(bytes, 0, 0);
+  if (!r || r.next !== bytes.length) return null;
+  return cborRender(r.node);
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -840,7 +1030,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1136,6 +1326,18 @@ if (typeof document !== "undefined") {
         "CIP-129 form: " + out.cip129 + "\n" +
         "Legacy CIP-105 form: " + out.legacy + "\n" +
         "Hex payload (CIP-129, header + hash): " + out.payload129Hex;
+    });
+
+    /* --- CBOR / Plutus Data decoder (RFC 8949, offline, display only) --- */
+    document.getElementById("cbordecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var out = document.getElementById("cbor-result");
+      var res = decodeCbor(document.getElementById("cbor-input").value);
+      if (res === null) {
+        out.textContent = "Enter exactly one complete CBOR item as hex — a datum's CBOR from an explorer or cardano-cli, for example. Truncated input, trailing bytes after the item, and text strings that are not valid UTF-8 are rejected.";
+        return;
+      }
+      out.textContent = res + "\nDecoded locally from the CBOR bytes (RFC 8949) — integers are exact, byte strings show as h'…', and Plutus constructors show as Constr. Decoding shows structure only; it does not verify that a datum matches any particular script's schema.";
     });
 
     var now = nowSlotEpoch(Date.now());

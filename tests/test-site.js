@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=13"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=14"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -405,6 +405,45 @@ check("pool ID is not a governance ID", app.parseGovId(POOL_BECH) === null);
 check("payment address is not a governance ID", app.parseGovId(ADA) === null);
 check("gov action index above 255 rejected", app.govActionBech32("00".repeat(32), 256) === null);
 check("empty gov input rejected", app.parseGovId("") === null);
+
+/* CBOR / Plutus Data decoder (RFC 8949) — ground truth is the example
+   set in RFC 8949 Appendix A (each value below is the RFC's own pairing
+   of encoding and value) plus real Plutus Data encodings the hub already
+   uses (00 = 0, 182a = 42, d8799f182a182bff = Constr 0 [42, 43]). The
+   decoder was prototyped in scratch first; six of the prototype's
+   initial expectations were wrong BY HAND (bignum sign, subnormal half
+   float, two truncated arrays, a mistyped tag-1280 string) and each was
+   corrected only after re-decoding the bytes by hand against the RFC —
+   the decoder itself matched the spec on every genuine vector. */
+check("cbor decoder in page", html.includes('id="cbordecode"') && html.includes('id="cbor-input"') && html.includes('id="cbor-result"'));
+check("cbor: unsigned ints at every width", app.decodeCbor("00") === "0" && app.decodeCbor("17") === "23" && app.decodeCbor("1818") === "24" && app.decodeCbor("1864") === "100" && app.decodeCbor("1903e8") === "1000" && app.decodeCbor("1a000f4240") === "1000000" && app.decodeCbor("1b000000e8d4a51000") === "1000000000000" && app.decodeCbor("1bffffffffffffffff") === "18446744073709551615");
+check("cbor: negative ints", app.decodeCbor("20") === "-1" && app.decodeCbor("29") === "-10" && app.decodeCbor("3863") === "-100" && app.decodeCbor("3903e7") === "-1000" && app.decodeCbor("3bffffffffffffffff") === "-18446744073709551616");
+check("cbor: bignum tags 2/3 (RFC A)", app.decodeCbor("c249010000000000000000") === "18446744073709551616" && app.decodeCbor("c349010000000000000000") === "-18446744073709551617");
+check("cbor: byte strings", app.decodeCbor("40") === "h''" && app.decodeCbor("4401020304") === "h'01020304'");
+check("cbor: text strings", app.decodeCbor("60") === '""' && app.decodeCbor("6161") === '"a"' && app.decodeCbor("6449455446") === '"IETF"');
+check("cbor: arrays incl. nested + long form", app.decodeCbor("80") === "[]" && app.decodeCbor("83010203") === "[1, 2, 3]" && app.decodeCbor("8301820203820405") === "[1, [2, 3], [4, 5]]" && app.decodeCbor("98190102030405060708090a0b0c0d0e0f101112131415161718181819") === "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]");
+check("cbor: maps", app.decodeCbor("a0") === "{}" && app.decodeCbor("a201020304") === "{1: 2, 3: 4}" && app.decodeCbor("a26161016162820203") === '{"a": 1, "b": [2, 3]}' && app.decodeCbor("826161a161626163") === '["a", {"b": "c"}]');
+check("cbor: simple values", app.decodeCbor("f4") === "false" && app.decodeCbor("f5") === "true" && app.decodeCbor("f6") === "null" && app.decodeCbor("f7") === "undefined");
+check("cbor: floats (half/single/double)", app.decodeCbor("f93c00") === "1" && app.decodeCbor("f9bc00") === "-1" && app.decodeCbor("f90400") === "0.00006103515625" && app.decodeCbor("fa47c35000") === "100000" && app.decodeCbor("fb3ff199999999999a") === "1.1");
+check("cbor: indefinite lengths", app.decodeCbor("9fff") === "[]" && app.decodeCbor("83018202039f0405ff") === "[1, [2, 3], [4, 5]]" && app.decodeCbor("5f42010243030405ff") === "h'0102030405'" && app.decodeCbor("7f657374726561646d696e67ff") === '"streaming"' && app.decodeCbor("bf61610161629f0203ffff") === '{"a": 1, "b": [2, 3]}');
+check("cbor: generic tag renders as tag n (…)", app.decodeCbor("d74401020304") === "tag 23 (h'01020304')");
+check("cbor: Plutus integer 42 (182a)", app.decodeCbor("182a") === "42");
+check("cbor: Plutus Constr 0 [42, 43] (the hash tool's sample datum)", app.decodeCbor("d8799f182a182bff") === "Constr 0 [42, 43]");
+check("cbor: Plutus Constr 0 [] and Constr 1 [1]", app.decodeCbor("d87980") === "Constr 0 []" && app.decodeCbor("d87a9f01ff") === "Constr 1 [1]");
+check("cbor: Plutus Constr via tag 1280 [index, fields]", app.decodeCbor("d90500820183020304") === "Constr 1 [2, 3, 4]");
+check("cbor: Plutus map datum (a1 = map of pairs used by Data)", app.decodeCbor("a10102") === "{1: 2}");
+check("cbor: decoded datum hashes back to the hub's known datum hash", app.datumHash("d8799f182a182bff") === "75e8eb9badfb369842b9796f1b2ef45e24f2b0e42d3f99b13639b2663dbf34ba" && app.decodeCbor("d8799f182a182bff") === "Constr 0 [42, 43]");
+check("cbor: 0x prefix + uppercase + whitespace accepted", app.decodeCbor(" 0xD8799F182A182BFF ") === "Constr 0 [42, 43]");
+check("cbor rejects empty input", app.decodeCbor("") === null);
+check("cbor rejects non-hex", app.decodeCbor("zz") === null);
+check("cbor rejects odd-length hex", app.decodeCbor("182") === null);
+check("cbor rejects truncated items", app.decodeCbor("18") === null && app.decodeCbor("830102") === null && app.decodeCbor("d8") === null);
+check("cbor rejects trailing bytes after one item", app.decodeCbor("0000") === null);
+check("cbor rejects a stray break byte", app.decodeCbor("ff") === null);
+check("cbor rejects reserved additional info (1c)", app.decodeCbor("1c") === null);
+check("cbor rejects indefinite integer (1f)", app.decodeCbor("1f") === null);
+check("cbor rejects invalid UTF-8 text", app.decodeCbor("62c328") === null);
+check("cbor rejects a truncated array(3)", app.decodeCbor("8301820203") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
