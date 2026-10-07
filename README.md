@@ -67,6 +67,11 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
 - **Pool ID converter** — converts a stake pool ID between its 56-character
   hex form and its bech32 (`pool1…`) form, locally and offline, with full
   bech32 checksum verification on the way back.
+- **Asset fingerprint (CIP-14)** — computes a native asset's user-facing
+  `asset1…` fingerprint from its policy ID + asset-name hex: bech32 over
+  blake2b-160 of the concatenated bytes, locally and offline (a pure-JS
+  BLAKE2b proven against all eight official CIP-14 test vectors). One-way
+  by design — a fingerprint cannot be reversed to the policy ID and name.
 
 ## Guides
 

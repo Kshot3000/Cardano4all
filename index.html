@@ -188,6 +188,16 @@
         <input id="pool-bech32" spellcheck="false" placeholder="pool1…" autocomplete="off">
         <p id="pool-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="assetfp">
+        <h3>Asset fingerprint (CIP-14)</h3>
+        <p>Every Cardano native asset has a short user-facing ID — the <code>asset1…</code> fingerprint explorers and wallets show. It is the bech32 form of the blake2b-160 hash of the policy ID followed by the asset name (CIP-14), computed locally here. One-way by design: a fingerprint identifies an asset but cannot be turned back into its policy ID and name.</p>
+        <label for="asset-policy">Policy ID (hex, 56 characters)</label>
+        <input id="asset-policy" spellcheck="false" placeholder="e.g. 7eae28af2208be856f7a119668ae52a49b73725e326dc16579dcc373" autocomplete="off">
+        <label for="asset-name">Asset name (hex, may be empty)</label>
+        <input id="asset-name" spellcheck="false" placeholder="e.g. 504154415445 (hex for PATATE), or leave empty" autocomplete="off">
+        <button type="submit" class="btn primary">Compute fingerprint</button>
+        <p id="asset-result" role="status" aria-live="polite"></p>
+      </form>
     </div>
   </section>
 
@@ -218,6 +228,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
