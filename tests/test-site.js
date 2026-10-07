@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=2"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=3"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -92,6 +92,28 @@ check("empty slot rejected", app.slotToEpoch("") === null);
 const nowRes = app.nowSlotEpoch(1596059091000);
 check("clock at Shelley fork = slot 4492800 epoch 208", nowRes.slot === 4492800 && nowRes.epoch === 208);
 check("pre-genesis clock rejected", app.nowSlotEpoch(0) === null);
+
+/* staking estimator — modelled maths, exact BigInt lovelace arithmetic.
+   73 epochs/year (5-day epochs). Hand-checked vectors:
+   73% a year = exactly 1% per epoch; 3.65% a year = exactly 0.05% per epoch. */
+check("staking estimator in page", html.includes('id="stakingcalc"') && html.includes('id="stake-result"'));
+const st1 = app.stakingEstimate("1000", "73", "1");
+check("73% on 1000 ADA = 10 ADA in one epoch", st1.firstEpochRewardLovelace === "10000000" && st1.totalRewardLovelace === "10000000" && st1.finalLovelace === "1010000000");
+const st2 = app.stakingEstimate("1000", "3.65", "1");
+check("3.65% on 1000 ADA = 0.5 ADA in one epoch", st2.firstEpochRewardLovelace === "500000" && st2.finalLovelace === "1000500000");
+const st3 = app.stakingEstimate("1000", "73", "2");
+check("compounding: epoch 2 earns 1% of 1010 ADA", st3.totalRewardLovelace === "20100000" && st3.finalLovelace === "1020100000");
+const st4 = app.stakingEstimate("500", "0", "73");
+check("zero rate earns zero over a year", st4.totalRewardLovelace === "0" && st4.finalLovelace === "500000000");
+const st5 = app.stakingEstimate("0.000001", "3.65", "1");
+check("sub-lovelace reward truncates to zero (1-lovelace stake)", st5.totalRewardLovelace === "0" && st5.finalLovelace === "1");
+check("rate above 100% rejected", app.stakingEstimate("1000", "101", "1") === null);
+check("rate with 5 decimals rejected", app.stakingEstimate("1000", "3.12345", "1") === null);
+check("zero epochs rejected", app.stakingEstimate("1000", "3.5", "0") === null);
+check("epochs above sanity cap rejected", app.stakingEstimate("1000", "3.5", "3651") === null);
+check("fractional epochs rejected", app.stakingEstimate("1000", "3.5", "1.5") === null);
+check("7-decimal stake rejected", app.stakingEstimate("1.0000001", "3.5", "1") === null);
+check("garbage staking inputs rejected", app.stakingEstimate("abc", "3.5", "1") === null && app.stakingEstimate("1000", "abc", "1") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

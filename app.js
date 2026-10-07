@@ -173,6 +173,58 @@ function epochStart(raw) {
   };
 }
 
+/* Staking rewards estimator — MODELLED maths, not live chain data and not
+   a promise of returns. A Cardano epoch is 5 days, so a year holds
+   365 / 5 = 73 epochs. The annual rate the user assumes is split evenly
+   across those 73 epochs; each epoch's reward is computed in lovelace with
+   exact BigInt rational arithmetic (no floats) and added to the stake
+   (compounding), truncating any sub-lovelace fraction per epoch, as real
+   rewards are paid in whole lovelace. Actual pool rewards vary with pool
+   performance, saturation, operator fees and protocol parameters. */
+var EPOCHS_PER_YEAR = 73;
+var MAX_STAKE_EPOCHS = 3650; /* 50 years of epochs — sanity cap */
+
+/* "3.65" -> { digits: 365n, scale: 2 }; rates above 100% are rejected. */
+function parseAnnualRate(raw) {
+  var s = (raw || "").trim();
+  if (!/^\d+(\.\d{1,4})?$/.test(s)) return null;
+  var parts = s.split(".");
+  var scale = (parts[1] || "").length;
+  var digits = BigInt(parts[0] + (parts[1] || ""));
+  if (digits > 100n * (10n ** BigInt(scale))) return null;
+  return { digits: digits, scale: scale };
+}
+
+/* stakingEstimate(stakeAda, annualRatePercent, epochCount) ->
+   { stakeLovelace, firstEpochRewardLovelace, totalRewardLovelace,
+     finalLovelace, epochs } (all amounts as decimal strings) or null. */
+function stakingEstimate(stakeStr, rateStr, epochsStr) {
+  var lovelaceStr = adaToLovelace(stakeStr);
+  if (lovelaceStr === null) return null;
+  var rate = parseAnnualRate(rateStr);
+  if (rate === null) return null;
+  var epochs = parseSlot(epochsStr);
+  if (epochs === null || epochs < 1 || epochs > MAX_STAKE_EPOCHS) return null;
+  /* per-epoch fraction = (digits / 10^scale) percent / 73 epochs a year */
+  var den = 100n * (10n ** BigInt(rate.scale)) * BigInt(EPOCHS_PER_YEAR);
+  var current = BigInt(lovelaceStr);
+  var totalReward = 0n;
+  var firstReward = 0n;
+  for (var i = 0; i < epochs; i++) {
+    var reward = (current * rate.digits) / den;
+    if (i === 0) firstReward = reward;
+    totalReward += reward;
+    current += reward;
+  }
+  return {
+    stakeLovelace: lovelaceStr,
+    firstEpochRewardLovelace: firstReward.toString(),
+    totalRewardLovelace: totalReward.toString(),
+    finalLovelace: current.toString(),
+    epochs: epochs
+  };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -185,7 +237,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate };
 }
 
 if (typeof document !== "undefined") {
@@ -266,6 +318,24 @@ if (typeof document !== "undefined") {
       epochResult.textContent = "Epoch " + epochInput.value.trim() + " starts at slot " + res.slot +
         " · " + fmtUnix(res.unixSeconds);
     });
+    /* --- staking rewards estimator (modelled, exact BigInt maths) --- */
+    document.getElementById("stakingcalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = stakingEstimate(
+        document.getElementById("stake-ada").value,
+        document.getElementById("stake-rate").value,
+        document.getElementById("stake-epochs").value);
+      var out = document.getElementById("stake-result");
+      if (!res) {
+        out.textContent = "Enter a stake amount (up to 6 decimals), an annual rate from 0 to 100% (up to 4 decimals), and 1 to 3650 epochs.";
+        return;
+      }
+      out.textContent = "First epoch ≈ " + lovelaceToAda(res.firstEpochRewardLovelace) + " ADA · total over " +
+        res.epochs + (res.epochs === 1 ? " epoch" : " epochs") + " ≈ " + lovelaceToAda(res.totalRewardLovelace) +
+        " ADA · ending stake ≈ " + lovelaceToAda(res.finalLovelace) +
+        " ADA. Modelled estimate only — actual pool rewards vary and are not promised.";
+    });
+
     var now = nowSlotEpoch(Date.now());
     if (now) {
       document.getElementById("epoch-now").textContent =

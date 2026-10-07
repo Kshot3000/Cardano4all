@@ -158,6 +158,18 @@
         <p id="epoch-result" role="status" aria-live="polite"></p>
         <p id="epoch-now" role="status"></p>
       </form>
+      <form class="tool" id="stakingcalc">
+        <h3>Staking rewards estimator</h3>
+        <p>Model a stake at an annual rate <em>you</em> assume. A Cardano epoch is 5 days, so a year holds 73 epochs; the rate is split evenly across them and compounded each epoch in exact integer lovelace maths. A modelled estimate only — actual pool rewards vary with performance, saturation and fees, and are never promised.</p>
+        <label for="stake-ada">Stake amount (ADA)</label>
+        <input id="stake-ada" inputmode="decimal" placeholder="e.g. 1000" autocomplete="off">
+        <label for="stake-rate">Assumed annual rate (%)</label>
+        <input id="stake-rate" inputmode="decimal" placeholder="e.g. 3.5" autocomplete="off">
+        <label for="stake-epochs">Number of epochs</label>
+        <input id="stake-epochs" inputmode="numeric" placeholder="e.g. 73 (one year)" autocomplete="off">
+        <button type="submit" class="btn primary">Estimate rewards</button>
+        <p id="stake-result" role="status" aria-live="polite"></p>
+      </form>
     </div>
   </section>
 
@@ -188,6 +200,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

@@ -55,6 +55,10 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
 - **ADA ⇄ lovelace converter** — exact BigInt conversion, no float rounding.
 - **Epoch / slot calculator** — slot ⇄ epoch conversion across the Byron and
   Shelley eras from the fixed mainnet protocol parameters, fully offline.
+- **Staking rewards estimator** — modelled rewards at an annual rate you
+  assume, split evenly over Cardano's 73 five-day epochs a year and compounded
+  per epoch in exact BigInt lovelace maths. An estimate only — not live chain
+  data and not a promise of returns.
 
 ## Guides
 
