@@ -237,6 +237,15 @@
         <button type="submit" class="btn primary">Decode address</button>
         <p id="decode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="addrhex">
+        <h3>Address hex ⇄ bech32 converter</h3>
+        <p>The same address travels in two forms: bech32 (<code>addr1…</code>) for people and explorers, and raw hex for machines — CIP-30 wallets hand dApps addresses as hex, and APIs and <code>cardano-cli</code> accept that hex form. Convert between them locally; it is a pure re-encoding of the identical address bytes, so nothing is gained or lost. Only valid Shelley addresses convert — the header byte and length are checked on the way in.</p>
+        <label for="addrhex-bech32">Address (bech32)</label>
+        <input id="addrhex-bech32" spellcheck="false" placeholder="addr1… or stake1…" autocomplete="off">
+        <label for="addrhex-hex">Address (hex)</label>
+        <input id="addrhex-hex" spellcheck="false" placeholder="e.g. 01 + payment hash + stake hash, as hex" autocomplete="off">
+        <p id="addrhex-result" role="status" aria-live="polite"></p>
+      </form>
     </div>
   </section>
 
@@ -267,6 +276,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

@@ -592,6 +592,47 @@ function decodeAddress(raw) {
   return null; /* types 8-13: Byron / reserved — not Shelley header addresses */
 }
 
+/* Address hex <-> bech32 converter. The same Shelley address bytes are
+   shown two ways in the wild: bech32 (addr1… / stake1…) for people and
+   explorers, and raw hex for machines — CIP-30 wallets return addresses
+   as hex (api.getUsedAddresses / getRewardAddresses), and APIs and
+   cardano-cli accept the hex form. The conversion is pure re-encoding of
+   the identical payload bytes (header byte + credential hashes), so it
+   is exact in both directions. Both directions are gated on the CIP-19
+   decoder above: only payloads that decode as a valid Shelley address
+   (known type, network id 0/1, exact length for the type, hrp family
+   agreeing with the header) convert at all — pool IDs, asset
+   fingerprints, Byron payloads and truncated bytes all return null.
+   Proven in the tests against a real wallet-generated address: its hex
+   form is 01 || payment key hash || stake key hash, byte-for-byte. */
+function addressToHex(raw) {
+  if (decodeAddress(raw) === null) return null;
+  var dec = bech32DecodeBytes(raw);
+  return dec === null ? null : bytesToHex(dec.bytes);
+}
+
+function addressFromHex(raw) {
+  var hex = (raw || "").trim().toLowerCase().replace(/^0x/, "");
+  if (!/^([0-9a-f]{2})+$/.test(hex)) return null;
+  var bytes = hexToBytes(hex);
+  if (bytes.length < 29) return null;
+  var header = bytes[0];
+  var type = header >> 4;
+  var netId = header & 15;
+  if (netId !== 0 && netId !== 1) return null;
+  var lenOk = ((type >= 0 && type <= 3) && bytes.length === 57) ||
+    ((type === 4 || type === 5) && bytes.length > 29) ||
+    ((type === 6 || type === 7 || type === 14 || type === 15) && bytes.length === 29);
+  if (!lenOk) return null;
+  var hrp = (type === 14 || type === 15)
+    ? (netId === 1 ? "stake" : "stake_test")
+    : (netId === 1 ? "addr" : "addr_test");
+  var encoded = encodeAddressBytes(hrp, bytes);
+  if (encoded === null) return null;
+  /* final gate: the encoded form must itself pass the full CIP-19 decode */
+  return decodeAddress(encoded) === null ? null : encoded;
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -604,7 +645,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -812,6 +853,23 @@ if (typeof document !== "undefined") {
       if (res.enterprise && res.type !== 6 && res.type !== 7) lines.push("Its enterprise address (payment credential only — cannot earn staking rewards): " + res.enterprise);
       if (res.reward && res.type !== 14 && res.type !== 15) lines.push("Its reward address (where this stake's rewards land): " + res.reward);
       out.textContent = lines.join("\n");
+    });
+
+    /* --- address hex <-> bech32 converter (two-way, offline) --- */
+    var addrBechInput = document.getElementById("addrhex-bech32");
+    var addrHexInput = document.getElementById("addrhex-hex");
+    var addrHexResult = document.getElementById("addrhex-result");
+    addrBechInput.addEventListener("input", function () {
+      var out = addressToHex(addrBechInput.value);
+      if (addrBechInput.value.trim() === "") { addrHexInput.value = ""; addrHexResult.textContent = ""; return; }
+      addrHexInput.value = out === null ? "" : out;
+      addrHexResult.textContent = out === null ? "Enter a valid Shelley address (base, pointer, enterprise or reward, with a verifying bech32 checksum). Byron addresses have no header-byte form and do not convert." : "Address in hex form (the form CIP-30 wallets return): " + out;
+    });
+    addrHexInput.addEventListener("input", function () {
+      var out = addressFromHex(addrHexInput.value);
+      if (addrHexInput.value.trim() === "") { addrBechInput.value = ""; addrHexResult.textContent = ""; return; }
+      addrBechInput.value = out === null ? "" : out;
+      addrHexResult.textContent = out === null ? "Enter the address bytes as hex (a Shelley header byte followed by 28-byte credential hashes — 58 hex characters for enterprise/reward, 114 for base)." : "Address in bech32 form: " + out;
     });
 
     var now = nowSlotEpoch(Date.now());

@@ -93,6 +93,14 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   address: decoding it returns exactly its known key hashes and re-derives
   the builder's enterprise/reward outputs. Byron addresses predate the
   header layout and are not decoded.
+- **Address hex ⇄ bech32 converter** — the same Shelley address in its two
+  wild forms: bech32 (`addr1…` / `stake1…`) for people and explorers, raw
+  hex for machines (CIP-30 wallets return addresses as hex; APIs and
+  `cardano-cli` accept the hex form). A pure re-encoding of the identical
+  payload bytes — header byte + credential hashes — gated on the full
+  CIP-19 decode in both directions, so only valid Shelley addresses
+  convert. Proven byte-for-byte against a real wallet-generated address
+  (its hex form is `01` ‖ payment key hash ‖ stake key hash).
 
 ## Guides
 
