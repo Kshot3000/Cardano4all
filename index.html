@@ -246,6 +246,14 @@
         <input id="addrhex-hex" spellcheck="false" placeholder="e.g. 01 + payment hash + stake hash, as hex" autocomplete="off">
         <p id="addrhex-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="govid">
+        <h3>Governance ID converter (CIP-129)</h3>
+        <p>Conway governance IDs — DRep IDs (<code>drep1…</code>), Constitutional Committee credentials (<code>cc_hot1…</code> / <code>cc_cold1…</code>) and governance action IDs (<code>gov_action1…</code>) — circulate in two encodings. The current <strong>CIP-129</strong> form prepends a header byte naming the kind and whether the credential is a key hash or a script hash; the older <strong>CIP-105</strong> form encodes the bare hash, with separate <code>*_script</code> prefixes. Some tools accept only one form. Paste either form (or the hex payload) and get both, locally.</p>
+        <label for="gov-input">Governance ID (bech32 or hex payload)</label>
+        <textarea id="gov-input" rows="3" spellcheck="false" placeholder="drep1… or cc_cold1… or gov_action1…, or 22 + credential hash in hex"></textarea>
+        <button type="submit" class="btn primary">Decode &amp; convert</button>
+        <p id="gov-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
     </div>
   </section>
 
@@ -276,6 +284,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

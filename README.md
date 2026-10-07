@@ -101,6 +101,15 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   CIP-19 decode in both directions, so only valid Shelley addresses
   convert. Proven byte-for-byte against a real wallet-generated address
   (its hex form is `01` ‖ payment key hash ‖ stake key hash).
+- **Governance ID converter (CIP-129)** — decodes and converts Conway
+  governance identifiers: DRep credentials, Constitutional Committee
+  hot/cold credentials and governance action IDs (transaction ID + index).
+  Accepts the CIP-129 bech32 form (header byte ‖ 28-byte hash), the legacy
+  CIP-105 bech32 form (bare hash, `*_script` prefixes for script
+  credentials), or the hex payload, and shows both bech32 forms plus the
+  header, kind and credential hash. Proven against all five test vectors
+  published in CIP-129 itself and against a real DRep's published ID pair
+  (the same hash in its CIP-129 and legacy forms, reproduced both ways).
 
 ## Guides
 

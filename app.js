@@ -633,6 +633,126 @@ function addressFromHex(raw) {
   return decodeAddress(encoded) === null ? null : encoded;
 }
 
+/* Governance ID converter (CIP-129 / legacy CIP-105) — Conway-era
+   governance identifiers: DRep credentials (drep…), Constitutional
+   Committee hot/cold credentials (cc_hot… / cc_cold…) and governance
+   action IDs (gov_action…). CIP-129 encodes a credential as
+   header || 28-byte hash, where the header's high nibble is the kind
+   (0 = CC hot, 1 = CC cold, 2 = DRep) and the low nibble is the
+   credential type (2 = key hash, 3 = script hash); a gov action ID is
+   the 32-byte transaction ID with the action index appended as one
+   byte. The older CIP-105 form encodes the bare 28-byte hash, with the
+   script forms under *_script prefixes. The two forms cause real
+   confusion — some tools accept only one — so this tool parses either
+   (or the hex payload) and shows both. Pure re-encoding + header
+   validation, offline. Proven against all five test vectors published
+   in CIP-129 itself, and against a real DRep's published ID pair:
+   hash 4e1d2a28…90fc0f is drep1yf8p6… (CIP-129, header 0x22) and
+   drep1fcwj5… (legacy CIP-105) — both reproduced here from the hash. */
+var GOV_KIND_BASE = { cc_hot: 0x00, cc_cold: 0x10, drep: 0x20 };
+var GOV_BASE_KIND = { 0: "cc_hot", 1: "cc_cold", 2: "drep" };
+var GOV_KIND_LABEL = {
+  cc_hot: "Constitutional Committee hot credential",
+  cc_cold: "Constitutional Committee cold credential",
+  drep: "DRep credential",
+  gov_action: "Governance action ID"
+};
+
+function govCredBech32(kind, credKind, hashHex) {
+  var hash = hexToBytes((hashHex || "").trim().toLowerCase().replace(/^0x/, ""));
+  if (hash === null || hash.length !== 28 || !(kind in GOV_KIND_BASE)) return null;
+  var nib = credKind === "key" ? 2 : credKind === "script" ? 3 : null;
+  if (nib === null) return null;
+  return encodeAddressBytes(kind, [GOV_KIND_BASE[kind] | nib].concat(hash));
+}
+
+function govCredLegacyBech32(kind, credKind, hashHex) {
+  var hash = hexToBytes((hashHex || "").trim().toLowerCase().replace(/^0x/, ""));
+  if (hash === null || hash.length !== 28 || !(kind in GOV_KIND_BASE)) return null;
+  if (credKind !== "key" && credKind !== "script") return null;
+  return encodeAddressBytes(credKind === "script" ? kind + "_script" : kind, hash);
+}
+
+function govActionBech32(txHex, index) {
+  var tx = hexToBytes((txHex || "").trim().toLowerCase().replace(/^0x/, ""));
+  if (tx === null || tx.length !== 32) return null;
+  if (!Number.isInteger(index) || index < 0 || index > 255) return null;
+  return encodeAddressBytes("gov_action", tx.concat([index]));
+}
+
+/* parseGovId(raw) -> { format, kind, kindLabel, credKind, hashHex,
+   txId, index, payloadHex, bech32, cip129, legacy } or null.
+   Accepts a CIP-129 bech32 ID, a legacy CIP-105 bech32 ID, or the hex
+   payload (29 bytes header||hash for a credential, 33 bytes
+   txID||index for a gov action). A bare 28-byte hash is rejected: its
+   kind (DRep vs committee) cannot be known from the hash alone. */
+function parseGovId(raw) {
+  var s = (raw || "").trim();
+  if (!s) return null;
+  var hex = s.toLowerCase().replace(/^0x/, "");
+  if (/^([0-9a-f]{2})+$/.test(hex)) {
+    var hb = hexToBytes(hex);
+    if (hb.length === 33) {
+      var txId = bytesToHex(hb.slice(0, 32));
+      var ga = govActionBech32(txId, hb[32]);
+      return { format: "CIP-129", kind: "gov_action", kindLabel: GOV_KIND_LABEL.gov_action,
+        credKind: null, hashHex: null, txId: txId, index: hb[32], payloadHex: hex,
+        bech32: ga, cip129: ga, legacy: txId + "#" + hb[32] };
+    }
+    if (hb.length === 29) {
+      var hkind = GOV_BASE_KIND[hb[0] >> 4];
+      var hnib = hb[0] & 15;
+      if (!hkind || (hnib !== 2 && hnib !== 3)) return null;
+      var hcred = hnib === 2 ? "key" : "script";
+      var hhash = bytesToHex(hb.slice(1));
+      var h129 = govCredBech32(hkind, hcred, hhash);
+      return { format: "CIP-129", kind: hkind, kindLabel: GOV_KIND_LABEL[hkind],
+        credKind: hcred, hashHex: hhash, txId: null, index: null, payloadHex: hex, payload129Hex: hex,
+        bech32: h129, cip129: h129, legacy: govCredLegacyBech32(hkind, hcred, hhash) };
+    }
+    return null;
+  }
+  var dec = bech32DecodeBytes(s);
+  if (dec === null) return null;
+  var bytes = dec.bytes;
+  if (dec.hrp === "gov_action") {
+    if (bytes.length !== 33) return null;
+    var gtx = bytesToHex(bytes.slice(0, 32));
+    return { format: "CIP-129", kind: "gov_action", kindLabel: GOV_KIND_LABEL.gov_action,
+      credKind: null, hashHex: null, txId: gtx, index: bytes[32],
+      payloadHex: bytesToHex(bytes), bech32: s.toLowerCase(), cip129: s.toLowerCase(),
+      legacy: gtx + "#" + bytes[32] };
+  }
+  var kind = null, legacyCred = null;
+  if (dec.hrp in GOV_KIND_BASE) kind = dec.hrp;
+  else if (dec.hrp.slice(-7) === "_script" && (dec.hrp.slice(0, -7) in GOV_KIND_BASE)) {
+    kind = dec.hrp.slice(0, -7); legacyCred = "script";
+  }
+  if (kind === null) return null;
+  if (bytes.length === 29 && legacyCred === null) {
+    if (GOV_BASE_KIND[bytes[0] >> 4] !== kind) return null;
+    var nib = bytes[0] & 15;
+    if (nib !== 2 && nib !== 3) return null;
+    var cred = nib === 2 ? "key" : "script";
+    var hash = bytesToHex(bytes.slice(1));
+    return { format: "CIP-129", kind: kind, kindLabel: GOV_KIND_LABEL[kind],
+      credKind: cred, hashHex: hash, txId: null, index: null,
+      payloadHex: bytesToHex(bytes), payload129Hex: bytesToHex(bytes), bech32: s.toLowerCase(), cip129: s.toLowerCase(),
+      legacy: govCredLegacyBech32(kind, cred, hash) };
+  }
+  if (bytes.length === 28) {
+    var lcred = legacyCred || "key";
+    var lhash = bytesToHex(bytes);
+    return { format: "CIP-105 (legacy)", kind: kind, kindLabel: GOV_KIND_LABEL[kind],
+      credKind: lcred, hashHex: lhash, txId: null, index: null,
+      payloadHex: bytesToHex(bytes),
+      payload129Hex: bytesToHex([GOV_KIND_BASE[kind] | (lcred === "key" ? 2 : 3)].concat(bytes)),
+      bech32: s.toLowerCase(),
+      cip129: govCredBech32(kind, lcred, lhash), legacy: s.toLowerCase() };
+  }
+  return null;
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -645,7 +765,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, minFee, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -870,6 +990,30 @@ if (typeof document !== "undefined") {
       if (addrHexInput.value.trim() === "") { addrBechInput.value = ""; addrHexResult.textContent = ""; return; }
       addrBechInput.value = out === null ? "" : out;
       addrHexResult.textContent = out === null ? "Enter the address bytes as hex (a Shelley header byte followed by 28-byte credential hashes — 58 hex characters for enterprise/reward, 114 for base)." : "Address in bech32 form: " + out;
+    });
+
+    /* --- governance ID converter (CIP-129 / legacy CIP-105, offline) --- */
+    document.getElementById("govid").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var out = parseGovId(document.getElementById("gov-input").value);
+      var el = document.getElementById("gov-result");
+      if (out === null) {
+        el.textContent = "Enter a governance ID: a CIP-129 bech32 ID (drep1…, cc_hot1…, cc_cold1…, gov_action1…), a legacy CIP-105 bech32 ID (including the *_script forms), or the hex payload (header byte + 28-byte hash, or transaction ID + one index byte). A bare 28-byte hash cannot be converted — its kind is not in the hash.";
+        return;
+      }
+      if (out.kind === "gov_action") {
+        el.textContent = out.kindLabel + " (" + out.format + ")\n" +
+          "Transaction ID: " + out.txId + "\n" +
+          "Action index: " + out.index + " — written in text form as " + out.legacy + "\n" +
+          "Bech32 (CIP-129): " + out.cip129 + "\n" +
+          "Hex payload: " + out.payloadHex;
+        return;
+      }
+      el.textContent = out.kindLabel + " — " + (out.credKind === "key" ? "key hash" : "script hash") + " credential (" + out.format + " form entered)\n" +
+        "Credential hash: " + out.hashHex + "\n" +
+        "CIP-129 form: " + out.cip129 + "\n" +
+        "Legacy CIP-105 form: " + out.legacy + "\n" +
+        "Hex payload (CIP-129, header + hash): " + out.payload129Hex;
     });
 
     var now = nowSlotEpoch(Date.now());
