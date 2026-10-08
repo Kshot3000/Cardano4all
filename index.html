@@ -307,6 +307,14 @@
         <button type="submit" class="btn primary">Decode required signers</button>
         <p id="signersdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="refinputsdecode">
+        <h3>Reference inputs decoder</h3>
+        <p>One transaction's <strong>reference inputs field</strong> on its own — body key 18, the UTxOs a transaction <em>reads without spending</em> (CIP-31: a script can see a referenced output's datum, and take a reference script from it, while the UTxO itself stays unspent) — decoded locally: every reference in the familiar <code>transaction-ID#index</code> form, in the order encoded. The entry shape is the inputs field's — <code>transaction_input = [transaction_id, index]</code>, a 32-byte transaction ID and an index that is a <code>uint .size 2</code> (0–65,535) — but the field rule differs in one word: the Conway CDDL makes this a <strong><code>nonempty_set</code></strong>, so an empty field is forbidden by the grammar itself, where the inputs field's empty rejection rests on the separate must-spend rule. Serialised as a plain array or under CBOR set tag 258 — both forms decode here — with no reference repeated (the same transaction at a different index is a different reference). The UTxOs a transaction spends are decoded by the inputs decoder above; a whole transaction by the transaction inspector.</p>
+        <label for="refinputsdecode-input">Reference inputs field CBOR (hex)</label>
+        <textarea id="refinputsdecode-input" rows="3" spellcheck="false" placeholder="e.g. 81825820… (one transaction ID) 00 (its output index) — or d90102… for the set form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode reference inputs</button>
+        <p id="refinputsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -497,6 +505,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=30"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

@@ -224,6 +224,32 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   0.19.2's `TransactionBody` serialisation: a single signer, two
   signers, three signers in a non-sorted order, and the tag-258
   set form of the pair all decode field-for-field.
+- **Reference inputs decoder** — one transaction's reference
+  inputs field CBOR on its own (body key 18): every UTxO the
+  transaction reads without spending (CIP-31), in the familiar
+  `transaction-ID#index` form, in the order encoded. The entry
+  shape is the inputs decoder's (`transaction_input =
+  [transaction_id, index]`, `transaction_id = hash32`, index a
+  `uint .size 2`), but the field rule differs in one word, recorded
+  here so nobody "aligns" the two: the Conway CDDL fetched from
+  IntersectMBO/cardano-ledger makes this field a
+  `nonempty_set<transaction_input>` (`#6.258([+ a]) / [+ a]`), so
+  an empty field is rejected by the grammar itself — where the
+  inputs field is a plain `set<>` and its empty rejection rests on
+  the separate must-spend-a-UTxO validity rule. Repeated references
+  are likewise rejected (a set; the same transaction ID at a
+  different index is a different reference), and an index above
+  65,535 is rejected per the `.size 2`. Two of those gates
+  overrule pycardano, which serialises an empty reference-inputs
+  list to `80` with the field present, a duplicated reference
+  twice (reading it back as two entries), and an index of 65,536
+  happily: the CDDL governs cardinality, ranges and set semantics,
+  the oracle only proves byte shapes, the same split as the mint
+  decoder. Proven against pycardano 0.19.2's `TransactionBody`
+  serialisation: a single reference, two references including the
+  index maximum, the same pair in the other order, the same
+  transaction ID at two indices, and the tag-258 set form of the
+  pair all decode field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

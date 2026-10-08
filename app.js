@@ -2350,6 +2350,65 @@ function parseSignersCbor(raw) {
   return { entries: entries, count: entries.length };
 }
 
+/* Reference inputs decoder — a standalone REFERENCE INPUTS field
+   on its own (body key 18): the UTxOs a transaction READS without
+   spending (CIP-31 — a script can see a referenced output's datum
+   and a reference script can be taken from it, while the UTxO
+   itself stays unspent and can be referenced by many transactions),
+   which until now only ever appeared inside the transaction
+   inspector's reference list. The entry shape is the inputs
+   field's — Ledger CDDL (Conway): transaction_input =
+   [transaction_id: hash32, index: uint .size 2] — but the field
+   rule differs from inputs in exactly one word, and that word
+   changes the emptiness authority: 18 : nonempty_set<transaction_input>
+   against key 0's plain set<transaction_input>, with
+   nonempty_set<a> = #6.258([+ a]) / [+ a] — serialised either under
+   CBOR set tag 258 or as a plain array; both decode here
+   (pycardano emits only the plain array). So an empty field is
+   rejected by the GRAMMAR ITSELF here, where the inputs decoder's
+   empty rejection rests on the separate must-spend-a-UTxO validity
+   rule (the signers run's three-authorities note). The other two
+   gates also overrule the oracle, in the mint run's split (the
+   CDDL governs ranges and set semantics, the oracle only proves
+   byte shapes): a repeated reference is rejected — the field is a
+   set — even though pycardano serialises a duplicated reference
+   twice and reads it back as two entries (the same transaction ID
+   at a DIFFERENT index is a different reference and decodes); and
+   an index above 65,535 is rejected per the CDDL .size 2 even
+   though pycardano serialises 65536 happily. Entries are shown in
+   the order encoded, in the familiar txHash#index form. Input
+   capped at max_tx_size (16,384) like the transaction tools.
+   Proven against pycardano 0.19.2's TransactionBody serialisation
+   in scratch (refinputs_py.py / refinputs_vectors.json): a single
+   reference, two references including the index maximum, the same
+   pair in the other order, the same transaction ID at two
+   indices, and the tag-258 set form of the pair all decode
+   field-for-field. Display only — nothing is read from the chain,
+   signed or sent. */
+function parseRefInputsCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t === "tag" && n.n === 258n) n = n.item;
+  if (n.t !== "array" || n.items.length === 0) return null;
+  var entries = [], seen = {};
+  for (var i = 0; i < n.items.length; i++) {
+    var it = n.items[i];
+    if (it.t !== "array" || it.items.length !== 2) return null;
+    if (it.items[0].t !== "bytes" || it.items[0].bytes.length !== 32) return null;
+    if (it.items[1].t !== "int" || it.items[1].v < 0n || it.items[1].v > 65535n) return null;
+    var txHash = bytesToHex(it.items[0].bytes);
+    var index = Number(it.items[1].v);
+    var key = txHash + "#" + index;
+    if (seen[key] !== undefined) return null; /* duplicate reference: a set */
+    seen[key] = true;
+    entries.push({ txHash: txHash, index: index, ref: key });
+  }
+  return { entries: entries, count: entries.length };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2362,7 +2421,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2757,6 +2816,23 @@ if (typeof document !== "undefined") {
       lines.push((res.count === 1 ? "1 required signer" : res.count + " required signers") + " (key hashes this transaction declares must sign it):");
       res.entries.forEach(function (h) {
         lines.push("  " + h);
+      });
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- reference inputs decoder (a standalone reference-inputs field's CBOR) --- */
+    document.getElementById("refinputsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseRefInputsCbor(document.getElementById("refinputsdecode-input").value);
+      var out = document.getElementById("refinputsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one reference inputs field: a non-empty set of [transaction ID, index] pairs — a plain array or the tag-258 set form — with every transaction ID exactly 32 bytes, every index between 0 and 65,535, and no reference repeated. One reference on its own, an inputs field (same shape, different field) or a whole transaction is a different shape — the decoders and transaction inspector above decode those.";
+        return;
+      }
+      var lines = [];
+      lines.push((res.count === 1 ? "1 reference input" : res.count + " reference inputs") + " (the UTxOs this transaction reads without spending):");
+      res.entries.forEach(function (e) {
+        lines.push("  " + e.ref + "  (transaction " + e.txHash + ", output " + e.index + ")");
       });
       out.textContent = lines.join("\n");
     });
