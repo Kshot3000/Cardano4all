@@ -185,6 +185,23 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   0.19.2's `Withdrawals` serialisation: a single mainnet key
   withdrawal, a mixed key + script pair, a testnet withdrawal, a
   zero amount and the uint64 maximum decode field-for-field.
+- **Transaction inputs decoder** — one transaction's inputs field
+  CBOR on its own (body key 0): every UTxO reference the transaction
+  spends, in the familiar `transaction-ID#index` form, in the order
+  encoded. Follows the Conway CDDL fetched from
+  IntersectMBO/cardano-ledger (`transaction_input = [transaction_id,
+  index]`, `transaction_id = hash32`, index a `uint .size 2`), and
+  the field's set form in both serialisations the CDDL allows — a
+  plain array or CBOR set tag 258. Repeated references are rejected
+  (the field is a set), an empty set is rejected (a transaction must
+  spend at least one output — a long-standing ledger rule, restated
+  in CIP-0031), and an index above 65,535 is rejected even though
+  pycardano serialises one: the CDDL's `.size 2` governs the range
+  and the oracle only proves byte shapes, the same split as the mint
+  decoder. Proven against pycardano 0.19.2's `TransactionBody`
+  serialisation: a single input, two inputs including the index
+  maximum, the same pair in the other order, and the tag-258 set
+  form of the pair all decode field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

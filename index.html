@@ -291,6 +291,14 @@
         <button type="submit" class="btn primary">Decode withdrawals</button>
         <p id="withdrawdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="inputsdecode">
+        <h3>Transaction inputs decoder</h3>
+        <p>One transaction's <strong>inputs field</strong> on its own — body key 0, the set of UTxO references a transaction spends — decoded locally: every input in the familiar <code>transaction-ID#index</code> form, in the order encoded. The ledger rule (Conway CDDL) is <code>transaction_input = [transaction_id, index]</code> with a 32-byte transaction ID and an index that is a <code>uint .size 2</code> (0–65,535), and the field is a <strong>set</strong>: serialised as a plain array or under CBOR set tag 258 — both forms decode here — with no reference repeated. A transaction must spend at least one output, so an empty set is rejected, and an index above 65,535 is rejected even though some libraries serialise one. The same reference shape is what the collateral and reference-inputs fields carry. A single output is decoded by the transaction output decoder above; a whole transaction by the transaction inspector.</p>
+        <label for="inputsdecode-input">Inputs field CBOR (hex)</label>
+        <textarea id="inputsdecode-input" rows="3" spellcheck="false" placeholder="e.g. 81825820… (one transaction ID) 00 (its output index)" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode inputs</button>
+        <p id="inputsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -481,6 +489,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=28"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

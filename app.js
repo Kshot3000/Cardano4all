@@ -2245,6 +2245,61 @@ function parseWithdrawalsCbor(raw) {
   return { entries: entries, count: entries.length, totalLovelace: total.toString() };
 }
 
+/* Transaction inputs decoder — a standalone transaction INPUTS field
+   on its own (body key 0): the set of UTxO references a transaction
+   spends, which until now only ever appeared inside the transaction
+   inspector's input list. Ledger CDDL (Conway):
+   transaction_input = [transaction_id, index] with
+   transaction_id = hash32 (exactly 32 bytes) and index a
+   uint .size 2 (0-65535, the position of the output in the
+   transaction that created it), and the field itself a
+   set<transaction_input> — serialised either as a plain array or
+   under CBOR set tag 258, the two forms the CDDL's set definition
+   allows; both decode here (the txId run's lesson: a proof set must
+   include both, because pycardano emits only the plain array while
+   most mainnet transactions carry tag 258). Three deliberate
+   strictnesses in the spirit of the sibling decoders: a repeated
+   reference (same transaction ID AND index) is rejected — the field
+   is a set, and spending one UTxO twice is not a thing; an index
+   above 65535 is rejected even though pycardano serialises one —
+   the CDDL's .size 2 is the authority for the range, the oracle
+   only proves byte shapes (the mint run's lesson); and the empty
+   set is rejected, because a transaction must spend at least one
+   output (a long-standing ledger rule, restated in CIP-0031) — an
+   inputs field naming nothing spends nothing. Entries are shown in
+   the order encoded, each also in the familiar
+   transaction-ID#index reference form cardano-cli and explorers
+   use. Input capped at max_tx_size (16,384) like the transaction
+   tools. Proven against pycardano 0.19.2's TransactionBody
+   serialisation in scratch (inputs_py.py / inputs_vectors.json):
+   a single input, two inputs including the index maximum, the
+   same pair in the other order, and the tag-258 set form of the
+   pair all decode field-for-field. Display only — nothing is
+   signed or sent. */
+function parseInputsCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t === "tag" && n.n === 258n) n = n.item;
+  if (n.t !== "array" || n.items.length === 0) return null;
+  var entries = [], seen = {};
+  for (var i = 0; i < n.items.length; i++) {
+    var it = n.items[i];
+    if (it.t !== "array" || it.items.length !== 2) return null;
+    if (it.items[0].t !== "bytes" || it.items[0].bytes.length !== 32) return null;
+    if (it.items[1].t !== "int" || it.items[1].v < 0n || it.items[1].v > 65535n) return null;
+    var txHash = bytesToHex(it.items[0].bytes);
+    var index = Number(it.items[1].v);
+    var key = txHash + "#" + index;
+    if (seen[key] !== undefined) return null; /* duplicate reference: a set */
+    seen[key] = true;
+    entries.push({ txHash: txHash, index: index, ref: key });
+  }
+  return { entries: entries, count: entries.length };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2257,7 +2312,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2618,6 +2673,23 @@ if (typeof document !== "undefined") {
       lines.push((res.count === 1 ? "1 withdrawal" : res.count + " withdrawals") + ", total " + res.totalLovelace + " lovelace (" + lovelaceToAda(res.totalLovelace) + " ADA):");
       res.entries.forEach(function (e) {
         lines.push("  " + e.address + " (" + e.stakeKind + " credential, " + e.network + ") — " + e.lovelace + " lovelace (" + lovelaceToAda(e.lovelace) + " ADA)");
+      });
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- transaction inputs decoder (a standalone inputs field's CBOR) --- */
+    document.getElementById("inputsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseInputsCbor(document.getElementById("inputsdecode-input").value);
+      var out = document.getElementById("inputsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one inputs field: a set of [transaction ID, index] pairs — a plain array or the tag-258 set form — with at least one entry, every transaction ID exactly 32 bytes, every index between 0 and 65,535, and no reference repeated. One input on its own, an output, a mint field or a whole transaction is a different shape — the decoders and transaction inspector above decode those.";
+        return;
+      }
+      var lines = [];
+      lines.push((res.count === 1 ? "1 input" : res.count + " inputs") + " (the UTxOs this transaction spends):");
+      res.entries.forEach(function (e) {
+        lines.push("  " + e.ref + "  (transaction " + e.txHash + ", output " + e.index + ")");
       });
       out.textContent = lines.join("\n");
     });

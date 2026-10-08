@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=28"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=29"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -787,6 +787,21 @@ check("withdrawdecode rejects empty map (CDDL +)", app.parseWithdrawalsCbor("a0"
 check("withdrawdecode rejects payment address and negative amount", app.parseWithdrawalsCbor("a1581d61" + STAKE_KH + "01") === null && app.parseWithdrawalsCbor("a1" + REW_BYTES + "20") === null);
 check("withdrawdecode rejects duplicate accounts and trailing bytes", app.parseWithdrawalsCbor("a2" + REW_BYTES + "01" + REW_BYTES + "02") === null && app.parseWithdrawalsCbor("a1" + REW_BYTES + "1a001e8480" + "00") === null && app.parseWithdrawalsCbor("") === null && app.parseWithdrawalsCbor("zzzz") === null);
 check("withdrawdecode rejects bad network, short key, mint/value shapes", app.parseWithdrawalsCbor("a1581de3" + STAKE_KH + "01") === null && app.parseWithdrawalsCbor("a1581ce1" + STAKE_KH.slice(0, 54) + "01") === null && app.parseWithdrawalsCbor("1a000eedc2") === null && app.parseWithdrawalsCbor("a1581c" + "aa".repeat(28) + "a1465041544154451864") === null);
+
+
+/* --- transaction inputs decoder: pycardano TransactionBody field 0 --- */
+const IN_H1 = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+const IN_H2 = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+const IN_ONE = "825820" + IN_H1 + "00";
+check("inputsdecode form present", html.includes('id="inputsdecode"') && html.includes('id="inputsdecode-input"') && html.includes('id="inputsdecode-result"'));
+check("inputsdecode single input (pycardano)", (() => { const r = app.parseInputsCbor("81" + IN_ONE); return r !== null && r.count === 1 && r.entries[0].txHash === IN_H1 && r.entries[0].index === 0 && r.entries[0].ref === IN_H1 + "#0"; })());
+check("inputsdecode two inputs incl. index max, order kept (pycardano)", (() => { const r = app.parseInputsCbor("82" + IN_ONE + "825820" + IN_H2 + "19ffff"); return r !== null && r.count === 2 && r.entries[1].txHash === IN_H2 && r.entries[1].index === 65535 && r.entries[1].ref === IN_H2 + "#65535"; })());
+check("inputsdecode tag-258 set form decodes the same (CDDL set)", (() => { const r = app.parseInputsCbor("d9010282" + IN_ONE + "825820" + IN_H2 + "19ffff"); return r !== null && r.count === 2 && r.entries[0].ref === IN_H1 + "#0" && r.entries[1].index === 65535; })());
+check("inputsdecode rejects empty set, plain and tagged (must spend at least one)", app.parseInputsCbor("80") === null && app.parseInputsCbor("d9010280") === null);
+check("inputsdecode rejects index 65536 (CDDL .size 2; pycardano emits it)", app.parseInputsCbor("81" + "825820" + IN_H1 + "1a00010000") === null);
+check("inputsdecode rejects duplicate reference, accepts same tx other index", app.parseInputsCbor("82" + IN_ONE + IN_ONE) === null && app.parseInputsCbor("82" + IN_ONE + "825820" + IN_H1 + "03") !== null);
+check("inputsdecode rejects a lone input, short hash, negative index", app.parseInputsCbor(IN_ONE) === null && app.parseInputsCbor("818241" + "aa".repeat(31) + "00") === null && app.parseInputsCbor("81825820" + IN_H1 + "20") === null);
+check("inputsdecode rejects trailing bytes, other tags, wrong shapes", app.parseInputsCbor("81" + IN_ONE + "00") === null && app.parseInputsCbor("d81881" + IN_ONE) === null && app.parseInputsCbor("a0") === null && app.parseInputsCbor("") === null && app.parseInputsCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
