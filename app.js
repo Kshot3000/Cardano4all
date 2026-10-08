@@ -1694,13 +1694,19 @@ function nativeScript(text) {
    wallets emit); for a whole transaction the body's exact original bytes
    are taken out by span and hashed — never re-serialised, since the hash
    covers the bytes as transmitted. The body is gated on the ledger's
-   required entries with their types (0 inputs: array, 1 outputs: array,
+   required entries with their types (0 inputs, 1 outputs: array,
    2 fee: integer) so an arbitrary CBOR map is not mislabelled as a
-   transaction; anything else returns null. Capped at the mainnet
-   max_tx_size (16,384 bytes). Proven against pycardano 0.19.2:
-   Transaction.id agreed with this function on bodies carrying a ttl, a
-   validity interval start and an auxiliary data hash, and on the full
-   transaction arrays wrapping them. */
+   transaction; anything else returns null. Inputs may be a plain array
+   OR a CBOR set (tag 258) — the CDDL's set<transaction_input> allows
+   both, and most mainnet transactions today use the set form; an
+   earlier version of this function accepted only the array form and
+   rejected real set-encoded transactions (fixed 2026-10-08, proven by
+   the mainnet vector in the tests whose computed ID equals its
+   on-chain hash). Capped at the mainnet max_tx_size (16,384 bytes).
+   Proven against pycardano 0.19.2: Transaction.id agreed with this
+   function on bodies carrying a ttl, a validity interval start and an
+   auxiliary data hash, and on the full transaction arrays wrapping
+   them. */
 function txId(raw) {
   var bytes = cleanHex(raw, MAX_TX_SIZE);
   if (bytes === null) return null;
@@ -1729,12 +1735,243 @@ function txId(raw) {
     if (k.t !== "int") return null;
     seen[k.v.toString()] = v;
   }
-  if (!seen["0"] || seen["0"].t !== "array") return null;
+  var inputsNode = seen["0"];
+  if (!inputsNode || !(inputsNode.t === "array" ||
+      (inputsNode.t === "tag" && inputsNode.n === 258n && inputsNode.item.t === "array"))) return null;
   if (!seen["1"] || seen["1"].t !== "array") return null;
   if (!seen["2"] || seen["2"].t !== "int") return null;
   var digest = blake2b(bodyBytes, 32);
   if (digest === null) return null;
   return { txId: bytesToHex(digest), source: source, bodyBytes: bodyBytes.length, totalBytes: bytes.length };
+}
+
+/* Transaction inspector — decode a transaction body (or a whole
+   transaction; the body is taken out of it) into what it actually does:
+   inputs, outputs with addresses/values/assets/datums/reference
+   scripts, the declared fee, validity interval, withdrawals, mint,
+   collateral, signers, governance entry counts and hashes. Field
+   numbering follows the Conway ledger CDDL exactly (eras/conway
+   cddl): 0 inputs, 1 outputs, 2 fee, 3 ttl, 4 certificates,
+   5 withdrawals, 7 auxiliary data hash, 8 validity interval start,
+   9 mint, 11 script data hash, 13 collateral, 14 required signers,
+   15 network id, 16 collateral return, 17 total collateral,
+   18 reference inputs, 19 voting procedures, 20 proposal procedures,
+   21 current treasury value, 22 donation — keys 6/10/12 do not exist
+   in the Conway body. (The shifted numbering was verified three ways:
+   the CDDL file itself, two independent libraries, and a real mainnet
+   Plutus transaction from block 14,040,547 decoded field-by-field —
+   that vector is in the tests, and its computed ID equals its
+   on-chain hash.) Gated on the proven txId() above; anything txId
+   rejects, and any malformed sub-structure (a bad input reference, an
+   output that does not parse, a negative fee, a zero or out-of-int64-
+   range mint quantity), returns null — refuse, never guess. Outputs
+   accept both serialisations the ledger allows (the Babbage map form
+   and the Alonzo array form). Output addresses are re-encoded from
+   their raw bytes and gated on the proven CIP-19 decoder; a payload
+   that is not a Shelley address (Byron-era, malformed) is reported
+   with address null and its hex shown instead. Honest limit, stated
+   on the page too: a body names inputs by reference only, so input
+   amounts are not in the body and no balance check is possible from
+   it — the fee shown is the fee the body declares. Proven against
+   pycardano 0.19.2 in scratch: four bodies/full transactions covering
+   every field above matched field-for-field, plus the real mainnet
+   transaction. */
+function inspectTx(raw) {
+  var idRes = txId(raw);
+  if (idRes === null) return null;
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  var parsed = cborParseItem(bytes, 0, 0);
+  var bodyNode = parsed.node.t === "map" ? parsed.node : parsed.node.items[0];
+  var seen = {};
+  for (var i = 0; i < bodyNode.pairs.length; i++) {
+    var bk = bodyNode.pairs[i][0], bv = bodyNode.pairs[i][1];
+    if (bk.t !== "int") return null;
+    var bks = bk.v.toString();
+    if (seen[bks] !== undefined) return null; /* duplicate body key */
+    seen[bks] = bv;
+  }
+  function unwrapSet(n) { return (n.t === "tag" && n.n === 258n && n.item.t === "array") ? n.item : n; }
+  function safeNum(v) { return v <= 9007199254740991n ? Number(v) : null; }
+  function parseRef(n) {
+    if (n.t !== "array" || n.items.length !== 2) return null;
+    if (n.items[0].t !== "bytes" || n.items[0].bytes.length !== 32) return null;
+    if (n.items[1].t !== "int" || n.items[1].v < 0n) return null;
+    var idx = safeNum(n.items[1].v);
+    return idx === null ? null : { txHash: bytesToHex(n.items[0].bytes), index: idx };
+  }
+  function parseRefList(n) {
+    n = unwrapSet(n);
+    if (n.t !== "array") return null;
+    var out = [];
+    for (var j = 0; j < n.items.length; j++) { var r = parseRef(n.items[j]); if (r === null) return null; out.push(r); }
+    return out;
+  }
+  function parseMultiAsset(n, forMint) {
+    if (n.t !== "map") return null;
+    var out = [];
+    for (var a = 0; a < n.pairs.length; a++) {
+      var pol = n.pairs[a][0], names = n.pairs[a][1];
+      if (pol.t !== "bytes" || pol.bytes.length !== 28 || names.t !== "map") return null;
+      for (var b = 0; b < names.pairs.length; b++) {
+        var nm = names.pairs[b][0], qty = names.pairs[b][1];
+        if (nm.t !== "bytes" || nm.bytes.length > 32 || qty.t !== "int") return null;
+        if (forMint ? (qty.v === 0n || qty.v < -9223372036854775808n || qty.v > 9223372036854775807n) : qty.v <= 0n) return null;
+        var nameHex = bytesToHex(nm.bytes);
+        out.push({ policy: bytesToHex(pol.bytes), name: nameHex, nameText: assetNameText(nameHex), quantity: qty.v.toString() });
+      }
+    }
+    out.sort(function (x, y) { return (x.policy + x.name) < (y.policy + y.name) ? -1 : 1; });
+    return out;
+  }
+  function parseValue(n) {
+    if (n.t === "int") return n.v < 0n ? null : { lovelace: n.v.toString(), assets: [] };
+    if (n.t === "array" && n.items.length === 2 && n.items[0].t === "int" && n.items[0].v >= 0n) {
+      var assets = parseMultiAsset(n.items[1], false);
+      return assets === null ? null : { lovelace: n.items[0].v.toString(), assets: assets };
+    }
+    return null;
+  }
+  function addressFromBytes(bts) {
+    if (!bts.length) return null;
+    var header = bts[0], type = header >> 4, net = header & 15;
+    if (net !== 0 && net !== 1) return null;
+    var isReward = type === 14 || type === 15;
+    var hrp = isReward ? (net === 1 ? "stake" : "stake_test") : (net === 1 ? "addr" : "addr_test");
+    var s = encodeAddressBytes(hrp, bts);
+    if (s === null) return null;
+    return decodeAddress(s) !== null ? s : null;
+  }
+  function parseDatumOption(n) {
+    if (n.t !== "array" || n.items.length !== 2 || n.items[0].t !== "int") return "bad";
+    if (n.items[0].v === 0n) {
+      return (n.items[1].t === "bytes" && n.items[1].bytes.length === 32) ? { kind: "hash", hash: bytesToHex(n.items[1].bytes) } : "bad";
+    }
+    if (n.items[0].v === 1n) {
+      return (n.items[1].t === "tag" && n.items[1].n === 24n && n.items[1].item.t === "bytes") ? { kind: "inline", hex: bytesToHex(n.items[1].item.bytes) } : "bad";
+    }
+    return "bad";
+  }
+  function parseScriptRef(n) {
+    if (n.t !== "tag" || n.n !== 24n || n.item.t !== "bytes") return "bad";
+    var inner = cborParseItem(n.item.bytes, 0, 0);
+    if (!inner || inner.next !== n.item.bytes.length || inner.node.t !== "array" || !inner.node.items.length || inner.node.items[0].t !== "int") return "bad";
+    var lang = inner.node.items[0].v;
+    if (lang === 0n) return "native";
+    if (lang === 1n) return "plutus1";
+    if (lang === 2n) return "plutus2";
+    if (lang === 3n) return "plutus3";
+    return "bad";
+  }
+  function parseOutput(n) {
+    if (n.t === "map") {
+      var m = {};
+      for (var a = 0; a < n.pairs.length; a++) {
+        var kk = n.pairs[a][0];
+        if (kk.t !== "int") return null;
+        var kks = kk.v.toString();
+        if (m[kks] !== undefined) return null;
+        m[kks] = n.pairs[a][1];
+      }
+      if (!m["0"] || m["0"].t !== "bytes" || !m["1"]) return null;
+      var val = parseValue(m["1"]); if (val === null) return null;
+      var datum = { kind: "none" };
+      if (m["2"] !== undefined) { datum = parseDatumOption(m["2"]); if (datum === "bad") return null; }
+      var sref = null;
+      if (m["3"] !== undefined) { sref = parseScriptRef(m["3"]); if (sref === "bad") return null; }
+      for (var key in m) if (["0", "1", "2", "3"].indexOf(key) < 0) return null;
+      return { address: addressFromBytes(m["0"].bytes), addressHex: bytesToHex(m["0"].bytes), lovelace: val.lovelace, assets: val.assets, datum: datum, scriptRef: sref };
+    }
+    if (n.t === "array") {
+      if (n.items.length < 2 || n.items.length > 3 || n.items[0].t !== "bytes") return null;
+      var val2 = parseValue(n.items[1]); if (val2 === null) return null;
+      var datum2 = { kind: "none" };
+      if (n.items.length === 3) {
+        if (n.items[2].t !== "bytes" || n.items[2].bytes.length !== 32) return null;
+        datum2 = { kind: "hash", hash: bytesToHex(n.items[2].bytes) };
+      }
+      return { address: addressFromBytes(n.items[0].bytes), addressHex: bytesToHex(n.items[0].bytes), lovelace: val2.lovelace, assets: val2.assets, datum: datum2, scriptRef: null };
+    }
+    return null;
+  }
+  function uintField(key) {
+    var n = seen[key];
+    if (n === undefined) return null;
+    if (n.t !== "int" || n.v < 0n) return "bad";
+    return n.v;
+  }
+
+  var inputs = parseRefList(seen["0"]); if (inputs === null) return null;
+  var outputs = [], outTotal = 0n;
+  for (var o = 0; o < seen["1"].items.length; o++) {
+    var po = parseOutput(seen["1"].items[o]); if (po === null) return null;
+    outputs.push(po); outTotal += BigInt(po.lovelace);
+  }
+  var fee = seen["2"].v; if (fee < 0n) return null;
+
+  var ttl = uintField("3"); if (ttl === "bad") return null;
+  var certCount = 0;
+  if (seen["4"] !== undefined) { var cn = unwrapSet(seen["4"]); if (cn.t !== "array") return null; certCount = cn.items.length; }
+  var withdrawals = [], wdTotal = 0n;
+  if (seen["5"] !== undefined) {
+    if (seen["5"].t !== "map") return null;
+    for (var w = 0; w < seen["5"].pairs.length; w++) {
+      var wk = seen["5"].pairs[w][0], wv = seen["5"].pairs[w][1];
+      if (wk.t !== "bytes" || wv.t !== "int" || wv.v < 0n) return null;
+      var wa = addressFromBytes(wk.bytes); if (wa === null) return null;
+      withdrawals.push({ address: wa, lovelace: wv.v.toString() }); wdTotal += wv.v;
+    }
+  }
+  var auxHash = null;
+  if (seen["7"] !== undefined) { if (seen["7"].t !== "bytes" || seen["7"].bytes.length !== 32) return null; auxHash = bytesToHex(seen["7"].bytes); }
+  var validityStart = uintField("8"); if (validityStart === "bad") return null;
+  var mint = [];
+  if (seen["9"] !== undefined) { mint = parseMultiAsset(seen["9"], true); if (mint === null) return null; }
+  var sdh = null;
+  if (seen["11"] !== undefined) { if (seen["11"].t !== "bytes" || seen["11"].bytes.length !== 32) return null; sdh = bytesToHex(seen["11"].bytes); }
+  var collateral = [];
+  if (seen["13"] !== undefined) { collateral = parseRefList(seen["13"]); if (collateral === null) return null; }
+  var signers = [];
+  if (seen["14"] !== undefined) {
+    var sn = unwrapSet(seen["14"]); if (sn.t !== "array") return null;
+    for (var s2 = 0; s2 < sn.items.length; s2++) {
+      if (sn.items[s2].t !== "bytes" || sn.items[s2].bytes.length !== 28) return null;
+      signers.push(bytesToHex(sn.items[s2].bytes));
+    }
+  }
+  var networkId = null;
+  if (seen["15"] !== undefined) {
+    if (seen["15"].t !== "int" || (seen["15"].v !== 0n && seen["15"].v !== 1n)) return null;
+    networkId = Number(seen["15"].v);
+  }
+  var collateralReturn = null;
+  if (seen["16"] !== undefined) { collateralReturn = parseOutput(seen["16"]); if (collateralReturn === null) return null; }
+  var totalCollateral = uintField("17"); if (totalCollateral === "bad") return null;
+  var referenceInputs = [];
+  if (seen["18"] !== undefined) { referenceInputs = parseRefList(seen["18"]); if (referenceInputs === null) return null; }
+  var voteCount = 0;
+  if (seen["19"] !== undefined) { if (seen["19"].t !== "map") return null; voteCount = seen["19"].pairs.length; }
+  var proposalCount = 0;
+  if (seen["20"] !== undefined) { var pn = unwrapSet(seen["20"]); if (pn.t !== "array") return null; proposalCount = pn.items.length; }
+  var treasury = uintField("21"); if (treasury === "bad") return null;
+  var donation = uintField("22"); if (donation === "bad") return null;
+
+  return {
+    txId: idRes.txId, source: idRes.source, bodyBytes: idRes.bodyBytes,
+    inputs: inputs, outputs: outputs, outputTotal: outTotal.toString(),
+    fee: fee.toString(),
+    ttl: ttl === null ? null : safeNum(ttl),
+    validityStart: validityStart === null ? null : safeNum(validityStart),
+    certificates: certCount,
+    withdrawals: withdrawals, withdrawalTotal: wdTotal.toString(),
+    auxDataHash: auxHash, mint: mint, scriptDataHash: sdh,
+    collateral: collateral, requiredSigners: signers, networkId: networkId,
+    collateralReturn: collateralReturn,
+    totalCollateral: totalCollateral === null ? null : totalCollateral.toString(),
+    referenceInputs: referenceInputs,
+    votingProcedures: voteCount, proposals: proposalCount,
+    treasuryValue: treasury === null ? null : treasury.toString(),
+    donation: donation === null ? null : donation.toString()
+  };
 }
 
 /* Current slot/epoch derived from the local clock + the fixed parameters
@@ -1749,7 +1986,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1968,6 +2205,72 @@ if (typeof document !== "undefined") {
       out.textContent = "Transaction ID: " + res.txId + (res.source === "transaction"
         ? " — taken from the body inside the full transaction (" + res.bodyBytes + " of " + res.totalBytes + " bytes); the witness set, is-valid flag and auxiliary data are not part of the ID, so it does not change when the transaction is signed."
         : " — blake2b-256 of the " + res.bodyBytes + "-byte body; the ID is fixed before signing, since witnesses are not part of it.");
+    });
+
+    /* --- transaction inspector (Conway body decode) --- */
+    document.getElementById("txinspect").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = inspectTx(document.getElementById("txinspect-input").value);
+      var out = document.getElementById("txinspect-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of a transaction body or a whole transaction (at most 16,384 bytes) whose body fully decodes: inputs, outputs and fee are required, and every output, withdrawal, mint entry and reference must be well-formed. A datum, a script or any other CBOR item is not a transaction.";
+        return;
+      }
+      var lines = [];
+      lines.push("Transaction ID: " + res.txId + (res.source === "transaction" ? " (body taken from the full transaction, " + res.bodyBytes + " bytes)" : " (" + res.bodyBytes + "-byte body)"));
+      lines.push("");
+      lines.push("Inputs (" + res.inputs.length + ") — spent by this transaction:");
+      res.inputs.forEach(function (inp, i) { lines.push("  " + (i + 1) + ". " + inp.txHash + "#" + inp.index); });
+      lines.push("");
+      lines.push("Outputs (" + res.outputs.length + "):");
+      res.outputs.forEach(function (o, i) {
+        lines.push("  " + (i + 1) + ". " + (o.address === null ? "address bytes " + o.addressHex + " (not a Shelley address — Byron-era or malformed)" : o.address));
+        lines.push("     " + o.lovelace + " lovelace (" + lovelaceToAda(o.lovelace) + " ADA)");
+        o.assets.forEach(function (a) {
+          lines.push("     + " + a.quantity + " × policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")") + " — fingerprint " + assetFingerprint(a.policy, a.name));
+        });
+        if (o.datum.kind === "hash") lines.push("     datum hash: " + o.datum.hash);
+        if (o.datum.kind === "inline") lines.push("     inline datum (CBOR): " + o.datum.hex);
+        if (o.scriptRef !== null) lines.push("     reference script: " + ({ native: "native script", plutus1: "Plutus V1 script", plutus2: "Plutus V2 script", plutus3: "Plutus V3 script" })[o.scriptRef]);
+      });
+      lines.push("Total output: " + res.outputTotal + " lovelace (" + lovelaceToAda(res.outputTotal) + " ADA)");
+      lines.push("");
+      lines.push("Declared fee: " + res.fee + " lovelace (" + lovelaceToAda(res.fee) + " ADA)");
+      if (res.ttl !== null) lines.push("Valid until slot: " + res.ttl + " (time to live)");
+      if (res.validityStart !== null) lines.push("Valid from slot: " + res.validityStart);
+      if (res.withdrawals.length) {
+        lines.push("");
+        lines.push("Reward withdrawals (" + res.withdrawals.length + "), total " + res.withdrawalTotal + " lovelace:");
+        res.withdrawals.forEach(function (w) { lines.push("  " + w.address + " — " + w.lovelace + " lovelace"); });
+      }
+      if (res.mint.length) {
+        lines.push("");
+        lines.push("Mint (positive = minted, negative = burned):");
+        res.mint.forEach(function (a) {
+          lines.push("  " + a.quantity + " × policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")"));
+        });
+      }
+      var gov = [];
+      if (res.certificates) gov.push(res.certificates + " certificate(s)");
+      if (res.votingProcedures) gov.push(res.votingProcedures + " voting procedure(s)");
+      if (res.proposals) gov.push(res.proposals + " governance proposal(s)");
+      if (gov.length) lines.push("Also in the body: " + gov.join(", ") + ".");
+      if (res.collateral.length) {
+        lines.push("");
+        lines.push("Collateral (" + res.collateral.length + "): " + res.collateral.map(function (c) { return c.txHash + "#" + c.index; }).join(", "));
+        if (res.totalCollateral !== null) lines.push("Total collateral: " + res.totalCollateral + " lovelace");
+        if (res.collateralReturn !== null) lines.push("Collateral return: " + (res.collateralReturn.address === null ? "address bytes " + res.collateralReturn.addressHex : res.collateralReturn.address) + " — " + res.collateralReturn.lovelace + " lovelace");
+      }
+      if (res.referenceInputs.length) lines.push("Reference inputs (" + res.referenceInputs.length + "): " + res.referenceInputs.map(function (c) { return c.txHash + "#" + c.index; }).join(", "));
+      if (res.requiredSigners.length) lines.push("Required signers (key hashes): " + res.requiredSigners.join(", "));
+      if (res.scriptDataHash !== null) lines.push("Script data hash: " + res.scriptDataHash);
+      if (res.auxDataHash !== null) lines.push("Auxiliary data hash: " + res.auxDataHash);
+      if (res.networkId !== null) lines.push("Network ID: " + res.networkId + (res.networkId === 1 ? " (mainnet)" : " (testnet)"));
+      if (res.treasuryValue !== null) lines.push("Current treasury value: " + res.treasuryValue + " lovelace");
+      if (res.donation !== null) lines.push("Treasury donation: " + res.donation + " lovelace");
+      lines.push("");
+      lines.push("A body names its inputs by reference — their amounts are not in the body, so no balance or fee-sufficiency check is possible from the body alone. The fee above is the fee the body declares.");
+      out.textContent = lines.join("\n");
     });
 
     /* --- minimum-UTxO calculator (ledger formula, serialised size) --- */

@@ -114,6 +114,22 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   transaction. Proven against pycardano 0.19.2, whose `Transaction.id`
   agreed on bodies carrying a TTL, a validity interval start and an
   auxiliary data hash, and on the full transactions wrapping them.
+  Inputs are accepted in both serialisations the ledger allows — a
+  plain array or a CBOR set (tag 258), the form most mainnet
+  transactions use today.
+- **Transaction inspector** — paste a transaction or body CBOR hex and
+  read what it does: inputs spent, outputs with addresses, lovelace,
+  native assets (with CIP-14 fingerprints), datums and reference
+  scripts, the declared fee, validity interval, reward withdrawals,
+  mints/burns, collateral, required signers and governance entry
+  counts. Field numbering follows the Conway ledger CDDL itself
+  (script data hash is key 11, collateral 13, reference inputs 18),
+  and both ledger output serialisations (Babbage map form, Alonzo
+  array form) decode. Proven against pycardano 0.19.2 field-for-field
+  on bodies covering every field, and end-to-end on a real mainnet
+  Plutus transaction whose computed ID equals its on-chain hash.
+  Honest limit: a body names inputs by reference, so their amounts
+  are not in the body and no balance check is possible from it.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
