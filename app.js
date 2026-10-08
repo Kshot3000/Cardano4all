@@ -3436,8 +3436,324 @@ function parseAuxDataCbor(raw) {
   return { format: format, hash: hash, metadata: metadata, nativeScripts: nativeScripts, plutusScripts: plutusScripts };
 }
 
+/* Transaction witness set decoder — a standalone WITNESS SET
+   on its own: the second element of every transaction, the
+   signatures and scripts that authorise the body, which until
+   now only ever appeared inside a whole transaction (and the
+   inspector does not decode it at all). Ledger CDDL (Conway):
+   transaction_witness_set = { ? 0 : nonempty_list<vkeywitness>,
+   ? 1 : nonempty_list<native_script>, ? 2 :
+   nonempty_list<bootstrap_witness>, ? 3 :
+   nonempty_set<plutus_v1_script>, ? 4 :
+   nonempty_list<plutus_data>, ? 5 : redeemers, ? 6 :
+   nonempty_set<plutus_v2_script>, ? 7 :
+   nonempty_set<plutus_v3_script> } — every key optional (an
+   empty witness set a0 decodes; a script-only transaction
+   legitimately carries no key witness), no key repeated, no
+   other key admitted. nonempty_list and nonempty_set are both
+   #6.258([+ a]) / [+ a] — set tag 258 or a plain array, at
+   least one entry either way, so an empty list at any key is
+   rejected even though pycardano 0.19.2 serialises one (a10080
+   probed). The LIST keys (0, 1, 2, 4) keep duplicates — the
+   grammar is a list — while the SET keys (3, 6, 7) reject a
+   repeated script, overruling the oracle, which serialises the
+   same Plutus V2 script twice. A vkey witness is [vkey,
+   signature] with vkey exactly 32 bytes and signature exactly
+   64 (the oracle serialises a 63-byte signature happily; the
+   CDDL sizes govern); each key is also shown as its key hash,
+   blake2b-224 of the key — the hash addresses and bodies
+   actually name. A bootstrap (Byron-era) witness is
+   [public_key, signature, chain_code, attributes] — the last
+   two are plain `bytes` in the CDDL (Shelley, Babbage and
+   Conway texts all leave them unsized), so no size is imposed
+   here either; pycardano 0.19.2 has NO bootstrap class (the
+   field is List[Any] with a TODO in its source), so that vector
+   is built from the CDDL text and proven by the oracle's own
+   from_cbor round-trip. Native scripts decode recursively
+   exactly as in the auxiliary data decoder, hashes over their
+   exact serialised bytes (span tree, never re-serialised);
+   Plutus scripts show size and script hash (language byte ‖
+   bytes, blake2b-224). A Plutus datum must be a real
+   plutus_data — a constructor (tags 121–127, 1280–1400, or 102
+   wrapping [alternative, fields]), a map, a list, an integer
+   (bignum tags 2/3 included) or a byte string of at most 64
+   bytes (bounded_bytes) — and is shown rendered plus its datum
+   hash, blake2b-256 of its exact bytes: the hash an output
+   would commit to. Redeemers come in BOTH serialisations: the
+   legacy array [+ redeemer], redeemer = [tag, index, data,
+   ex_units], and the Conway map {+ [tag, index] => [data,
+   ex_units]} with repeated keys rejected; tag is 0–5 (spend,
+   mint, cert, reward, voting, proposing), index is uint .size
+   4 and the ex-units are 0..max_int64 each — all three gates
+   overrule the oracle, which serialises an index of 2^32 and a
+   negative memory value. Input capped at max_tx_size (16,384)
+   like the transaction tools. Proven against pycardano
+   0.19.2's TransactionWitnessSet serialisations in scratch
+   (witness_py.py / witness_vectors.json, oracle round-trip
+   asserted in the generator): the empty set, key witnesses,
+   native scripts, a CDDL-built bootstrap witness, all three
+   Plutus versions, three datum shapes, both redeemer forms and
+   a full eight-key set decode field-for-field, and a REAL
+   mainnet witness set (the Plutus transaction the inspector
+   tests carry, fetched via Koios) decodes with its key hash
+   matching the body's required signer. Display only — the
+   signatures are shown, never verified against a body (that
+   needs the body too — the inspector's job), and nothing is
+   signed or sent. */
+function parseWitnessSetCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var root = parsed.node;
+  if (root.t !== "map") return null;
+
+  /* Byte spans, recovered exactly as in the auxiliary data
+     decoder: native script hashes and datum hashes are taken
+     over the bytes as transmitted, never a re-serialisation. */
+  function headLen(pos) {
+    var ai = bytes[pos] & 31;
+    if (ai < 24 || ai === 31) return 1;
+    if (ai === 24) return 2;
+    if (ai === 25) return 3;
+    if (ai === 26) return 5;
+    return 9;
+  }
+  function spanTree(node, pos) {
+    var end = cborParseItem(bytes, pos, 0);
+    if (!end) return null;
+    var span = { start: pos, end: end.next, children: [] };
+    var kids = [];
+    if (node.t === "array") kids = node.items;
+    else if (node.t === "map") node.pairs.forEach(function (pr) { kids.push(pr[0]); kids.push(pr[1]); });
+    else if (node.t === "tag") kids = [node.item];
+    else return span;
+    var childPos = pos + headLen(pos);
+    for (var i = 0; i < kids.length; i++) {
+      var cs = spanTree(kids[i], childPos);
+      if (cs === null) return null;
+      span.children.push(cs);
+      childPos = cs.end;
+    }
+    return span;
+  }
+  var rootSpan = spanTree(root, 0);
+  if (rootSpan === null) return null;
+
+  var MAX_I64 = 9223372036854775807n, MAX_U32 = 4294967295n;
+  function unwrapNonempty(n, span) {
+    if (n.t === "tag" && n.n === 258n) { n = n.item; span = span.children[0]; }
+    if (n.t !== "array" || n.items.length === 0) return null;
+    return { node: n, span: span };
+  }
+  function keyHashOf(bts) {
+    var d = blake2b(bts, 28);
+    return d === null ? null : bytesToHex(d);
+  }
+  function scriptHashOfSpan(span) {
+    var d = blake2b([0].concat(bytes.slice(span.start, span.end)), 28);
+    return d === null ? null : bytesToHex(d);
+  }
+  function decodeNative(n, span) {
+    if (n.t !== "array" || n.items.length === 0 || n.items[0].t !== "int") return null;
+    var code = n.items[0].v;
+    var selfHash = scriptHashOfSpan(span);
+    if (selfHash === null) return null;
+    function childScripts() {
+      var arrNode = n.items[n.items.length - 1], arrSpan = span.children[span.children.length - 1];
+      if (arrNode.t !== "array") return null;
+      var out = [];
+      for (var i = 0; i < arrNode.items.length; i++) {
+        var d = decodeNative(arrNode.items[i], arrSpan.children[i]);
+        if (d === null) return null;
+        out.push(d);
+      }
+      return out;
+    }
+    function joined(list) { return list.map(function (d) { return d.text; }).join(", "); }
+    if (code === 0n) {
+      if (n.items.length !== 2 || n.items[1].t !== "bytes" || n.items[1].bytes.length !== 28) return null;
+      var kh = bytesToHex(n.items[1].bytes);
+      return { kind: "sig", keyHash: kh, text: "sig " + kh, hash: selfHash };
+    }
+    if (code === 1n || code === 2n) {
+      if (n.items.length !== 2) return null;
+      var subs = childScripts();
+      if (subs === null) return null;
+      var kind = code === 1n ? "all" : "any";
+      return { kind: kind, scripts: subs, text: kind + "(" + joined(subs) + ")", hash: selfHash };
+    }
+    if (code === 3n) {
+      if (n.items.length !== 3 || n.items[1].t !== "int" || n.items[1].v < 0n) return null;
+      var subs3 = childScripts();
+      if (subs3 === null) return null;
+      return { kind: "atLeast", required: n.items[1].v.toString(), scripts: subs3, text: "atLeast " + n.items[1].v.toString() + " of (" + joined(subs3) + ")", hash: selfHash };
+    }
+    if (code === 4n || code === 5n) {
+      if (n.items.length !== 2 || n.items[1].t !== "int" || n.items[1].v < 0n) return null;
+      var kindT = code === 4n ? "after" : "before";
+      return { kind: kindT, slot: n.items[1].v.toString(), text: kindT + " " + n.items[1].v.toString(), hash: selfHash };
+    }
+    return null;
+  }
+  function validPlutusData(n, depth) {
+    if (depth > 100) return false;
+    if (n.t === "int") return true;
+    if (n.t === "bytes") return n.bytes.length <= 64;
+    if (n.t === "array") {
+      for (var i = 0; i < n.items.length; i++) if (!validPlutusData(n.items[i], depth + 1)) return false;
+      return true;
+    }
+    if (n.t === "map") {
+      for (var j = 0; j < n.pairs.length; j++)
+        if (!validPlutusData(n.pairs[j][0], depth + 1) || !validPlutusData(n.pairs[j][1], depth + 1)) return false;
+      return true;
+    }
+    if (n.t === "tag") {
+      if ((n.n === 2n || n.n === 3n) && n.item.t === "bytes") return n.item.bytes.length <= 64;
+      if (n.n === 102n) {
+        if (n.item.t !== "array" || n.item.items.length !== 2) return false;
+        if (n.item.items[0].t !== "int" || n.item.items[0].v < 0n) return false;
+        if (n.item.items[1].t !== "array") return false;
+        for (var k = 0; k < n.item.items[1].items.length; k++)
+          if (!validPlutusData(n.item.items[1].items[k], depth + 1)) return false;
+        return true;
+      }
+      if ((n.n >= 121n && n.n <= 127n) || (n.n >= 1280n && n.n <= 1400n)) {
+        if (n.item.t !== "array") return false;
+        for (var m = 0; m < n.item.items.length; m++)
+          if (!validPlutusData(n.item.items[m], depth + 1)) return false;
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+  function datumEntry(n, span) {
+    if (!validPlutusData(n, 0)) return null;
+    var d = blake2b(bytes.slice(span.start, span.end), 32);
+    if (d === null) return null;
+    return { data: cborRender(n), hash: bytesToHex(d) };
+  }
+  var TAG_NAMES = ["spend", "mint", "cert", "reward", "voting", "proposing"];
+  function exUnits(n) {
+    if (n.t !== "array" || n.items.length !== 2) return null;
+    var m = n.items[0], s = n.items[1];
+    if (m.t !== "int" || s.t !== "int" || m.v < 0n || s.v < 0n || m.v > MAX_I64 || s.v > MAX_I64) return null;
+    return { mem: m.v.toString(), steps: s.v.toString() };
+  }
+  function redeemerEntry(tagN, idxN, dataN, dataSpan, exN) {
+    if (tagN.t !== "int" || tagN.v < 0n || tagN.v > 5n) return null;
+    if (idxN.t !== "int" || idxN.v < 0n || idxN.v > MAX_U32) return null;
+    var de = datumEntry(dataN, dataSpan);
+    if (de === null) return null;
+    var ex = exUnits(exN);
+    if (ex === null) return null;
+    return { tag: Number(tagN.v), tagName: TAG_NAMES[Number(tagN.v)], index: Number(idxN.v),
+             data: de.data, dataHash: de.hash, exUnits: ex };
+  }
+  function parseRedeemers(n, span) {
+    var out = [];
+    if (n.t === "array") {
+      if (n.items.length === 0) return null;
+      for (var i = 0; i < n.items.length; i++) {
+        var it = n.items[i], iSpan = span.children[i];
+        if (it.t !== "array" || it.items.length !== 4) return null;
+        var r = redeemerEntry(it.items[0], it.items[1], it.items[2], iSpan.children[2], it.items[3]);
+        if (r === null) return null;
+        out.push(r);
+      }
+      return { form: "list", entries: out };
+    }
+    if (n.t === "map") {
+      if (n.pairs.length === 0) return null;
+      var seen = {};
+      for (var j = 0; j < n.pairs.length; j++) {
+        var k = n.pairs[j][0], v = n.pairs[j][1], vSpan = span.children[2 * j + 1];
+        if (k.t !== "array" || k.items.length !== 2) return null;
+        if (v.t !== "array" || v.items.length !== 2) return null;
+        var r2 = redeemerEntry(k.items[0], k.items[1], v.items[0], vSpan.children[0], v.items[1]);
+        if (r2 === null) return null;
+        var kk = r2.tag + "#" + r2.index;
+        if (seen[kk] !== undefined) return null; /* a map: one value per key */
+        seen[kk] = true;
+        out.push(r2);
+      }
+      return { form: "map", entries: out };
+    }
+    return null;
+  }
+
+  var vkeyWitnesses = [], nativeScripts = [], bootstrapWitnesses = [],
+      plutusScripts = [], plutusData = [], redeemers = null;
+  var seenKey = {};
+  for (var pi = 0; pi < root.pairs.length; pi++) {
+    var key = root.pairs[pi][0], val = root.pairs[pi][1], valSpan = rootSpan.children[2 * pi + 1];
+    if (key.t !== "int" || key.v < 0n || key.v > 7n) return null;
+    var ks = key.v.toString();
+    if (seenKey[ks] !== undefined) return null;
+    seenKey[ks] = true;
+    if (ks === "0") {
+      var lw = unwrapNonempty(val, valSpan); if (lw === null) return null;
+      for (var a = 0; a < lw.node.items.length; a++) {
+        var w = lw.node.items[a];
+        if (w.t !== "array" || w.items.length !== 2) return null;
+        if (w.items[0].t !== "bytes" || w.items[0].bytes.length !== 32) return null;
+        if (w.items[1].t !== "bytes" || w.items[1].bytes.length !== 64) return null;
+        var wkh = keyHashOf(w.items[0].bytes); if (wkh === null) return null;
+        vkeyWitnesses.push({ vkey: bytesToHex(w.items[0].bytes), keyHash: wkh, signature: bytesToHex(w.items[1].bytes) });
+      }
+    } else if (ks === "1") {
+      var ln = unwrapNonempty(val, valSpan); if (ln === null) return null;
+      for (var b = 0; b < ln.node.items.length; b++) {
+        var nd = decodeNative(ln.node.items[b], ln.span.children[b]);
+        if (nd === null) return null;
+        nativeScripts.push(nd);
+      }
+    } else if (ks === "2") {
+      var lb = unwrapNonempty(val, valSpan); if (lb === null) return null;
+      for (var c = 0; c < lb.node.items.length; c++) {
+        var bw = lb.node.items[c];
+        if (bw.t !== "array" || bw.items.length !== 4) return null;
+        if (bw.items[0].t !== "bytes" || bw.items[0].bytes.length !== 32) return null;
+        if (bw.items[1].t !== "bytes" || bw.items[1].bytes.length !== 64) return null;
+        if (bw.items[2].t !== "bytes" || bw.items[3].t !== "bytes") return null;
+        var bkh = keyHashOf(bw.items[0].bytes); if (bkh === null) return null;
+        bootstrapWitnesses.push({ publicKey: bytesToHex(bw.items[0].bytes), keyHash: bkh,
+          signature: bytesToHex(bw.items[1].bytes), chainCode: bytesToHex(bw.items[2].bytes),
+          attributes: bytesToHex(bw.items[3].bytes) });
+      }
+    } else if (ks === "3" || ks === "6" || ks === "7") {
+      var lp = unwrapNonempty(val, valSpan); if (lp === null) return null;
+      var kind = ks === "3" ? "plutusv1" : ks === "6" ? "plutusv2" : "plutusv3";
+      var seenS = {};
+      for (var d = 0; d < lp.node.items.length; d++) {
+        if (lp.node.items[d].t !== "bytes") return null;
+        var shex = bytesToHex(lp.node.items[d].bytes);
+        if (seenS[shex] !== undefined) return null; /* a set: no repeated script */
+        seenS[shex] = true;
+        var sh = scriptHash(kind, shex); if (sh === null) return null;
+        plutusScripts.push({ language: kind, size: lp.node.items[d].bytes.length, hash: sh });
+      }
+    } else if (ks === "4") {
+      var ld = unwrapNonempty(val, valSpan); if (ld === null) return null;
+      for (var e = 0; e < ld.node.items.length; e++) {
+        var de = datumEntry(ld.node.items[e], ld.span.children[e]);
+        if (de === null) return null;
+        plutusData.push(de);
+      }
+    } else if (ks === "5") {
+      redeemers = parseRedeemers(val, valSpan);
+      if (redeemers === null) return null;
+    }
+  }
+  return { vkeyWitnesses: vkeyWitnesses, nativeScripts: nativeScripts,
+           bootstrapWitnesses: bootstrapWitnesses, plutusScripts: plutusScripts,
+           plutusData: plutusData, redeemers: redeemers };
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -3971,6 +4287,47 @@ if (typeof document !== "undefined") {
         lines.push("This auxiliary data block carries no metadata and no scripts.");
       out.textContent = lines.join("\n");
     });
+    /* --- transaction witness set decoder (a standalone witness set's CBOR) --- */
+    document.getElementById("witnessdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseWitnessSetCbor(document.getElementById("witnessdecode-input").value);
+      var out = document.getElementById("witnessdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one transaction witness set: a map with optional keys 0 (key witnesses), 1 (native scripts), 2 (bootstrap witnesses), 3 (Plutus V1 scripts), 4 (Plutus data), 5 (redeemers, array or map form), 6 (Plutus V2 scripts) and 7 (Plutus V3 scripts) — every list or set non-empty, keys and signatures at their ledger sizes, redeemer tags 0–5 with 32-bit indices and ex-units within int64. A whole transaction is a different shape — the transaction inspector above reads whole transactions.";
+        return;
+      }
+      var lines = [];
+      var total = res.vkeyWitnesses.length + res.nativeScripts.length + res.bootstrapWitnesses.length + res.plutusScripts.length + res.plutusData.length + (res.redeemers ? res.redeemers.entries.length : 0);
+      lines.push("Transaction witness set — " + total + (total === 1 ? " entry" : " entries") + " in total.");
+      res.vkeyWitnesses.forEach(function (w, i) {
+        lines.push("Key witness " + (i + 1) + ": key " + w.vkey);
+        lines.push("  key hash " + w.keyHash + " — signature " + w.signature);
+      });
+      res.nativeScripts.forEach(function (s) { lines.push("Native script: " + s.text + " — script hash " + s.hash); });
+      res.bootstrapWitnesses.forEach(function (bw, i) {
+        lines.push("Bootstrap witness " + (i + 1) + " (Byron-era): public key " + bw.publicKey + " — key hash " + bw.keyHash);
+        lines.push("  signature " + bw.signature);
+        lines.push("  chain code " + bw.chainCode + " — attributes 0x" + bw.attributes);
+      });
+      res.plutusScripts.forEach(function (s) {
+        var lang = s.language === "plutusv1" ? "Plutus V1" : s.language === "plutusv2" ? "Plutus V2" : "Plutus V3";
+        lines.push(lang + " script (" + s.size + (s.size === 1 ? " byte" : " bytes") + ") — script hash " + s.hash);
+      });
+      res.plutusData.forEach(function (d, i) {
+        lines.push("Plutus datum " + (i + 1) + ": " + d.data);
+        lines.push("  datum hash " + d.hash);
+      });
+      if (res.redeemers) {
+        lines.push("Redeemers (" + (res.redeemers.form === "map" ? "Conway map form" : "legacy array form") + "):");
+        res.redeemers.entries.forEach(function (rd) {
+          lines.push("  " + rd.tagName + " #" + rd.index + ": data " + rd.data + " (datum hash " + rd.dataHash + ") — ex-units mem " + rd.exUnits.mem + ", steps " + rd.exUnits.steps);
+        });
+      }
+      if (total === 0) lines.push("This witness set is empty — it authorises nothing on its own; a transaction carrying it would need its witnesses supplied another way.");
+      lines.push("Signatures are shown as carried, not verified — checking one needs the transaction body it signs.");
+      out.textContent = lines.join("\n");
+    });
+
     document.getElementById("proposalsdecode").addEventListener("submit", function (ev) {
       ev.preventDefault();
       var res = parseProposalsCbor(document.getElementById("proposalsdecode-input").value);

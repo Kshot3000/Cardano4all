@@ -355,6 +355,14 @@
         <button type="submit" class="btn primary">Decode auxiliary data</button>
         <p id="auxdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="witnessdecode">
+        <h3>Transaction witness set decoder</h3>
+        <p>One transaction's <strong>witness set</strong> on its own — the signatures and scripts that authorise the body, carried as the second element of every transaction. Every key is optional (a script-only transaction carries no key witness, and an empty set decodes): <strong>key witnesses</strong> (key and 64-byte signature, with the <strong>key hash</strong> the chain actually names), <strong>native scripts</strong> decoded recursively with their script hashes, Byron-era <strong>bootstrap witnesses</strong>, <strong>Plutus V1/V2/V3 scripts</strong> with size and script hash, <strong>Plutus data</strong> rendered with each datum's hash, and <strong>redeemers in both serialisations</strong> — the legacy array and the Conway map — with their data and exact execution units. Lists and sets must be non-empty, set-held scripts may not repeat, and redeemer indices and ex-units are held to the ledger's own ranges. Signatures are shown as carried, <strong>not verified</strong> — checking one needs the body it signs, which is the transaction inspector's job.</p>
+        <label for="witnessdecode-input">Witness set CBOR (hex)</label>
+        <textarea id="witnessdecode-input" rows="3" spellcheck="false" placeholder="e.g. a200… (a map of witnesses) — or a0 for an empty witness set" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode witness set</button>
+        <p id="witnessdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -545,6 +553,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=36"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>

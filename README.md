@@ -465,6 +465,47 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   field-for-field, with native script hashes matching
   pycardano's own and Plutus hashes cross-checked against
   hashlib's blake2b-224.
+- **Transaction witness set decoder** — one transaction's
+  witness set on its own, the second element of every
+  transaction: the signatures and scripts that authorise
+  the body. Conway CDDL `transaction_witness_set` — every
+  key optional (an empty set `a0` decodes; a script-only
+  transaction legitimately carries no key witness), no key
+  repeated, no other key admitted. Key witnesses show the
+  key, its blake2b-224 key hash (the hash addresses and
+  bodies actually name) and the 64-byte signature — the
+  two sizes are the CDDL's, overruling pycardano 0.19.2,
+  which serialises a 63-byte signature happily. Native
+  scripts decode recursively with hashes over their exact
+  serialised bytes. Bootstrap (Byron-era) witnesses decode
+  as `[public_key, signature, chain_code, attributes]` —
+  the last two are plain `bytes` in the Shelley, Babbage
+  and Conway CDDL texts, so no size is imposed; pycardano
+  0.19.2 has no bootstrap class at all (its field is
+  `List[Any]` with a TODO in the source), so that vector
+  is built from the CDDL text and proven by the oracle's
+  own `from_cbor` round-trip. Plutus V1/V2/V3 scripts sit
+  in `nonempty_set`s, so a repeated script is rejected —
+  the oracle serialises the same V2 script twice — while
+  the list-held sections keep duplicates, as the grammar
+  says. Plutus data must be real `plutus_data`
+  (constructors, maps, lists, integers including the
+  bignum forms, byte strings of at most 64 bytes) and
+  each datum is shown with its datum hash, blake2b-256
+  over its exact bytes. Redeemers decode in both
+  serialisations — the legacy array and the Conway map
+  (repeated keys rejected) — with tags 0–5 (spend, mint,
+  cert, reward, voting, proposing), indices held to
+  `uint .size 4` and ex-units to `0..max_int64`, all
+  overruling the oracle, which serialises an index of
+  2^32 and a negative memory value. Signatures are shown
+  as carried, never verified — that needs the body too.
+  Proven against pycardano 0.19.2's
+  `TransactionWitnessSet` serialisations (round-trip
+  asserted in the generator) and a real mainnet witness
+  set (from the Plutus transaction the inspector tests
+  carry, fetched via Koios), whose key hash matches its
+  body's required signer.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
