@@ -346,6 +346,77 @@ function exunitCost(memStr, stepsStr) {
   };
 }
 
+/* Reference script fee — the third part of the Conway-era minimum fee
+   (ledger eras/conway Tx.hs tierRefScriptFee; design recorded in the
+   ledger's ADR 9). A transaction that uses reference scripts pays for
+   their TOTAL size (every referenced script counted, duplicates
+   included) in tiers of 25,600 bytes: the first tier is priced at the
+   protocol parameter min_fee_ref_script_cost_per_byte, and each
+   following tier's per-byte price is the previous one multiplied by
+   1.2. The floor is applied ONCE, to the final total — the accumulator
+   is an exact rational throughout, so a fractional tier followed by
+   more bytes is NOT the same as flooring each tier (128,003 bytes
+   costs 2,857,686 lovelace; flooring per tier would give 2,857,685).
+   Mainnet values, verified against the Koios epoch_params endpoint
+   for epoch 660 on 2026-10-07: cost per byte = 15 lovelace (the
+   multiplier 6/5 and the 25,600-byte stride are the Conway genesis
+   values the ledger carries as governance-set parameters). Hard
+   ledger limits: at most 204,800 reference-script bytes per
+   transaction and 1,048,576 per block — sizes above the per-block
+   limit are rejected here rather than priced. */
+var REFSCRIPT_COST_PER_BYTE = 15n;
+var REFSCRIPT_TIER_BYTES = 25600n;
+var REFSCRIPT_MAX_TX_BYTES = 204800n;
+var REFSCRIPT_MAX_BLOCK_BYTES = 1048576n;
+
+/* refScriptFee(sizeStr) -> { sizeBytes, feeLovelace, exactLovelace,
+   overTxLimit } (decimal strings; exactLovelace is the un-floored
+   total) or null for empty, fractional, non-numeric or
+   over-block-limit inputs. Sizes above the per-transaction limit are
+   still priced, flagged via overTxLimit, so the cost of an oversize
+   draft stays visible. */
+function refScriptFee(sizeStr) {
+  var s = (sizeStr || "").trim();
+  if (!/^\d+$/.test(s)) return null;
+  var n = BigInt(s);
+  if (n > REFSCRIPT_MAX_BLOCK_BYTES) return null;
+  var accNum = 0n, accDen = 1n;      /* exact rational running total */
+  var priceNum = REFSCRIPT_COST_PER_BYTE, priceDen = 1n;
+  var rem = n;
+  function gcd(a, b) { while (b) { var t = a % b; a = b; b = t; } return a === 0n ? 1n : a; }
+  function addTier(bytes) {
+    accNum = accNum * priceDen + priceNum * bytes * accDen;
+    accDen = accDen * priceDen;
+    var g = gcd(accNum, accDen);
+    if (g > 1n) { accNum /= g; accDen /= g; }
+  }
+  while (rem >= REFSCRIPT_TIER_BYTES) {
+    addTier(REFSCRIPT_TIER_BYTES);
+    priceNum *= 6n; priceDen *= 5n;
+    rem -= REFSCRIPT_TIER_BYTES;
+  }
+  addTier(rem);
+  var exact = null;
+  var d = accDen, j = 0n;
+  while (d % 5n === 0n) { d /= 5n; j++; }
+  if (d === 1n) {   /* denominator is a power of 5: exact decimal exists */
+    var scaled = (accNum * (2n ** j)).toString();
+    if (j === 0n) exact = scaled;
+    else {
+      scaled = scaled.padStart(Number(j) + 1, "0");
+      var cut = scaled.length - Number(j);
+      var frac = scaled.slice(cut).replace(/0+$/, "");
+      exact = scaled.slice(0, cut) + (frac ? "." + frac : "");
+    }
+  }
+  return {
+    sizeBytes: n.toString(),
+    feeLovelace: (accNum / accDen).toString(),
+    exactLovelace: exact,
+    overTxLimit: n > REFSCRIPT_MAX_TX_BYTES
+  };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -1534,7 +1605,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1682,6 +1753,26 @@ if (typeof document !== "undefined") {
         " steps = " + res.costLovelace + " lovelace (" + lovelaceToAda(res.costLovelace) +
         " ADA), the exact " + res.exactLovelace + " lovelace rounded up once, as the ledger rounds it. " +
         "This is the script part of the fee only — the size-based fee comes on top, and a wallet may pay above the minimum.";
+    });
+
+    /* --- reference script fee (ledger tierRefScriptFee, exact BigInt maths) --- */
+    document.getElementById("refscriptcalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = refScriptFee(document.getElementById("refscript-size").value);
+      var out = document.getElementById("refscript-result");
+      if (!res) {
+        out.textContent = "Enter a whole number of bytes from 0 to 1,048,576 (the per-block limit for reference scripts).";
+        return;
+      }
+      out.textContent = "Reference script fee for " + res.sizeBytes + " bytes = " + res.feeLovelace +
+        " lovelace (" + lovelaceToAda(res.feeLovelace) + " ADA)" +
+        (res.exactLovelace && res.exactLovelace !== res.feeLovelace
+          ? ", the exact " + res.exactLovelace + " lovelace floored once, as the ledger floors it"
+          : "") +
+        ". This comes on top of the size-based fee and any execution cost." +
+        (res.overTxLimit
+          ? " Warning: that is over the 204,800-byte per-transaction limit — no single transaction can carry that much reference script; split it across transactions."
+          : "");
     });
 
     /* --- minimum-UTxO calculator (ledger formula, serialised size) --- */

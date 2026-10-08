@@ -80,6 +80,13 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   and exact BigInt rational maths (prices verified live via Koios for
   epoch 660; per-transaction unit caps enforced). It prices execution
   units you supply — measuring a script to find its units is node work.
+- **Reference script fee calculator** — the Conway-era charge for using
+  reference scripts: their total size priced in 25,600-byte tiers at
+  15 lovelace/byte (the live `min_fee_ref_script_cost_per_byte` parameter,
+  verified via Koios for epoch 660), each following tier 1.2× the previous
+  price, floored once over the exact rational total — the ledger's
+  `tierRefScriptFee`. The 204,800-byte per-transaction limit is flagged,
+  not silently priced past.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

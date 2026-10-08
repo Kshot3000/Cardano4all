@@ -207,6 +207,14 @@
         <button type="submit" class="btn primary">Calculate execution cost</button>
         <p id="exunit-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="refscriptcalc">
+        <h3>Reference script fee calculator</h3>
+        <p>The reference-script part of a transaction's fee. Since the Conway era, a transaction that uses <strong>reference scripts</strong> pays for their total size in <strong>25,600-byte tiers</strong>: the first tier costs <strong>15 lovelace per byte</strong> (the current mainnet protocol parameter, checked against the live protocol parameters for epoch 660) and each following tier's per-byte price rises by a factor of <strong>1.2</strong> — the ledger's defence against oversized-script attacks, with the total floored once at the end. Every referenced script counts, duplicates included. Enter the total size of the reference scripts your transaction uses (your wallet or <code>cardano-cli</code> reports script sizes); the per-transaction limit is 204,800 bytes.</p>
+        <label for="refscript-size">Total reference script size (bytes)</label>
+        <input id="refscript-size" inputmode="numeric" placeholder="e.g. 10000" autocomplete="off">
+        <button type="submit" class="btn primary">Calculate reference script fee</button>
+        <p id="refscript-result" role="status" aria-live="polite"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -397,6 +405,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

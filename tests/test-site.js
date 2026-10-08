@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=19"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=20"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -181,6 +181,25 @@ check("exunit at per-tx maxima = 952050 + 721000 = 1673050", app.exunitCost("165
 check("exunit above mem cap rejected", app.exunitCost("16500001", "0") === null);
 check("exunit above step cap rejected", app.exunitCost("0", "10000000001") === null);
 check("exunit fractional, garbage and empty rejected", app.exunitCost("1.5", "0") === null && app.exunitCost("abc", "0") === null && app.exunitCost("", "0") === null && app.exunitCost("0", "") === null);
+
+/* reference script fee — Conway tierRefScriptFee: 25,600-byte tiers,
+   15 lovelace/byte base (live param, epoch 660), x1.2 per tier, ONE
+   floor over the exact rational total (ledger Tx.hs / ADR 9) */
+check("refscript calculator in page", html.includes('id="refscriptcalc"') && html.includes('id="refscript-result"'));
+check("refscript zero bytes cost zero", app.refScriptFee("0").feeLovelace === "0");
+check("refscript 1 byte = 15 lovelace", app.refScriptFee("1").feeLovelace === "15");
+check("refscript 100 bytes = 1500", app.refScriptFee("100").feeLovelace === "1500");
+check("refscript full first tier 25600 = 384000 exactly", app.refScriptFee("25600").feeLovelace === "384000" && app.refScriptFee("25600").exactLovelace === "384000");
+check("refscript first byte of tier 2 priced 18 (= 15 x 1.2)", app.refScriptFee("25601").feeLovelace === "384018");
+check("refscript two full tiers = 384000 + 460800 = 844800", app.refScriptFee("51200").feeLovelace === "844800");
+check("refscript tier-3 price 21.6 floored once: 51201 = 844821", app.refScriptFee("51201").feeLovelace === "844821" && app.refScriptFee("51201").exactLovelace === "844821.6");
+check("refscript three full tiers = 1397760 (tier-3 full tier is exact)", app.refScriptFee("76800").feeLovelace === "1397760");
+check("refscript 128000 = floor(2857574.4) = 2857574", app.refScriptFee("128000").feeLovelace === "2857574" && app.refScriptFee("128000").exactLovelace === "2857574.4");
+check("refscript floor once, not per tier: 128003 = 2857686 (per-tier flooring gives 2857685)", app.refScriptFee("128003").feeLovelace === "2857686");
+check("refscript at per-tx limit 204800 not flagged, priced 6335648", !app.refScriptFee("204800").overTxLimit && app.refScriptFee("204800").feeLovelace === "6335648");
+check("refscript above per-tx limit flagged but still priced", app.refScriptFee("204801").overTxLimit === true);
+check("refscript above per-block limit rejected", app.refScriptFee("1048577") === null);
+check("refscript fractional, garbage and empty rejected", app.refScriptFee("1.5") === null && app.refScriptFee("abc") === null && app.refScriptFee("") === null);
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core
    (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the
