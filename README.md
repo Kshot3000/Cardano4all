@@ -130,6 +130,18 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   Plutus transaction whose computed ID equals its on-chain hash.
   Honest limit: a body names inputs by reference, so their amounts
   are not in the body and no balance check is possible from it.
+- **Value decoder** — one output's value CBOR on its own (the form
+  `cardano-cli` prints for an output amount): the lovelace plus every
+  native asset with policy ID, name, exact BigInt quantity and CIP-14
+  fingerprint. Follows the ledger CDDL (`value = coin / [coin,
+  multiasset]`), requires positive quantities, and rejects repeated
+  policy or asset-name keys — a value is a map, so one asset's
+  quantity lives in exactly one entry. Proven against pycardano
+  0.19.2's `Value` serialisation: coin-only, the full 45 billion ADA
+  supply as one coin, an empty asset name at the uint64-max quantity,
+  and a two-policy bundle all decode field-for-field. (Its decode of a
+  bare-coin value also surfaced a pycardano quirk: `Value.from_cbor`
+  refuses the bare-coin form its own encoder emits.)
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

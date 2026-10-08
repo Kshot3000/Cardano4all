@@ -259,6 +259,14 @@
         <button type="submit" class="btn primary">Inspect transaction</button>
         <p id="txinspect-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="valuedecode">
+        <h3>Value decoder</h3>
+        <p>One transaction output's <strong>value</strong> on its own — the CBOR <code>cardano-cli</code> prints for an output amount and indexers store — decoded locally: the lovelace, and every native asset with its policy ID, asset name (as text when the name bytes are readable text), exact quantity and CIP-14 fingerprint. A value is a bare coin amount, or <code>[coin, {policy: {name: quantity}}]</code>; quantities in an output are always positive, and each asset appears exactly once. A mint's signed quantities and a whole output or transaction are different shapes — the transaction inspector above decodes those.</p>
+        <label for="valuedecode-input">Output value CBOR (hex)</label>
+        <textarea id="valuedecode-input" rows="3" spellcheck="false" placeholder="e.g. 1a000eedc2 (coin only) or 821a001e8480a1581c… (coin + assets)" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode value</button>
+        <p id="valuedecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -449,6 +457,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=24"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>

@@ -1974,6 +1974,61 @@ function inspectTx(raw) {
   };
 }
 
+/* Value decoder — a standalone transaction-output VALUE on its own:
+   the CBOR cardano-cli prints for --tx-out, indexers store, and the
+   transaction inspector above only ever shows inside an output.
+   Ledger CDDL: value = coin / [coin, multiasset],
+   multiasset = { policy_id => { asset_name => quantity }} with
+   policy_id a 28-byte hash, asset_name 0-32 bytes and every quantity
+   a POSITIVE integer in an output value (a mint may carry negative
+   quantities — that is a different field with a different rule, and
+   it is rejected here). Stricter than the inspector's internal value
+   parser in one deliberate way: a policy or asset name appearing
+   TWICE is rejected, because a value is a map — the quantity of one
+   asset lives in exactly one entry, and a serialisation that repeats
+   a key is not a well-formed ledger value. Exact BigInt quantities
+   throughout (uint64-max included); input capped at max_tx_size
+   (16,384) like the transaction tools — no value inside a legal
+   transaction can be larger. Proven against pycardano 0.19.2's Value
+   serialisation in scratch (value_py.py / value_vectors.json):
+   coin-only, max-supply coin, one asset, empty name at uint64-max
+   quantity, and a two-policy bundle all decode field-for-field.
+   Display only — nothing is signed or sent. */
+function parseValueCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t === "int") {
+    if (n.v < 0n) return null;
+    return { lovelace: n.v.toString(), assets: [], assetCount: 0, policyCount: 0 };
+  }
+  if (n.t !== "array" || n.items.length !== 2) return null;
+  var coin = n.items[0], ma = n.items[1];
+  if (coin.t !== "int" || coin.v < 0n || ma.t !== "map") return null;
+  var assets = [], seenPol = {}, policyCount = 0;
+  for (var a = 0; a < ma.pairs.length; a++) {
+    var pol = ma.pairs[a][0], names = ma.pairs[a][1];
+    if (pol.t !== "bytes" || pol.bytes.length !== 28 || names.t !== "map") return null;
+    var polHex = bytesToHex(pol.bytes);
+    if (seenPol[polHex] !== undefined) return null; /* duplicate policy key */
+    seenPol[polHex] = true; policyCount++;
+    var seenName = {};
+    for (var b = 0; b < names.pairs.length; b++) {
+      var nm = names.pairs[b][0], qty = names.pairs[b][1];
+      if (nm.t !== "bytes" || nm.bytes.length > 32 || qty.t !== "int") return null;
+      if (qty.v <= 0n) return null; /* output quantities are positive */
+      var nameHex = bytesToHex(nm.bytes);
+      if (seenName[nameHex] !== undefined) return null; /* duplicate asset name */
+      seenName[nameHex] = true;
+      assets.push({ policy: polHex, name: nameHex, nameText: assetNameText(nameHex), quantity: qty.v.toString() });
+    }
+  }
+  assets.sort(function (x, y) { return (x.policy + x.name) < (y.policy + y.name) ? -1 : 1; });
+  return { lovelace: coin.v.toString(), assets: assets, assetCount: assets.length, policyCount: policyCount };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -1986,7 +2041,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2270,6 +2325,27 @@ if (typeof document !== "undefined") {
       if (res.donation !== null) lines.push("Treasury donation: " + res.donation + " lovelace");
       lines.push("");
       lines.push("A body names its inputs by reference — their amounts are not in the body, so no balance or fee-sufficiency check is possible from the body alone. The fee above is the fee the body declares.");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- value decoder (a standalone output value's CBOR) --- */
+    document.getElementById("valuedecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseValueCbor(document.getElementById("valuedecode-input").value);
+      var out = document.getElementById("valuedecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one output value: a bare coin amount, or [coin, {policy: {name: quantity}}]. Policies are 28 bytes, names at most 32 bytes, quantities positive (a mint's negative quantities are a different field), and no policy or asset name may repeat. A whole output or transaction is not a value — the transaction inspector above decodes those.";
+        return;
+      }
+      var lines = [];
+      lines.push(res.lovelace + " lovelace (" + lovelaceToAda(res.lovelace) + " ADA)");
+      if (res.assetCount) {
+        lines.push("");
+        lines.push("Native assets (" + res.assetCount + " across " + res.policyCount + (res.policyCount === 1 ? " policy" : " policies") + "):");
+        res.assets.forEach(function (a) {
+          lines.push("  " + a.quantity + " × policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")") + " — fingerprint " + assetFingerprint(a.policy, a.name));
+        });
+      }
       out.textContent = lines.join("\n");
     });
 
