@@ -465,6 +465,57 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   field-for-field, with native script hashes matching
   pycardano's own and Plutus hashes cross-checked against
   hashlib's blake2b-224.
+- **Token metadata viewer (CIP-25 / CIP-27)** — the
+  auxiliary data decoder above shows label 721 as raw
+  CBOR; this tool interprets it. Paste transaction
+  metadata (the bare map, or an auxiliary data block in
+  any of its three serialisations — the metadata must
+  satisfy the ledger's metadatum grammar the decoder
+  above enforces: strings of at most 64 bytes, no
+  repeated map key) and the CIP-25 token metadata is
+  read out per policy and asset: `name` and `image`
+  (both required by the CIP), `mediaType`, `description`,
+  the `files` list (whose entries require `mediaType`
+  and `src`), and any further properties, rendered.
+  Every string property may be one text string or an
+  array of text chunks, rejoined here — a 103-character
+  royalty address as a single string is refused, as the
+  ledger itself would refuse it, because chunking is
+  the only legal form. Version 1 (the policy ID as a
+  56-character hex text key, asset names as text) and
+  version 2 (both as raw bytes; the version sits at the
+  721 level as an integer or a "1.0"-style text) both
+  decode. Label 777 is read as CIP-27 royalties: the
+  `rate` — a decimal string in [0, 1] — and the `addr`
+  it is paid to, the rate also shown as a percentage
+  computed from the string with exact decimal
+  arithmetic, never a float. The one deliberate
+  divergence from the sibling decoders' strictness,
+  recorded here so nobody "aligns" it away: structural
+  violations (a non-map where a map belongs, a policy
+  key that is not a policy ID, a rate that is not a
+  decimal fraction) refuse the whole input, but a
+  MISSING required property (an asset with no `name`
+  or no `image`, an image with no URI scheme) is
+  reported as a warning on the asset instead of a
+  refusal — real mints omit them, and a viewer that
+  refuses real metadata helps nobody. Proven against
+  vectors built with cbor2 from the CIP-25 / CIP-27
+  texts (both versions, chunked strings, a combined
+  721 + 777 + 674 map in all three input forms, and
+  the warnings cases), with the rejection set beside
+  them (a 55-character policy key, a rate above 1, an
+  integer rate, an integer image, a 65-byte string,
+  version 3, a non-map files entry, a repeated label).
+  One honest limit on the proof: a sweep of 150
+  consecutive mainnet blocks (October 2026) found no
+  label-721 metadata at all — new mints have largely
+  moved to CIP-68 datums — so the interpretation layer
+  rests on the CIP texts themselves, and the real-chain
+  vector in the suite is a current mainnet auxiliary
+  data block (label 674, cross-checked against Koios's
+  own rendering) proving the extraction layer against
+  the chain as it is today.
 - **Transaction witness set decoder** — one transaction's
   witness set on its own, the second element of every
   transaction: the signatures and scripts that authorise

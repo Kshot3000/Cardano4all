@@ -3898,6 +3898,234 @@ function decodeFullTx(raw) {
            redeemerChecks: redeemerChecks };
 }
 
+/* Token metadata viewer — CIP-25 (label 721) and CIP-27
+   (label 777) interpreted out of transaction metadata, pasted
+   either as the bare metadata map or as a whole auxiliary data
+   block in any of its three serialisations (the auxiliary data
+   decoder above shows the same bytes uninterpreted). The
+   metadata must satisfy the ledger's metadatum grammar — maps,
+   lists, integers, and byte/text strings of at most 64 bytes
+   each, no repeated map key anywhere — because that is the only
+   metadata that can exist on chain. Interpretation then follows
+   the two CIPs: under 721, a policy map (version 1: the policy
+   ID as a 56-character hex TEXT key and asset names as text;
+   version 2: both as raw bytes, the version named at the 721
+   level as an integer or a "1.0"-style text) whose assets carry
+   name and image (both REQUIRED), optional mediaType and
+   description, and an optional files list whose entries require
+   mediaType and src by the CIP; every string property may be a
+   single text string or an array of text chunks, joined here.
+   Under 777, a royalty: a rate given as a decimal string in
+   [0, 1] and the address it is paid to. STRUCTURAL violations
+   (a non-map where a map belongs, a policy key that is not a
+   policy ID, a rate that is not a decimal fraction, a string
+   property of the wrong type) refuse the whole input; MISSING
+   required properties are reported as warnings on the asset
+   instead, because real mints omit them and a viewer that
+   refuses real metadata helps nobody — the warnings are the
+   honest part. The percentage is computed from the rate string
+   with exact decimal arithmetic, never a float. */
+function parseMetadataView(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var root = parsed.node;
+
+  var form = null, metaNode = null;
+  if (root.t === "map") { form = "metadata"; metaNode = root; }
+  else if (root.t === "array" && root.items.length === 2 &&
+           root.items[0].t === "map" && root.items[1].t === "array") {
+    form = "shelley"; metaNode = root.items[0];
+  } else if (root.t === "tag" && root.n === 259n && root.item.t === "map") {
+    form = "tag259";
+    for (var ti = 0; ti < root.item.pairs.length; ti++) {
+      var tk = root.item.pairs[ti][0];
+      if (tk.t !== "int" || tk.v < 0n || tk.v > 4n) return null;
+      if (tk.v === 0n) metaNode = root.item.pairs[ti][1];
+    }
+  } else return null;
+  if (metaNode === null) {
+    return { form: form, hasMetadata: false, labels: [], nft: null, royalties: null };
+  }
+  if (metaNode.t !== "map") return null;
+
+  function metaOk(n) {
+    if (n.t === "int") return true;
+    if (n.t === "text") return new TextEncoder().encode(n.v).length <= 64;
+    if (n.t === "bytes") return n.bytes.length <= 64;
+    if (n.t === "tag" && (n.n === 2n || n.n === 3n) && n.item.t === "bytes") {
+      return n.item.bytes.length <= 64; /* bignum metadatum */
+    }
+    if (n.t === "array") {
+      for (var i = 0; i < n.items.length; i++) if (!metaOk(n.items[i])) return false;
+      return true;
+    }
+    if (n.t === "map") {
+      var seen = {};
+      for (var j = 0; j < n.pairs.length; j++) {
+        var k = n.pairs[j][0];
+        if (k.t !== "int" && k.t !== "text" && k.t !== "bytes") return false;
+        var kr = cborRender(k);
+        if (seen[kr] !== undefined) return false; /* one value per key */
+        seen[kr] = true;
+        if (!metaOk(k) || !metaOk(n.pairs[j][1])) return false;
+      }
+      return true;
+    }
+    return false; /* bool / null / simple / float / other tags */
+  }
+  if (!metaOk(metaNode)) return null;
+
+  var labels = [], byLabel = {};
+  for (var li = 0; li < metaNode.pairs.length; li++) {
+    var lk = metaNode.pairs[li][0];
+    if (lk.t !== "int" || lk.v < 0n) return null;
+    var ls = lk.v.toString();
+    labels.push(ls);
+    byLabel[ls] = metaNode.pairs[li][1];
+  }
+
+  function metaString(n) {
+    if (n.t === "text") return n.v;
+    if (n.t === "array") {
+      var parts = [];
+      for (var i = 0; i < n.items.length; i++) {
+        if (n.items[i].t !== "text") return null;
+        parts.push(n.items[i].v);
+      }
+      return parts.join("");
+    }
+    return null;
+  }
+  function utf8Len(s) { return new TextEncoder().encode(s).length; }
+  function noScheme(s) { return !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(s); }
+
+  var nft = null;
+  if (byLabel["721"] !== undefined) {
+    var n721 = byLabel["721"];
+    if (n721.t !== "map") return null;
+    var version = 1, policyPairs = [];
+    for (var vi = 0; vi < n721.pairs.length; vi++) {
+      var vk = n721.pairs[vi][0], vv = n721.pairs[vi][1];
+      if (vk.t === "text" && vk.v === "version") {
+        if (vv.t === "int" && (vv.v === 1n || vv.v === 2n)) version = Number(vv.v);
+        else if (vv.t === "text" && /^([12])(\.0+)?$/.test(vv.v)) version = Number(vv.v.charAt(0));
+        else return null;
+      } else policyPairs.push(n721.pairs[vi]);
+    }
+    var policies = [];
+    for (var pi = 0; pi < policyPairs.length; pi++) {
+      var pk = policyPairs[pi][0], pv = policyPairs[pi][1], policyId;
+      if (version === 2) {
+        if (pk.t !== "bytes" || pk.bytes.length !== 28) return null;
+        policyId = bytesToHex(pk.bytes);
+      } else {
+        if (pk.t !== "text" || !/^[0-9a-fA-F]{56}$/.test(pk.v)) return null;
+        policyId = pk.v.toLowerCase();
+      }
+      if (pv.t !== "map") return null;
+      var assets = [];
+      for (var ai = 0; ai < pv.pairs.length; ai++) {
+        var ak = pv.pairs[ai][0], av = pv.pairs[ai][1];
+        var asset = { keyText: null, keyHex: null, name: null, image: null,
+                      mediaType: null, description: null, files: [], others: [],
+                      warnings: [] };
+        if (version === 2) {
+          if (ak.t !== "bytes" || ak.bytes.length > 32) return null;
+          asset.keyHex = bytesToHex(ak.bytes);
+          try {
+            var dec = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(ak.bytes));
+            if (/^[\x20-\x7e]*$/.test(dec)) asset.keyText = dec;
+          } catch (e) { /* raw byte name: hex only */ }
+        } else {
+          if (ak.t !== "text") return null;
+          asset.keyText = ak.v;
+          asset.keyHex = bytesToHex(Array.prototype.slice.call(new TextEncoder().encode(ak.v)));
+          if (utf8Len(ak.v) > 32) {
+            asset.warnings.push("asset name is " + utf8Len(ak.v) + " bytes — longer than the 32-byte asset-name limit, so no minted asset can carry it");
+          }
+        }
+        if (av.t !== "map") return null;
+        for (var qi = 0; qi < av.pairs.length; qi++) {
+          var qk = av.pairs[qi][0], qv = av.pairs[qi][1];
+          if (qk.t !== "text") return null;
+          var key = qk.v;
+          if (key === "name" || key === "image" || key === "mediaType" || key === "description") {
+            var sv = metaString(qv);
+            if (sv === null) return null;
+            asset[key] = sv;
+          } else if (key === "files") {
+            if (qv.t !== "array") return null;
+            for (var fi = 0; fi < qv.items.length; fi++) {
+              var fn = qv.items[fi];
+              if (fn.t !== "map") return null;
+              var file = { name: null, mediaType: null, src: null, others: [], warnings: [] };
+              for (var fj = 0; fj < fn.pairs.length; fj++) {
+                var fk = fn.pairs[fj][0], fv = fn.pairs[fj][1];
+                if (fk.t !== "text") return null;
+                if (fk.v === "name" || fk.v === "mediaType" || fk.v === "src") {
+                  var fsv = metaString(fv);
+                  if (fsv === null) return null;
+                  file[fk.v] = fsv;
+                } else file.others.push({ key: fk.v, rendered: cborRender(fv) });
+              }
+              if (file.mediaType === null) file.warnings.push("file entry without a mediaType — CIP-25 requires one inside files");
+              if (file.src === null) file.warnings.push("file entry without a src");
+              else if (noScheme(file.src)) file.warnings.push("file src has no URI scheme — CIP-25 requires a full URI (ipfs://…, https://…, ar://… or a data: URL)");
+              asset.files.push(file);
+            }
+          } else asset.others.push({ key: key, rendered: cborRender(qv) });
+        }
+        if (asset.name === null) asset.warnings.push("no \"name\" — CIP-25 requires one");
+        if (asset.image === null) asset.warnings.push("no \"image\" — CIP-25 requires one");
+        else if (noScheme(asset.image)) asset.warnings.push("image has no URI scheme — CIP-25 requires a full URI (ipfs://…, https://…, ar://… or a data: URL); a bare content ID does not resolve in viewers");
+        assets.push(asset);
+      }
+      policies.push({ policyId: policyId, assets: assets });
+    }
+    nft = { version: version, policies: policies };
+  }
+
+  var royalties = null;
+  if (byLabel["777"] !== undefined) {
+    var n777 = byLabel["777"];
+    if (n777.t !== "map") return null;
+    royalties = { rate: null, ratePercent: null, addr: null, others: [], warnings: [] };
+    for (var ri = 0; ri < n777.pairs.length; ri++) {
+      var rk = n777.pairs[ri][0], rv = n777.pairs[ri][1];
+      if (rk.t !== "text") return null;
+      if (rk.v === "rate") {
+        var rs = metaString(rv);
+        if (rs === null || !/^(0(\.\d+)?|1(\.0+)?)$/.test(rs)) return null;
+        royalties.rate = rs;
+        var rm = /^([01])(?:\.(\d+))?$/.exec(rs);
+        var frac = rm[2] || "";
+        var scaled = BigInt(rm[1] + frac) * 100n, denom = 10n ** BigInt(frac.length);
+        var whole = scaled / denom, rem = scaled % denom;
+        royalties.ratePercent = rem === 0n ? whole.toString() :
+          whole.toString() + "." + rem.toString().padStart(frac.length, "0").replace(/0+$/, "");
+      } else if (rk.v === "addr") {
+        if (rv.t === "bytes") {
+          royalties.addr = bytesToHex(rv.bytes);
+          royalties.warnings.push("royalty address given as raw bytes, shown as hex — CIP-27 names a bech32 address string");
+        } else {
+          var as = metaString(rv);
+          if (as === null) return null;
+          royalties.addr = as;
+          if (!/^(addr|addr_test|stake|stake_test)1/.test(as)) {
+            royalties.warnings.push("royalty address is not a bech32 address string (addr1… / addr_test1… / stake1…)");
+          }
+        }
+      } else royalties.others.push({ key: rk.v, rendered: cborRender(rv) });
+    }
+    if (royalties.rate === null) royalties.warnings.push("no \"rate\" — CIP-27 requires one");
+    if (royalties.addr === null) royalties.warnings.push("no \"addr\" — CIP-27 requires one");
+  }
+
+  return { form: form, hasMetadata: true, labels: labels, nft: nft, royalties: royalties };
+}
+
 if (typeof module !== "undefined" && module.exports) {
 
 /* Script data hash calculator — the blake2b-256 a transaction
@@ -4110,7 +4338,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView };
 }
 
 if (typeof document !== "undefined") {
@@ -4642,6 +4870,64 @@ if (typeof document !== "undefined") {
       });
       if ((res.metadata === null || res.metadata.length === 0) && res.nativeScripts.length === 0 && res.plutusScripts.length === 0)
         lines.push("This auxiliary data block carries no metadata and no scripts.");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- token metadata viewer (CIP-25 label 721, CIP-27 label 777) --- */
+    document.getElementById("metaview").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseMetadataView(document.getElementById("metaview-input").value);
+      var out = document.getElementById("metaview-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of transaction metadata — the bare metadata map, or a whole auxiliary data block in any of its three serialisations — carrying label 721 (CIP-25 token metadata) or label 777 (CIP-27 royalties). On chain every string is at most 64 bytes (longer values travel as arrays of chunks), map keys never repeat, and a royalty rate is a decimal fraction between 0 and 1. The auxiliary data decoder above shows the same bytes without interpreting them.";
+        return;
+      }
+      var formName = res.form === "metadata" ? "bare metadata map" : res.form === "shelley" ? "Shelley-era auxiliary data (metadata + native scripts)" : "Alonzo-era auxiliary data (CBOR tag 259)";
+      var lines = [];
+      lines.push("Metadata — from a " + formName + ".");
+      if (!res.hasMetadata) {
+        lines.push("This auxiliary data carries no metadata at all.");
+        out.textContent = lines.join("\n");
+        return;
+      }
+      lines.push(res.labels.length ? "Labels present: " + res.labels.join(", ") + "." : "The metadata map is empty — no labels at all.");
+      if (res.nft) {
+        lines.push("");
+        lines.push("CIP-25 token metadata (label 721, version " + res.nft.version + "):");
+        res.nft.policies.forEach(function (p) {
+          lines.push("Policy " + p.policyId + " — " + p.assets.length + (p.assets.length === 1 ? " asset:" : " assets:"));
+          p.assets.forEach(function (a) {
+            lines.push("  • Asset " + (a.keyText !== null ? JSON.stringify(a.keyText) : "with raw byte name") + " (asset name hex " + a.keyHex + ")");
+            if (a.name !== null) lines.push("    Name: " + a.name);
+            if (a.image !== null) lines.push("    Image: " + a.image);
+            if (a.mediaType !== null) lines.push("    Media type: " + a.mediaType);
+            if (a.description !== null) lines.push("    Description: " + a.description);
+            a.files.forEach(function (f) {
+              var parts = [];
+              if (f.name !== null) parts.push("name " + f.name);
+              if (f.mediaType !== null) parts.push("media type " + f.mediaType);
+              if (f.src !== null) parts.push("src " + f.src);
+              lines.push("    File: " + (parts.length ? parts.join(", ") : "(empty entry)"));
+              f.others.forEach(function (o) { lines.push("      " + o.key + ": " + o.rendered); });
+              f.warnings.forEach(function (w) { lines.push("      Warning: " + w + "."); });
+            });
+            a.others.forEach(function (o) { lines.push("    " + o.key + ": " + o.rendered); });
+            a.warnings.forEach(function (w) { lines.push("    Warning: " + w + "."); });
+          });
+        });
+        if (res.nft.policies.length === 0) lines.push("The 721 map names no policies — no token metadata to show.");
+      }
+      if (res.royalties) {
+        lines.push("");
+        lines.push("CIP-27 royalties (label 777):");
+        if (res.royalties.rate !== null) lines.push("  • Rate: " + res.royalties.rate + " — " + res.royalties.ratePercent + "% of each sale price.");
+        if (res.royalties.addr !== null) lines.push("  • Paid to: " + res.royalties.addr);
+        res.royalties.others.forEach(function (o) { lines.push("  • " + o.key + ": " + o.rendered); });
+        res.royalties.warnings.forEach(function (w) { lines.push("  • Warning: " + w + "."); });
+      }
+      if (!res.nft && !res.royalties && res.labels.length) {
+        lines.push("No CIP-25 (label 721) or CIP-27 (label 777) content — the labels above are shown uninterpreted by the auxiliary data decoder above.");
+      }
       out.textContent = lines.join("\n");
     });
     /* --- transaction witness set decoder (a standalone witness set's CBOR) --- */

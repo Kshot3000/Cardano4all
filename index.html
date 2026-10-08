@@ -355,6 +355,14 @@
         <button type="submit" class="btn primary">Decode auxiliary data</button>
         <p id="auxdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="metaview">
+        <h3>Token metadata viewer (CIP-25 / CIP-27)</h3>
+        <p>The auxiliary data decoder above shows label <strong>721</strong> as raw CBOR; this tool <strong>interprets</strong> it. Paste transaction metadata — the bare metadata map, or a whole auxiliary data block in any of its three serialisations — and the <strong>CIP-25</strong> token metadata is read out per policy and asset: <strong>name</strong> and <strong>image</strong> (both required by the CIP; strings split into chunks are rejoined), media type, description, the <strong>files</strong> list, and any further properties. <strong>Version 1</strong> (policy IDs and asset names as text) and <strong>version 2</strong> (both as raw bytes) both decode. Label <strong>777</strong> is read as <strong>CIP-27 royalties</strong> — the rate as an exact percentage, computed from the decimal string, and the address it is paid to. Structural violations refuse the input; a <em>missing</em> required property is flagged as a warning instead, because real mints omit them and the flag is the honest part. Read locally; nothing is signed or sent.</p>
+        <label for="metaview-input">Metadata / auxiliary data CBOR (hex)</label>
+        <textarea id="metaview-input" rows="3" spellcheck="false" placeholder="e.g. a1… (a metadata map carrying label 721)" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">View token metadata</button>
+        <p id="metaview-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="witnessdecode">
         <h3>Transaction witness set decoder</h3>
         <p>One transaction's <strong>witness set</strong> on its own — the signatures and scripts that authorise the body, carried as the second element of every transaction. Every key is optional (a script-only transaction carries no key witness, and an empty set decodes): <strong>key witnesses</strong> (key and 64-byte signature, with the <strong>key hash</strong> the chain actually names), <strong>native scripts</strong> decoded recursively with their script hashes, Byron-era <strong>bootstrap witnesses</strong>, <strong>Plutus V1/V2/V3 scripts</strong> with size and script hash, <strong>Plutus data</strong> rendered with each datum's hash, and <strong>redeemers in both serialisations</strong> — the legacy array and the Conway map — with their data and exact execution units. Lists and sets must be non-empty, set-held scripts may not repeat, and redeemer indices and ex-units are held to the ledger's own ranges. Signatures are shown as carried, <strong>not verified</strong> — putting a witness set together with the body it authorises is the full transaction decoder's job below.</p>
@@ -575,6 +583,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=39"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>
