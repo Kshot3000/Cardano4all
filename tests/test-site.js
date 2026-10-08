@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=25"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=26"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -715,6 +715,28 @@ check("valuedecode two policies, sorted, non-UTF8 name has no text (pycardano)",
 check("valuedecode empty multiasset map matches the inspector's reading", (() => { const r = app.parseValueCbor("8201a0"); return r !== null && r.lovelace === "1" && r.assetCount === 0; })());
 check("valuedecode rejects negative coin, mint-shaped quantities, oversize parts", app.parseValueCbor("20") === null && app.parseValueCbor("8220a0") === null && app.parseValueCbor("8201a1581c" + V_POL + "a14650415441544500") === null && app.parseValueCbor("8201a1581c" + V_POL + "a14650415441544520") === null && app.parseValueCbor("8201a1581b" + V_POL.slice(0, 54) + "a0") === null && app.parseValueCbor("8201a1581c" + V_POL + "a15821" + "00".repeat(33) + "01") === null);
 check("valuedecode rejects duplicate keys, trailing bytes, non-values", app.parseValueCbor("8201a2581c" + V_POL + "a14650415441544501" + "581c" + V_POL + "a14650415441544502") === null && app.parseValueCbor("8201a1581c" + V_POL + "a24650415441544501" + "4650415441544502") === null && app.parseValueCbor("1a000eedc2" + "00") === null && app.parseValueCbor("d8799f182a182bff") === null && app.parseValueCbor("6568656c6c6f") === null && app.parseValueCbor("8301a001") === null && app.parseValueCbor("") === null && app.parseValueCbor("zzzz") === null);
+
+/* transaction output decoder — a standalone output's CBOR, in both
+   serialisations. All hex vectors are pycardano 0.19.2
+   TransactionOutput serialisations (scratch txout_py.py /
+   txout_vectors.json): ADDR_BYTES is the donation address's raw bytes
+   (01 || PAY_KH || STAKE_KH, the hashes proven in the builder tests),
+   ENT_BYTES its enterprise form (61 || PAY_KH). Deliberate
+   strictness beyond the inspector's internal parser: the address
+   must be a Shelley payment address (reward rejected), and repeated
+   map keys (output keys, policies, asset names) are rejected. */
+const ADDR_BYTES = "583901" + "ef3fe99fa775688dd19d11192d79d1742c7fdab27ab133c80c1dd28d" + "ed9793beeadf05284aa53bf2d2fcede5e3664bf2d5edcaa0fe862c82";
+check("txoutdecode form present", html.includes('id="txoutdecode"') && html.includes('id="txoutdecode-input"') && html.includes('id="txoutdecode-result"'));
+check("txoutdecode babbage coin-only (pycardano)", (() => { const r = app.parseTxOutCbor("a200" + ADDR_BYTES + "011a000eedc2"); return r !== null && r.format === "babbage" && r.address === ADA && r.lovelace === "978370" && r.assets.length === 0 && r.datum.kind === "none" && r.scriptRef === null; })());
+check("txoutdecode babbage asset + datum hash (pycardano)", (() => { const r = app.parseTxOutCbor("a300" + ADDR_BYTES + "01821a001e8480a1581c" + V_POL + "a146504154415445050282005820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"); return r !== null && r.lovelace === "2000000" && r.assets.length === 1 && r.assets[0].nameText === "PATATE" && r.assets[0].quantity === "5" && r.datum.kind === "hash" && r.datum.hash === "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"; })());
+check("txoutdecode babbage inline datum (pycardano)", (() => { const r = app.parseTxOutCbor("a300" + ADDR_BYTES + "011a002dc6c0028201d81848d8799f182a182bff"); return r !== null && r.lovelace === "3000000" && r.datum.kind === "inline" && r.datum.hex === "d8799f182a182bff"; })());
+check("txoutdecode babbage Plutus V2 script ref (pycardano)", (() => { const r = app.parseTxOutCbor("a300" + ADDR_BYTES + "011a003d090003d8184d82024a49480100002221200101"); return r !== null && r.lovelace === "4000000" && r.scriptRef === "plutus2"; })());
+check("txoutdecode babbage native script ref (pycardano)", (() => { const r = app.parseTxOutCbor("a300" + ADDR_BYTES + "011a0044aa2003d818582582008201818200581c" + "aa".repeat(28)); return r !== null && r.lovelace === "4500000" && r.scriptRef === "native"; })());
+check("txoutdecode alonzo coin-only (pycardano)", (() => { const r = app.parseTxOutCbor("82" + ADDR_BYTES + "1a000eedc2"); return r !== null && r.format === "alonzo" && r.address === ADA && r.lovelace === "978370" && r.datum.kind === "none"; })());
+check("txoutdecode alonzo datum hash (pycardano)", (() => { const r = app.parseTxOutCbor("83" + ADDR_BYTES + "1a001e84805820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"); return r !== null && r.format === "alonzo" && r.lovelace === "2000000" && r.datum.kind === "hash"; })());
+check("txoutdecode babbage enterprise address (pycardano)", (() => { const r = app.parseTxOutCbor("a200581d61" + "ef3fe99fa775688dd19d11192d79d1742c7fdab27ab133c80c1dd28d" + "011a0016e360"); return r !== null && r.address === "addr1v8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9rgcshpl9" && r.lovelace === "1500000"; })());
+check("txoutdecode rejects reward address, bare value, trailing bytes", app.parseTxOutCbor("a200581de1" + "ed9793beeadf05284aa53bf2d2fcede5e3664bf2d5edcaa0fe862c82" + "011a000eedc2") === null && app.parseTxOutCbor("1a000eedc2") === null && app.parseTxOutCbor("a200" + ADDR_BYTES + "011a000eedc2" + "00") === null && app.parseTxOutCbor("") === null && app.parseTxOutCbor("zzzz") === null);
+check("txoutdecode rejects duplicate and unknown map keys", app.parseTxOutCbor("a300" + ADDR_BYTES + "00" + ADDR_BYTES + "011a000eedc2") === null && app.parseTxOutCbor("a300" + ADDR_BYTES + "011a000eedc20400") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

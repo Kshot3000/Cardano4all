@@ -142,6 +142,19 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   and a two-policy bundle all decode field-for-field. (Its decode of a
   bare-coin value also surfaced a pycardano quirk: `Value.from_cbor`
   refuses the bare-coin form its own encoder emits.)
+- **Transaction output decoder** — one transaction output's CBOR on
+  its own: address, lovelace and native assets (with CIP-14
+  fingerprints), datum (hash or inline) and reference script, in both
+  serialisations the ledger allows (the Babbage map form and the
+  Alonzo array form). Stricter than the inspector's internal output
+  parser in two deliberate ways: the address must be a Shelley
+  payment address (a reward address is not an output address), and
+  repeated map keys — output keys, policy IDs or asset names — are
+  rejected. Proven against pycardano 0.19.2's `TransactionOutput`
+  serialisation: Babbage coin-only, multi-asset with a datum hash, an
+  inline Plutus datum, Plutus V2 and native reference scripts, an
+  enterprise-address output, and both Alonzo forms all decode
+  field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

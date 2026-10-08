@@ -2029,6 +2029,120 @@ function parseValueCbor(raw) {
   return { lovelace: coin.v.toString(), assets: assets, assetCount: assets.length, policyCount: policyCount };
 }
 
+/* Transaction output decoder — a standalone transaction OUTPUT on
+   its own: the CBOR a block, an indexer or cardano-cli carries for one
+   output, which until now only ever appeared inside the transaction
+   inspector's output rendering. Both serialisations the ledger allows
+   decode: the Babbage map form {0: address bytes, 1: value,
+   2: datum option, 3: script reference} and the Alonzo array form
+   [address bytes, value] / [address bytes, value, datum hash].
+   Two deliberate strictnesses beyond the inspector's internal output
+   parser, in the same spirit as the value decoder: the address must
+   be a Shelley PAYMENT address (a reward address is not an output
+   address, and Byron-era or malformed bytes are rejected rather than
+   shown as raw hex), and repeated map keys — output keys, policy IDs
+   or asset names — are rejected, because each of those is a map.
+   Output values follow the value rule (positive quantities only).
+   Proven against pycardano 0.19.2's TransactionOutput serialisation
+   in scratch (txout_py.py / txout_vectors.json): Babbage coin-only,
+   multi-asset with a datum hash, an inline Plutus datum, Plutus V2
+   and native reference scripts, an enterprise-address output, and
+   both Alonzo forms decode field-for-field. Display only — nothing
+   is signed or sent. */
+function parseTxOutCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  function parseValueStrict(vn) {
+    if (vn.t === "int") return vn.v < 0n ? null : { lovelace: vn.v.toString(), assets: [] };
+    if (vn.t !== "array" || vn.items.length !== 2 || vn.items[0].t !== "int" || vn.items[0].v < 0n) return null;
+    var ma = vn.items[1];
+    if (ma.t !== "map") return null;
+    var assets = [], seenPol = {};
+    for (var a = 0; a < ma.pairs.length; a++) {
+      var pol = ma.pairs[a][0], names = ma.pairs[a][1];
+      if (pol.t !== "bytes" || pol.bytes.length !== 28 || names.t !== "map") return null;
+      var polHex = bytesToHex(pol.bytes);
+      if (seenPol[polHex] !== undefined) return null;
+      seenPol[polHex] = true;
+      var seenName = {};
+      for (var b = 0; b < names.pairs.length; b++) {
+        var nm = names.pairs[b][0], qty = names.pairs[b][1];
+        if (nm.t !== "bytes" || nm.bytes.length > 32 || qty.t !== "int" || qty.v <= 0n) return null;
+        var nameHex = bytesToHex(nm.bytes);
+        if (seenName[nameHex] !== undefined) return null;
+        seenName[nameHex] = true;
+        assets.push({ policy: polHex, name: nameHex, nameText: assetNameText(nameHex), quantity: qty.v.toString() });
+      }
+    }
+    assets.sort(function (x, y) { return (x.policy + x.name) < (y.policy + y.name) ? -1 : 1; });
+    return { lovelace: vn.items[0].v.toString(), assets: assets };
+  }
+  function addressFromBytes(bts) {
+    if (!bts.length) return null;
+    var header = bts[0], type = header >> 4, net = header & 15;
+    if (net !== 0 && net !== 1) return null;
+    if (type === 14 || type === 15) return null; /* reward address: not an output address */
+    var s = encodeAddressBytes(net === 1 ? "addr" : "addr_test", bts);
+    if (s === null) return null;
+    return decodeAddress(s) !== null ? s : null;
+  }
+  function parseDatumOption(dn) {
+    if (dn.t !== "array" || dn.items.length !== 2 || dn.items[0].t !== "int") return "bad";
+    if (dn.items[0].v === 0n) {
+      return (dn.items[1].t === "bytes" && dn.items[1].bytes.length === 32) ? { kind: "hash", hash: bytesToHex(dn.items[1].bytes) } : "bad";
+    }
+    if (dn.items[0].v === 1n) {
+      return (dn.items[1].t === "tag" && dn.items[1].n === 24n && dn.items[1].item.t === "bytes") ? { kind: "inline", hex: bytesToHex(dn.items[1].item.bytes) } : "bad";
+    }
+    return "bad";
+  }
+  function parseScriptRef(sn) {
+    if (sn.t !== "tag" || sn.n !== 24n || sn.item.t !== "bytes") return "bad";
+    var inner = cborParseItem(sn.item.bytes, 0, 0);
+    if (!inner || inner.next !== sn.item.bytes.length || inner.node.t !== "array" || !inner.node.items.length || inner.node.items[0].t !== "int") return "bad";
+    var lang = inner.node.items[0].v;
+    if (lang === 0n) return "native";
+    if (lang === 1n) return "plutus1";
+    if (lang === 2n) return "plutus2";
+    if (lang === 3n) return "plutus3";
+    return "bad";
+  }
+  if (n.t === "map") {
+    var m = {};
+    for (var i = 0; i < n.pairs.length; i++) {
+      var kk = n.pairs[i][0];
+      if (kk.t !== "int") return null;
+      var kks = kk.v.toString();
+      if (m[kks] !== undefined) return null;
+      m[kks] = n.pairs[i][1];
+    }
+    for (var key in m) if (["0", "1", "2", "3"].indexOf(key) < 0) return null;
+    if (!m["0"] || m["0"].t !== "bytes" || !m["1"]) return null;
+    var addr = addressFromBytes(m["0"].bytes); if (addr === null) return null;
+    var val = parseValueStrict(m["1"]); if (val === null) return null;
+    var datum = { kind: "none" };
+    if (m["2"] !== undefined) { datum = parseDatumOption(m["2"]); if (datum === "bad") return null; }
+    var sref = null;
+    if (m["3"] !== undefined) { sref = parseScriptRef(m["3"]); if (sref === "bad") return null; }
+    return { format: "babbage", address: addr, addressHex: bytesToHex(m["0"].bytes), lovelace: val.lovelace, assets: val.assets, datum: datum, scriptRef: sref };
+  }
+  if (n.t === "array") {
+    if (n.items.length < 2 || n.items.length > 3 || n.items[0].t !== "bytes") return null;
+    var addr2 = addressFromBytes(n.items[0].bytes); if (addr2 === null) return null;
+    var val2 = parseValueStrict(n.items[1]); if (val2 === null) return null;
+    var datum2 = { kind: "none" };
+    if (n.items.length === 3) {
+      if (n.items[2].t !== "bytes" || n.items[2].bytes.length !== 32) return null;
+      datum2 = { kind: "hash", hash: bytesToHex(n.items[2].bytes) };
+    }
+    return { format: "alonzo", address: addr2, addressHex: bytesToHex(n.items[0].bytes), lovelace: val2.lovelace, assets: val2.assets, datum: datum2, scriptRef: null };
+  }
+  return null;
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2041,7 +2155,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2346,6 +2460,28 @@ if (typeof document !== "undefined") {
           lines.push("  " + a.quantity + " × policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")") + " — fingerprint " + assetFingerprint(a.policy, a.name));
         });
       }
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- transaction output decoder (a standalone output's CBOR) --- */
+    document.getElementById("txoutdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseTxOutCbor(document.getElementById("txoutdecode-input").value);
+      var out = document.getElementById("txoutdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one transaction output: the Babbage map form {0: address, 1: value, 2: datum option, 3: script reference} or the Alonzo array form [address, value] / [address, value, datum hash]. The address must be a Shelley payment address, output quantities are positive, and no map key may repeat. A value alone or a whole transaction is a different shape — the value decoder and transaction inspector above decode those.";
+        return;
+      }
+      var lines = [];
+      lines.push("Serialisation: " + (res.format === "babbage" ? "Babbage map form" : "Alonzo array form"));
+      lines.push("Address: " + res.address);
+      lines.push(res.lovelace + " lovelace (" + lovelaceToAda(res.lovelace) + " ADA)");
+      res.assets.forEach(function (a) {
+        lines.push("  + " + a.quantity + " \u00d7 policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")") + " — fingerprint " + assetFingerprint(a.policy, a.name));
+      });
+      if (res.datum.kind === "hash") lines.push("Datum hash: " + res.datum.hash);
+      if (res.datum.kind === "inline") lines.push("Inline datum (CBOR): " + res.datum.hex);
+      if (res.scriptRef !== null) lines.push("Reference script: " + ({ native: "native script", plutus1: "Plutus V1 script", plutus2: "Plutus V2 script", plutus3: "Plutus V3 script" })[res.scriptRef]);
       out.textContent = lines.join("\n");
     });
 
