@@ -3794,9 +3794,10 @@ function parseWitnessSetCbor(raw) {
    in the Conway form, a boolean is-valid flag. Honest limits,
    stated on the page too: signatures are shown via the witness
    decoder, NOT cryptographically verified (no Ed25519 check is
-   performed), and the script data hash is not recomputed (that
-   needs the ledger's language-view encoding of the cost
-   models). Input capped at max_tx_size (16,384) like the
+   performed), and the script data hash is not recomputed HERE
+   (the languages a transaction runs are not all visible in
+   it — the script data hash calculator below does that job
+   from the witness parts and a language selection). Input capped at max_tx_size (16,384) like the
    other transaction tools. Proven against pycardano 0.19.2
    full Transaction serialisations in scratch (fulltx_py.py /
    fulltx_vectors.json, oracle from_cbor round-trip asserted in
@@ -3898,7 +3899,218 @@ function decodeFullTx(raw) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, bech32DecodeBytes, convertBits, hexToBytes };
+
+/* Script data hash calculator — the blake2b-256 a transaction
+   BODY commits to at key 11 whenever the transaction runs Plutus
+   scripts: blake2b-256(redeemers ‖ datums ‖ language_views) over
+   the parts as SERIALISED (the txId lesson — bytes as
+   transmitted, never re-serialised). The full transaction
+   decoder above deliberately does not recompute it: the
+   languages a transaction runs are not all visible inside it
+   (a reference script lives in somebody else's output), so this
+   tool takes the two witness parts and the language selection
+   from the user and does exactly the ledger's computation.
+   - Redeemers (witness key 5) are pasted as their own CBOR, in
+     EITHER serialisation (the legacy array or the Conway map —
+     they hash differently, which is the point of taking bytes
+     as transmitted), and are validated by the proven witness
+     decoder before being hashed; when the field is present it
+     is non-empty, so an explicitly empty redeemers encoding is
+     refused. No redeemers pasted at all contributes the empty
+     map a0 — pycardano's default, asserted in the generator.
+   - Datums (witness key 4) are pasted as their own CBOR (a set
+     of plutus_data), validated the same way — and contribute
+     ZERO bytes when absent, not an empty set: the asymmetry is
+     the ledger's own (pycardano script_data_hash: datum_bytes
+     is b"" when there are no datums, while redeemer_bytes is
+     the serialised empty map).
+   - Language views: one entry per language the transaction
+     runs, built from the CURRENT protocol cost models (live
+     mainnet parameters, Koios epoch_params epoch 660, protocol
+     version 11: Plutus V1 332 values, V2 332, V3 350 — V3
+     carries four negative values, so integers are encoded as
+     signed CBOR, never as unsigned magnitudes). Plutus V2 and
+     V3 enter as uint key → definite array. Plutus V1 enters
+     under the ledger's preserved historical encoding (the
+     "language view" bug, cardano-ledger#2512): the KEY is the
+     byte string holding the CBOR of uint 0, and the VALUE is a
+     byte string holding the INDEFINITE-length array of the
+     parameters. When there are no redeemers the views are the
+     empty map whatever languages are ticked — a transaction
+     that executes nothing has no language views (pycardano
+     forces cost_models={} in that case; asserted). Redeemers
+     with NO language ticked are refused: that hash belongs to
+     no real transaction.
+   Proven in scratch (sdh_py.py / sdh_vectors.json): synthetic
+   redeemers + datums against pycardano 0.19.2's
+   script_data_hash driven by the live cost models for V2 and
+   V3 (both array- and map-form redeemers), the fully-empty and
+   datums-only defaults against pycardano's own defaults, and —
+   the chain proof — the redeemer bytes of a REAL mainnet
+   Plutus transaction (the Minswap transaction the inspector
+   tests carry, fetched via Koios) with Plutus V2 ticked
+   reproduce its body key 11 exactly. ONE ORACLE CAVEAT,
+   recorded plainly: pycardano's BUNDLED Plutus V1 cost model
+   is a stale 166-value snapshot (its serialised V1 view is
+   475 bytes against 900 for the live model), so the V1 values
+   here are the live parameters from the same Koios channel
+   that proved V2 on chain, and only the V1 ENCODING FORM is
+   taken from the oracle's code. Re-verify the three models
+   against Koios epoch_params whenever the protocol version
+   moves. Display only; nothing is signed or sent. */
+  var SDH_CM_V1 = [
+    100788, 420, 1, 1, 1000, 173, 0, 1, 1000, 59957, 4, 1,
+    11183, 32, 201305, 8356, 4, 16000, 100, 16000, 100, 16000, 100, 16000,
+    100, 16000, 100, 16000, 100, 100, 100, 16000, 100, 94375, 32, 132994,
+    32, 61462, 4, 72010, 178, 0, 1, 22151, 32, 91189, 769, 4,
+    2, 85848, 228465, 122, 0, 1, 1, 1000, 42921, 4, 2, 30623,
+    28755, 75, 1, 898148, 27279, 1, 51775, 558, 1, 39184, 1000, 60594,
+    1, 141895, 32, 83150, 32, 15299, 32, 76049, 1, 13169, 4, 22100,
+    10, 28999, 74, 1, 28999, 74, 1, 43285, 552, 1, 44749, 541,
+    1, 33852, 32, 68246, 32, 72362, 32, 7243, 32, 7391, 32, 11546,
+    32, 85848, 228465, 122, 0, 1, 1, 90434, 519, 0, 1, 74433,
+    32, 85848, 228465, 122, 0, 1, 1, 85848, 228465, 122, 0, 1,
+    1, 270652, 22588, 4, 1457325, 64566, 4, 20467, 1, 4, 0, 141992,
+    32, 100788, 420, 1, 1, 81663, 32, 59498, 32, 20142, 32, 24588,
+    32, 20744, 32, 25933, 32, 24623, 32, 53384111, 14333, 10, 955506, 213312,
+    0, 2, 43053543, 10, 43574283, 26308, 10, 16000, 100, 16000, 100, 962335,
+    18, 2780678, 6, 442008, 1, 52538055, 3756, 18, 267929, 18, 76433006, 8868,
+    18, 52948122, 18, 1995836, 36, 3227919, 12, 901022, 1, 166917843, 4307, 36,
+    284546, 36, 158221314, 26549, 36, 74698472, 36, 333849714, 1, 254006273, 72, 2174038,
+    72, 2261318, 64571, 4, 207616, 8310, 4, 1293828, 28716, 63, 0, 1,
+    1006041, 43623, 251, 0, 1, 100181, 726, 719, 0, 1, 100181, 726,
+    719, 0, 1, 100181, 726, 719, 0, 1, 107878, 680, 0, 1,
+    95336, 1, 281145, 18848, 0, 1, 180194, 159, 1, 1, 158519, 8942,
+    0, 1, 159378, 8813, 0, 1, 107490, 3298, 1, 106057, 655, 1,
+    1964219, 24520, 3, 607153, 231697, 53144, 0, 1, 116711, 1957, 4, 231883,
+    10, 1000, 24838, 7, 1, 232010, 32, 321837444, 25087669, 18, 617887431, 67302824,
+    36, 356924, 18413, 45, 21, 219951, 9444, 1, 1000, 172116, 183150, 6,
+    24, 21, 213283, 618401, 1998, 28258, 1, 1000, 38159, 2, 22, 1000,
+    95933, 1, 1, 11, 1000, 277577, 12, 21
+  ];
+  var SDH_CM_V2 = [
+    100788, 420, 1, 1, 1000, 173, 0, 1, 1000, 59957, 4, 1,
+    11183, 32, 201305, 8356, 4, 16000, 100, 16000, 100, 16000, 100, 16000,
+    100, 16000, 100, 16000, 100, 100, 100, 16000, 100, 94375, 32, 132994,
+    32, 61462, 4, 72010, 178, 0, 1, 22151, 32, 91189, 769, 4,
+    2, 85848, 228465, 122, 0, 1, 1, 1000, 42921, 4, 2, 30623,
+    28755, 75, 1, 898148, 27279, 1, 51775, 558, 1, 39184, 1000, 60594,
+    1, 141895, 32, 83150, 32, 15299, 32, 76049, 1, 13169, 4, 22100,
+    10, 28999, 74, 1, 28999, 74, 1, 43285, 552, 1, 44749, 541,
+    1, 33852, 32, 68246, 32, 72362, 32, 7243, 32, 7391, 32, 11546,
+    32, 85848, 228465, 122, 0, 1, 1, 90434, 519, 0, 1, 74433,
+    32, 85848, 228465, 122, 0, 1, 1, 85848, 228465, 122, 0, 1,
+    1, 955506, 213312, 0, 2, 270652, 22588, 4, 1457325, 64566, 4, 20467,
+    1, 4, 0, 141992, 32, 100788, 420, 1, 1, 81663, 32, 59498,
+    32, 20142, 32, 24588, 32, 20744, 32, 25933, 32, 24623, 32, 43053543,
+    10, 53384111, 14333, 10, 43574283, 26308, 10, 1293828, 28716, 63, 0, 1,
+    1006041, 43623, 251, 0, 1, 16000, 100, 16000, 100, 962335, 18, 2780678,
+    6, 442008, 1, 52538055, 3756, 18, 267929, 18, 76433006, 8868, 18, 52948122,
+    18, 1995836, 36, 3227919, 12, 901022, 1, 166917843, 4307, 36, 284546, 36,
+    158221314, 26549, 36, 74698472, 36, 333849714, 1, 254006273, 72, 2174038, 72, 2261318,
+    64571, 4, 207616, 8310, 4, 100181, 726, 719, 0, 1, 100181, 726,
+    719, 0, 1, 100181, 726, 719, 0, 1, 107878, 680, 0, 1,
+    95336, 1, 281145, 18848, 0, 1, 180194, 159, 1, 1, 158519, 8942,
+    0, 1, 159378, 8813, 0, 1, 107490, 3298, 1, 106057, 655, 1,
+    1964219, 24520, 3, 607153, 231697, 53144, 0, 1, 116711, 1957, 4, 231883,
+    10, 1000, 24838, 7, 1, 232010, 32, 321837444, 25087669, 18, 617887431, 67302824,
+    36, 356924, 18413, 45, 21, 219951, 9444, 1, 1000, 172116, 183150, 6,
+    24, 21, 213283, 618401, 1998, 28258, 1, 1000, 38159, 2, 22, 1000,
+    95933, 1, 1, 11, 1000, 277577, 12, 21
+  ];
+  var SDH_CM_V3 = [
+    100788, 420, 1, 1, 1000, 173, 0, 1, 1000, 59957, 4, 1,
+    11183, 32, 201305, 8356, 4, 16000, 100, 16000, 100, 16000, 100, 16000,
+    100, 16000, 100, 16000, 100, 100, 100, 16000, 100, 94375, 32, 132994,
+    32, 61462, 4, 72010, 178, 0, 1, 22151, 32, 91189, 769, 4,
+    2, 85848, 123203, 7305, -900, 1716, 960, 57, 85848, 0, 1, 1,
+    1000, 42921, 4, 2, 30623, 28755, 75, 1, 898148, 27279, 1, 51775,
+    558, 1, 39184, 1000, 60594, 1, 141895, 32, 83150, 32, 15299, 32,
+    76049, 1, 13169, 4, 22100, 10, 28999, 74, 1, 28999, 74, 1,
+    43285, 552, 1, 44749, 541, 1, 33852, 32, 68246, 32, 72362, 32,
+    7243, 32, 7391, 32, 11546, 32, 85848, 123203, 7305, -900, 1716, 960,
+    57, 85848, 0, 1, 90434, 519, 0, 1, 74433, 32, 85848, 123203,
+    7305, -900, 1716, 960, 57, 85848, 0, 1, 1, 85848, 123203, 7305,
+    -900, 1716, 960, 57, 85848, 0, 1, 955506, 213312, 0, 2, 270652,
+    22588, 4, 1457325, 64566, 4, 20467, 1, 4, 0, 141992, 32, 100788,
+    420, 1, 1, 81663, 32, 59498, 32, 20142, 32, 24588, 32, 20744,
+    32, 25933, 32, 24623, 32, 43053543, 10, 53384111, 14333, 10, 43574283, 26308,
+    10, 16000, 100, 16000, 100, 962335, 18, 2780678, 6, 442008, 1, 52538055,
+    3756, 18, 267929, 18, 76433006, 8868, 18, 52948122, 18, 1995836, 36, 3227919,
+    12, 901022, 1, 166917843, 4307, 36, 284546, 36, 158221314, 26549, 36, 74698472,
+    36, 333849714, 1, 254006273, 72, 2174038, 72, 2261318, 64571, 4, 207616, 8310,
+    4, 1293828, 28716, 63, 0, 1, 1006041, 43623, 251, 0, 1, 100181,
+    726, 719, 0, 1, 100181, 726, 719, 0, 1, 100181, 726, 719,
+    0, 1, 107878, 680, 0, 1, 95336, 1, 281145, 18848, 0, 1,
+    180194, 159, 1, 1, 158519, 8942, 0, 1, 159378, 8813, 0, 1,
+    107490, 3298, 1, 106057, 655, 1, 1964219, 24520, 3, 607153, 231697, 53144,
+    0, 1, 116711, 1957, 4, 231883, 10, 1000, 24838, 7, 1, 232010,
+    32, 321837444, 25087669, 18, 617887431, 67302824, 36, 356924, 18413, 45, 21, 219951,
+    9444, 1, 1000, 172116, 183150, 6, 24, 21, 213283, 618401, 1998, 28258,
+    1, 1000, 38159, 2, 22, 1000, 95933, 1, 1, 11, 1000, 277577,
+    12, 21
+  ];
+var SDH_COST_MODELS = [SDH_CM_V1, SDH_CM_V2, SDH_CM_V3];
+function sdhEncInt(v) { /* cost model values are int64; CBOR signed integer, shortest form */
+  return v >= 0 ? cborHead(0, BigInt(v)) : cborHead(1, BigInt(-1 - v));
+}
+function scriptDataHash(redRaw, datRaw, langs) {
+  if (!Array.isArray(langs)) return null;
+  var langSet = {}, chosen = [], li;
+  for (li = 0; li < langs.length; li++) {
+    if (langs[li] !== 0 && langs[li] !== 1 && langs[li] !== 2) return null;
+    if (langSet[langs[li]] === undefined) { langSet[langs[li]] = true; chosen.push(langs[li]); }
+  }
+  chosen.sort(function (a, b) { return a - b; });
+
+  var redInfo = null, redBytes = null;
+  var redHex = (redRaw || "").trim();
+  if (redHex !== "") {
+    redBytes = cleanHex(redHex, MAX_TX_SIZE);
+    if (redBytes === null) return null;
+    /* validated by the proven witness decoder, via a synthetic
+       one-key witness set — its gates are this field's gates */
+    var w = parseWitnessSetCbor("a105" + bytesToHex(redBytes));
+    if (w === null || w.redeemers === null) return null;
+    redInfo = { count: w.redeemers.entries.length, form: w.redeemers.form };
+  }
+  var datBytes = [], datCount = 0;
+  var datHex = (datRaw || "").trim();
+  if (datHex !== "") {
+    datBytes = cleanHex(datHex, MAX_TX_SIZE);
+    if (datBytes === null) return null;
+    var w2 = parseWitnessSetCbor("a104" + bytesToHex(datBytes));
+    if (w2 === null) return null;
+    datCount = w2.plutusData.length;
+  }
+  var views;
+  if (redInfo !== null) {
+    if (chosen.length === 0) return null; /* redeemers but no language: a hash no real transaction carries */
+    var entries = [];
+    chosen.forEach(function (l) {
+      var params = SDH_COST_MODELS[l], body = [], pi;
+      for (pi = 0; pi < params.length; pi++) body = body.concat(sdhEncInt(params[pi]));
+      if (l === 0) {
+        var inner = [0x9f].concat(body, [0xff]);
+        entries = entries.concat([0x41, 0x00], cborHead(2, BigInt(inner.length)), inner);
+      } else {
+        entries = entries.concat(cborHead(0, BigInt(l)), cborHead(4, BigInt(params.length)), body);
+      }
+    });
+    views = cborHead(5, BigInt(chosen.length)).concat(entries);
+  } else {
+    views = [0xa0];
+    redBytes = [0xa0];
+  }
+  var digest = blake2b(redBytes.concat(datBytes, views), 32);
+  if (digest === null) return null;
+  return { hash: bytesToHex(digest), redeemers: redInfo, datumCount: datCount,
+           languages: redInfo !== null ? chosen : [],
+           viewsIgnored: redInfo === null && chosen.length > 0,
+           partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
+}
+
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -4531,8 +4743,44 @@ if (typeof document !== "undefined") {
         });
       } else lines.push("  • no redeemers in the witness set.");
       lines.push("");
-      lines.push("Signatures are NOT cryptographically verified by this tool, and the script data hash is not recomputed — the checks above are structural: the parts of the transaction agree with each other, or they do not.");
+      lines.push("Signatures are NOT cryptographically verified by this tool. The script data hash is not recomputed here — the languages a transaction runs are not all visible inside it (reference scripts live in other outputs) — the script data hash calculator below recomputes it from the witness parts and the languages you name. The checks above are structural: the parts of the transaction agree with each other, or they do not.");
       out.textContent = lines.join("\n");
+    });
+
+    /* --- script data hash calculator (redeemers + datums + language views) --- */
+    document.getElementById("sdhcalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var langs = [];
+      if (document.getElementById("sdh-lang-v1").checked) langs.push(0);
+      if (document.getElementById("sdh-lang-v2").checked) langs.push(1);
+      if (document.getElementById("sdh-lang-v3").checked) langs.push(2);
+      var res = scriptDataHash(document.getElementById("sdh-redeemers").value,
+                               document.getElementById("sdh-datums").value, langs);
+      var out = document.getElementById("sdhcalc-result");
+      if (!res) {
+        out.textContent = "Enter the redeemers CBOR from a witness set (key 5 — the legacy array or the Conway map, non-empty, tags 0–5 with 32-bit indices and ex-units within int64) and, if the witness set carries Plutus data, its CBOR too (key 4 — a non-empty set of Plutus data), and tick every Plutus language the transaction runs. Redeemers with no language ticked are refused — that hash belongs to no real transaction. Leave both boxes empty for the no-Plutus default.";
+        return;
+      }
+      var names = ["Plutus V1", "Plutus V2", "Plutus V3"];
+      var lines = [];
+      lines.push("Script data hash: " + res.hash);
+      lines.push("This is the value the transaction body must carry at key 11 (script_data_hash) for this combination of redeemers, datums and languages.");
+      lines.push("");
+      if (res.redeemers) {
+        lines.push("Redeemers: " + res.redeemers.count + (res.redeemers.count === 1 ? " redeemer" : " redeemers") + " (" + (res.redeemers.form === "map" ? "Conway map form" : "legacy array form") + "), " + res.partBytes.redeemers + " bytes — hashed exactly as pasted.");
+      } else {
+        lines.push("Redeemers: none pasted — the empty map (a0, 1 byte) is hashed, as the ledger's own construction does.");
+      }
+      lines.push("Datums: " + (res.datumCount ? res.datumCount + (res.datumCount === 1 ? " datum" : " datums") + ", " + res.partBytes.datums + " bytes — hashed exactly as pasted." : "none pasted — datums contribute ZERO bytes to this hash (not an empty set: the asymmetry is the ledger's)."));
+      if (res.redeemers) {
+        lines.push("Language views: " + res.languages.map(function (l) { return names[l]; }).join(", ") + " — " + res.partBytes.views + " bytes, from the current mainnet cost models (epoch 660: V1 332, V2 332, V3 350 values). Plutus V1 enters under its preserved historical encoding: its key and its model are both wrapped as byte strings, the model as an indefinite-length array.");
+      } else if (res.viewsIgnored) {
+        lines.push("Language views: none — with no redeemers there is nothing to execute, so the ticked language(s) do not enter the hash; the views are the empty map.");
+      } else {
+        lines.push("Language views: the empty map — nothing executes, so no language views enter the hash.");
+      }
+      if (!res.redeemers && !res.datumCount) lines.push("With no redeemers and no datums this is the default no-Plutus value — a transaction that runs no Plutus scripts carries NO script data hash at key 11 at all.");
+      out.textContent = lines.join("\\n");
     });
 
     document.getElementById("proposalsdecode").addEventListener("submit", function (ev) {

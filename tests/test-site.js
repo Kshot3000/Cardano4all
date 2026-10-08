@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "fulltxdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=38"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=39"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -1103,6 +1103,35 @@ check("fulltx: legacy three-element form — no flag, aux undeclared (byte-assem
 check("fulltx: REAL mainnet tx end-to-end — aux matches, signer witnessed, redeemers in range (Koios ground truth)", (() => { const r = app.decodeFullTx(REAL_TX); return r !== null && r.form === "conway" && r.isValid === true && r.txId === REAL_HASH && r.auxHashCheck === "match" && r.signerChecks.length === 1 && r.signerChecks[0].witnessed === true && r.redeemerChecks.length === 3 && r.redeemerChecks.every(x => x.ok); })());
 check("fulltx: over-cap auxiliary data refuses the whole transaction", app.decodeFullTx(FT_BAD_AUX_TX) === null);
 check("fulltx: rejects a body alone, a witness set alone, a 5-element array, a non-bool flag, trailing bytes and garbage", app.decodeFullTx(REAL_BODY) === null && app.decodeFullTx("a0") === null && app.decodeFullTx("85" + FT_SIMPLE_SIGNED.slice(2)) === null && app.decodeFullTx("84" + FT_SIMPLE_SIGNED.slice(2, FT_SIMPLE_SIGNED.length - 4) + "00f6") === null && app.decodeFullTx(FT_SIMPLE_SIGNED + "00") === null && app.decodeFullTx("") === null && app.decodeFullTx("zzzz") === null);
+
+/* Script data hash calculator — blake2b-256(redeemers ‖ datums ‖
+   language views) over the parts as serialised, the value a body
+   commits to at key 11. Proven in scratch (sdh_py.py /
+   sdh_vectors.json): V2 and V3 against pycardano 0.19.2's
+   script_data_hash driven by the LIVE cost models (Koios
+   epoch_params epoch 660: V1 332, V2 332, V3 350 values), the
+   empty and datums-only defaults against pycardano's own
+   defaults, and the REAL vector against the chain itself. The
+   V1 values are the live parameters from that same Koios
+   channel; only the V1 encoding FORM (byte-string key holding
+   uint 0, byte-string value holding the indefinite-length
+   array — the preserved ledger quirk, cardano-ledger#2512)
+   comes from the oracle's code, because pycardano's bundled
+   V1 model is a stale 166-value snapshot. */
+const SDH_RED = "81840000d866821a7327e6919f182aff821903e81907d0";
+const SDH_RED_MAP = "a182000082d866821a7327e6919f182aff821903e81907d0";
+const SDH_DAT = "d9010282d866821a7327e6919f182affd866821a7327e6919f07ff";
+const SDH_REAL_RED = "83840000d87980821962d91a007cc793840001d87980821a00012dfc1a0166fa60840300d8799f009f1a001e8480ff4100d87a809fd87a80ffff821a00143bbd1a197896b8";
+check("sdhcalc form present", html.includes('id="sdhcalc"') && html.includes('id="sdh-redeemers"') && html.includes('id="sdh-datums"') && html.includes('id="sdh-lang-v1"') && html.includes('id="sdh-lang-v2"') && html.includes('id="sdh-lang-v3"') && html.includes('id="sdhcalc-result"'));
+check("sdh: Plutus V2 views (pycardano, live cost models)", (() => { const r = app.scriptDataHash(SDH_RED, SDH_DAT, [1]); return r !== null && r.hash === "72069f0e420ca9c1dd52f20468ba9a7ca0dfffca6f32fd9891452788d44d6b5d" && r.redeemers.count === 1 && r.redeemers.form === "list" && r.datumCount === 2 && r.languages.length === 1 && r.languages[0] === 1; })());
+check("sdh: Plutus V3 views (pycardano, live cost models; V3 carries negative params)", (() => { const r = app.scriptDataHash(SDH_RED, SDH_DAT, [2]); return r !== null && r.hash === "823d3e7be35ec425498d7d7adee37d626092b0ad5990dca37d28a28ce4142da4"; })());
+check("sdh: Plutus V1 views (live values, preserved byte-string/indefinite encoding)", (() => { const r = app.scriptDataHash(SDH_RED, SDH_DAT, [0]); return r !== null && r.hash === "cbee5a00247057abc39a23013ecdbcfce63ed7ff911b8a47f31b8c9a9242fece"; })());
+check("sdh: all three languages together, order-independent selection", (() => { const a = app.scriptDataHash(SDH_RED, SDH_DAT, [0, 1, 2]); const b = app.scriptDataHash(SDH_RED, SDH_DAT, [2, 0, 1]); return a !== null && b !== null && a.hash === "a8c435057e4bdba39dfda4db3d975f5530bb743be397ca62c991574d68e46ef1" && b.hash === a.hash; })());
+check("sdh: Conway map-form redeemers hash differently from the array form (pycardano RedeemerMap)", (() => { const r = app.scriptDataHash(SDH_RED_MAP, "", [1]); return r !== null && r.hash === "6fb4f435639d5db18374d16d80d02d9595e4493ae771c2b72382f8fb0827c962" && r.redeemers.form === "map" && r.datumCount === 0; })());
+check("sdh: datums only — views forced empty, datums hashed (pycardano default)", (() => { const r = app.scriptDataHash("", SDH_DAT, [1]); return r !== null && r.hash === "707a3edab70d145c3e0be62bca6fa47ad45466535feb6f7538cea275132ea6b8" && r.redeemers === null && r.viewsIgnored === true && r.partBytes.views === 1 && r.partBytes.redeemers === 1; })());
+check("sdh: fully empty — the no-Plutus default (pycardano default)", (() => { const r = app.scriptDataHash("", "", []); return r !== null && r.hash === "9eb0251b2e85b082c3706a3e79b4cf2a2e96f936e912a398591e2486c757f8c1" && r.datumCount === 0 && r.languages.length === 0; })());
+check("sdh: REAL mainnet tx redeemers reproduce its body key 11 (Koios ground truth)", (() => { const r = app.scriptDataHash(SDH_REAL_RED, "", [1]); return r !== null && r.hash === "d04505dddec5ddfd1fba346b85f9108444ef354aa49870027119d6796a19cba5" && r.redeemers.count === 3 && r.partBytes.redeemers === 69; })());
+check("sdh: rejects redeemers with no language, a bad language, explicit empty redeemers, tag 6, an over-cap datum, trailing bytes and garbage", app.scriptDataHash(SDH_RED, "", []) === null && app.scriptDataHash(SDH_RED, "", [3]) === null && app.scriptDataHash("80", "", [1]) === null && app.scriptDataHash("a0", "", [1]) === null && app.scriptDataHash("81860000d866821a7327e6919f182aff821903e81907d0", "", [1]) === null && app.scriptDataHash("", "d9010282" + "49" + "00".repeat(65), [1]) === null && app.scriptDataHash(SDH_RED + "00", "", [1]) === null && app.scriptDataHash("", SDH_DAT + "ff", [1]) === null && app.scriptDataHash("zz", "", [1]) === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

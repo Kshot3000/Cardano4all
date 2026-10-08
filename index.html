@@ -365,11 +365,25 @@
       </form>
       <form class="tool" id="fulltxdecode">
         <h3>Full transaction decoder</h3>
-        <p>A <strong>whole transaction</strong> on its own — the array <code>cardano-cli</code> and wallets actually emit: <strong>[body, witness set, is-valid flag, auxiliary data]</strong> (the older three-element form without the flag decodes too). The body, the witness set and the auxiliary data each pass through the proven decoders above, and then the parts are <strong>checked against each other</strong> — the checks only a whole transaction makes possible: the <strong>auxiliary data's blake2b-256 hash</strong> against the hash the body commits to at key 7; every <strong>required signer</strong> the body names against the key hashes of the witnesses actually present; every output's <strong>datum hash</strong> against the Plutus data supplied in the witness set; and every <strong>redeemer's index</strong> against the number of inputs, mint policies, certificates, withdrawals, voters or proposals it could point at. If any part fails its own decoder's gates the whole transaction is refused, never partially described. Signatures are <strong>not cryptographically verified</strong> and the script data hash is not recomputed — the checks are structural: the parts agree with each other, or they do not. Decoded locally; nothing is signed or sent.</p>
+        <p>A <strong>whole transaction</strong> on its own — the array <code>cardano-cli</code> and wallets actually emit: <strong>[body, witness set, is-valid flag, auxiliary data]</strong> (the older three-element form without the flag decodes too). The body, the witness set and the auxiliary data each pass through the proven decoders above, and then the parts are <strong>checked against each other</strong> — the checks only a whole transaction makes possible: the <strong>auxiliary data's blake2b-256 hash</strong> against the hash the body commits to at key 7; every <strong>required signer</strong> the body names against the key hashes of the witnesses actually present; every output's <strong>datum hash</strong> against the Plutus data supplied in the witness set; and every <strong>redeemer's index</strong> against the number of inputs, mint policies, certificates, withdrawals, voters or proposals it could point at. If any part fails its own decoder's gates the whole transaction is refused, never partially described. Signatures are <strong>not cryptographically verified</strong>, and the script data hash is not recomputed here — the languages a transaction runs are not all visible inside it (reference scripts live in other outputs); the script data hash calculator below does that job from the witness parts. The checks are structural: the parts agree with each other, or they do not. Decoded locally; nothing is signed or sent.</p>
         <label for="fulltxdecode-input">Full transaction CBOR (hex)</label>
         <textarea id="fulltxdecode-input" rows="3" spellcheck="false" placeholder="e.g. 84a1… (a whole transaction: body, witness set, flag, auxiliary data)" autocomplete="off"></textarea>
         <button type="submit" class="btn primary">Decode full transaction</button>
         <p id="fulltxdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
+      <form class="tool" id="sdhcalc">
+        <h3>Script data hash calculator</h3>
+        <p>When a transaction runs Plutus scripts, its body commits to a <strong>script data hash</strong> at key 11 — <strong>blake2b-256 of the redeemers, the datums and the language views</strong>, each as serialised. Paste the <strong>redeemers</strong> from the witness set (key 5, either serialisation — they hash differently, which is why the bytes are hashed exactly as pasted) and the <strong>Plutus data</strong> (key 4) if the set carries any, and tick every <strong>Plutus language</strong> the transaction runs — including languages that arrive by reference script, which is exactly why the decoder above cannot do this on its own. The language views are built from the <strong>current mainnet cost models</strong> (epoch 660: V1 332, V2 332, V3 350 values). Two ledger asymmetries are built in, not bugs: absent datums contribute <strong>zero bytes</strong>, while absent redeemers contribute the <strong>empty map</strong>; and <strong>Plutus V1</strong> enters under its preserved historical encoding — key and cost model both wrapped as byte strings, the model as an indefinite-length array. Both parts are validated by the witness set decoder's gates before anything is hashed. Calculated locally; nothing is signed or sent.</p>
+        <label for="sdh-redeemers">Redeemers CBOR (hex) — witness set key 5; leave empty if the transaction has none</label>
+        <textarea id="sdh-redeemers" rows="3" spellcheck="false" placeholder="e.g. 81… (legacy array) or a1… (Conway map)" autocomplete="off"></textarea>
+        <label for="sdh-datums">Plutus data CBOR (hex) — witness set key 4; leave empty if the set carries none</label>
+        <textarea id="sdh-datums" rows="3" spellcheck="false" placeholder="e.g. d90102… (a set of Plutus data)" autocomplete="off"></textarea>
+        <label>Plutus languages the transaction runs (for the language views)</label>
+        <label for="sdh-lang-v1"><input type="checkbox" id="sdh-lang-v1"> Plutus V1</label>
+        <label for="sdh-lang-v2"><input type="checkbox" id="sdh-lang-v2"> Plutus V2</label>
+        <label for="sdh-lang-v3"><input type="checkbox" id="sdh-lang-v3"> Plutus V3</label>
+        <button type="submit" class="btn primary">Calculate script data hash</button>
+        <p id="sdhcalc-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
@@ -561,6 +575,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=38"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>

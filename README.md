@@ -536,8 +536,38 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   Koios) decodes end-to-end with its auxiliary hash matching
   and its required signer witnessed. Stated on the page:
   signatures are not cryptographically verified and the
-  script data hash is not recomputed — the checks are
-  structural.
+  script data hash is not recomputed there — the languages
+  a transaction runs are not all visible inside it; the
+  calculator below does that job. The checks are structural.
+- **Script data hash calculator** — the blake2b-256 a
+  transaction body commits to at key 11 whenever it runs
+  Plutus scripts: blake2b-256(redeemers ‖ datums ‖ language
+  views) over the parts exactly as serialised. The redeemers
+  (witness key 5, either serialisation — they hash
+  differently) and the Plutus data (key 4) are pasted as
+  their own CBOR and validated by the witness decoder's
+  gates first; the language views are built from the current
+  mainnet cost models (Koios `epoch_params` epoch 660,
+  protocol version 11: Plutus V1 332, V2 332, V3 350 values;
+  V3 carries four negative values, encoded as signed CBOR).
+  The ledger's asymmetries are built in: absent datums
+  contribute zero bytes while absent redeemers contribute
+  the empty map, no redeemers means empty views whatever is
+  ticked, and Plutus V1 enters under its preserved
+  historical encoding (byte-string key holding uint 0,
+  byte-string value holding the indefinite-length array —
+  the language-view bug kept for compatibility,
+  cardano-ledger#2512). Proven against pycardano 0.19.2's
+  `script_data_hash` driven by the live cost models (V2 and
+  V3, array- and map-form redeemers, the empty and
+  datums-only defaults) and against the chain itself: the
+  redeemer bytes of a real mainnet Plutus transaction with
+  V2 ticked reproduce its body key 11 exactly. One caveat,
+  recorded plainly: pycardano's bundled V1 cost model is a
+  stale 166-value snapshot, so the V1 values are the live
+  parameters from the same Koios channel that proved V2 on
+  chain, and only the V1 encoding form comes from the
+  oracle's code.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
