@@ -155,6 +155,21 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   inline Plutus datum, Plutus V2 and native reference scripts, an
   enterprise-address output, and both Alonzo forms all decode
   field-for-field.
+- **Mint / burn decoder** — one transaction's mint field CBOR on its
+  own (body key 9): every created or destroyed asset with policy ID,
+  name, exact signed BigInt quantity, CIP-14 fingerprint and a
+  mint/burn label. Follows the Conway CDDL fetched from
+  IntersectMBO/cardano-ledger (`mint = {+ policy_id => {+ asset_name
+  => nonzero_int64}}`): at least one policy and one asset per policy,
+  every quantity a non-zero int64 — positive mints, negative burns —
+  and repeated policy or asset-name keys rejected. Proven against
+  pycardano 0.19.2's `MultiAsset` serialisation: a pure mint, a pure
+  burn, a mixed two-policy mint+burn and both int64 extremes decode
+  field-for-field. (Two pycardano behaviours the CDDL overrules,
+  recorded here so nobody "fixes" the decoder to match them:
+  pycardano serialises an empty `MultiAsset` to the empty map the
+  CDDL's `+` forbids in a mint field, and it silently drops
+  zero-quantity assets instead of carrying them.)
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

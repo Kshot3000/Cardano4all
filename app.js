@@ -2143,6 +2143,58 @@ function parseTxOutCbor(raw) {
   return null;
 }
 
+/* Mint / burn decoder — a standalone transaction MINT field on its
+   own (body key 9): the map a transaction carries when it creates or
+   destroys native assets, which until now only ever appeared inside
+   the transaction inspector's mint list. Ledger CDDL (Conway):
+   mint = {+ policy_id => {+ asset_name => nonzero_int64}} — at least
+   one policy, at least one asset per policy, and every quantity a
+   NON-ZERO int64: positive mints, negative burns, and zero is not a
+   legal entry (pycardano silently drops zero-quantity assets when
+   serialising, and the ledger field cannot carry one). Quantities
+   are therefore NOT the output rule — the value and output decoders
+   reject negatives, this one requires the sign. Two deliberate
+   strictnesses in the spirit of the sibling decoders: repeated
+   policy or asset-name keys are rejected (a mint is a map), and the
+   empty map is rejected even though pycardano serialises an empty
+   MultiAsset to it — the CDDL's "+" means a mint field that exists
+   names at least one asset. Exact BigInt quantities throughout;
+   input capped at max_tx_size (16,384) like the transaction tools.
+   Proven against pycardano 0.19.2's MultiAsset serialisation in
+   scratch (mint_py.py / mint_vectors.json): a pure mint, a pure
+   burn, a mixed two-policy mint+burn, and both int64 extremes decode
+   field-for-field. Display only — nothing is signed or sent. */
+function parseMintCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t !== "map" || n.pairs.length === 0) return null;
+  var assets = [], seenPol = {}, policyCount = 0, mintCount = 0, burnCount = 0;
+  for (var a = 0; a < n.pairs.length; a++) {
+    var pol = n.pairs[a][0], names = n.pairs[a][1];
+    if (pol.t !== "bytes" || pol.bytes.length !== 28 || names.t !== "map" || names.pairs.length === 0) return null;
+    var polHex = bytesToHex(pol.bytes);
+    if (seenPol[polHex] !== undefined) return null; /* duplicate policy key */
+    seenPol[polHex] = true; policyCount++;
+    var seenName = {};
+    for (var b = 0; b < names.pairs.length; b++) {
+      var nm = names.pairs[b][0], qty = names.pairs[b][1];
+      if (nm.t !== "bytes" || nm.bytes.length > 32 || qty.t !== "int") return null;
+      if (qty.v === 0n || qty.v < -9223372036854775808n || qty.v > 9223372036854775807n) return null; /* nonzero int64 */
+      var nameHex = bytesToHex(nm.bytes);
+      if (seenName[nameHex] !== undefined) return null; /* duplicate asset name */
+      seenName[nameHex] = true;
+      var isMint = qty.v > 0n;
+      if (isMint) mintCount++; else burnCount++;
+      assets.push({ policy: polHex, name: nameHex, nameText: assetNameText(nameHex), quantity: qty.v.toString(), action: isMint ? "mint" : "burn" });
+    }
+  }
+  assets.sort(function (x, y) { return (x.policy + x.name) < (y.policy + y.name) ? -1 : 1; });
+  return { assets: assets, assetCount: assets.length, policyCount: policyCount, mintCount: mintCount, burnCount: burnCount };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2155,7 +2207,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2482,6 +2534,23 @@ if (typeof document !== "undefined") {
       if (res.datum.kind === "hash") lines.push("Datum hash: " + res.datum.hash);
       if (res.datum.kind === "inline") lines.push("Inline datum (CBOR): " + res.datum.hex);
       if (res.scriptRef !== null) lines.push("Reference script: " + ({ native: "native script", plutus1: "Plutus V1 script", plutus2: "Plutus V2 script", plutus3: "Plutus V3 script" })[res.scriptRef]);
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- mint / burn decoder (a standalone mint field's CBOR) --- */
+    document.getElementById("mintdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseMintCbor(document.getElementById("mintdecode-input").value);
+      var out = document.getElementById("mintdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one mint field: {policy: {name: quantity}} with at least one policy and one asset per policy, policies 28 bytes, names at most 32 bytes, and every quantity a non-zero int64 — positive mints, negative burns, zero is not a legal entry. An output value (positive quantities with a coin) or a whole transaction is a different shape — the value decoder and transaction inspector above decode those.";
+        return;
+      }
+      var lines = [];
+      lines.push((res.mintCount + res.burnCount) + (res.assetCount === 1 ? " asset" : " assets") + " across " + res.policyCount + (res.policyCount === 1 ? " policy" : " policies") + ": " + res.mintCount + " minting, " + res.burnCount + " burning");
+      res.assets.forEach(function (a) {
+        lines.push("  " + (a.action === "mint" ? "mint +" : "burn ") + a.quantity + " \u00d7 policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")") + " — fingerprint " + assetFingerprint(a.policy, a.name));
+      });
       out.textContent = lines.join("\n");
     });
 

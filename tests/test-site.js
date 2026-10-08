@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=26"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=27"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -737,6 +737,30 @@ check("txoutdecode alonzo datum hash (pycardano)", (() => { const r = app.parseT
 check("txoutdecode babbage enterprise address (pycardano)", (() => { const r = app.parseTxOutCbor("a200581d61" + "ef3fe99fa775688dd19d11192d79d1742c7fdab27ab133c80c1dd28d" + "011a0016e360"); return r !== null && r.address === "addr1v8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9rgcshpl9" && r.lovelace === "1500000"; })());
 check("txoutdecode rejects reward address, bare value, trailing bytes", app.parseTxOutCbor("a200581de1" + "ed9793beeadf05284aa53bf2d2fcede5e3664bf2d5edcaa0fe862c82" + "011a000eedc2") === null && app.parseTxOutCbor("1a000eedc2") === null && app.parseTxOutCbor("a200" + ADDR_BYTES + "011a000eedc2" + "00") === null && app.parseTxOutCbor("") === null && app.parseTxOutCbor("zzzz") === null);
 check("txoutdecode rejects duplicate and unknown map keys", app.parseTxOutCbor("a300" + ADDR_BYTES + "00" + ADDR_BYTES + "011a000eedc2") === null && app.parseTxOutCbor("a300" + ADDR_BYTES + "011a000eedc20400") === null);
+
+/* mint / burn decoder — a standalone mint field's CBOR (body key 9).
+   All hex vectors are pycardano 0.19.2 MultiAsset serialisations
+   (scratch mint_py.py / mint_vectors.json), self-verified by
+   MultiAsset.from_cbor round-trip in the generator. The rule is the
+   Conway CDDL's, fetched from IntersectMBO/cardano-ledger this run:
+   mint = {+ policy_id => {+ asset_name => nonzero_int64}} — hence the
+   empty map, an empty per-policy map and a zero quantity are all
+   rejected even though pycardano serialises an empty MultiAsset to
+   a0 and silently drops zero-quantity assets. NOTE the int64
+   extremes below are STRING literals on purpose — routing
+   9223372036854775807 through a JS number (or a plain JSON baseline)
+   rounds it (the float trap); the scratch A/B driver failed on
+   exactly that before its baseline was corrected. */
+check("mintdecode form present", html.includes('id="mintdecode"') && html.includes('id="mintdecode-input"') && html.includes('id="mintdecode-result"'));
+check("mintdecode pure mint PATATE +100 (pycardano)", (() => { const r = app.parseMintCbor("a1581c" + V_POL + "a1465041544154451864"); return r !== null && r.assetCount === 1 && r.policyCount === 1 && r.mintCount === 1 && r.burnCount === 0 && r.assets[0].policy === V_POL && r.assets[0].nameText === "PATATE" && r.assets[0].quantity === "100" && r.assets[0].action === "mint"; })());
+check("mintdecode pure burn, empty name, -5 (pycardano)", (() => { const r = app.parseMintCbor("a1581c" + V_POL + "a14024"); return r !== null && r.assets[0].name === "" && r.assets[0].quantity === "-5" && r.assets[0].action === "burn" && r.burnCount === 1; })());
+check("mintdecode mixed two policies, mint + burn (pycardano)", (() => { const r = app.parseMintCbor("a2581c" + V_POL + "a1465041544154451a000f4240581c" + "aa".repeat(28) + "a243fffe0038625820" + "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f07"); return r !== null && r.assetCount === 3 && r.policyCount === 2 && r.mintCount === 2 && r.burnCount === 1 && r.assets[0].quantity === "1000000" && r.assets[2].quantity === "-99" && r.assets[2].nameText === null && r.assets[2].action === "burn"; })());
+check("mintdecode int64 max exact as text (pycardano)", (() => { const r = app.parseMintCbor("a1581c" + V_POL + "a1434d41581b7fffffffffffffff"); return r !== null && r.assets[0].quantity === "9223372036854775807"; })());
+check("mintdecode int64 min exact as text (pycardano)", (() => { const r = app.parseMintCbor("a1581c" + V_POL + "a1434d494e3b7fffffffffffffff"); return r !== null && r.assets[0].quantity === "-9223372036854775808"; })());
+check("mintdecode rejects zero quantity and out-of-int64 quantities", app.parseMintCbor("a1581c" + V_POL + "a1415800") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a141591b8000000000000000") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a141593b8000000000000000") === null);
+check("mintdecode rejects empty mint and empty policy maps (CDDL +)", app.parseMintCbor("a0") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a0") === null);
+check("mintdecode rejects value shapes, bare coin, trailing bytes", app.parseMintCbor("821a001e8480a1581c" + V_POL + "a14650415441544501") === null && app.parseMintCbor("1a000eedc2") === null && app.parseMintCbor("a1581c" + V_POL + "a1465041544154451864" + "00") === null && app.parseMintCbor("") === null && app.parseMintCbor("zzzz") === null);
+check("mintdecode rejects duplicate keys and oversize parts", app.parseMintCbor("a2581c" + "aa".repeat(28) + "a1415801" + "581c" + "aa".repeat(28) + "a1415802") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a2415801415802") === null && app.parseMintCbor("a1581b" + "aa".repeat(27) + "a1415801") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a15821" + "00".repeat(33) + "01") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
