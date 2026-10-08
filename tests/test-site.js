@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=20"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=21"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -200,6 +200,24 @@ check("refscript at per-tx limit 204800 not flagged, priced 6335648", !app.refSc
 check("refscript above per-tx limit flagged but still priced", app.refScriptFee("204801").overTxLimit === true);
 check("refscript above per-block limit rejected", app.refScriptFee("1048577") === null);
 check("refscript fractional, garbage and empty rejected", app.refScriptFee("1.5") === null && app.refScriptFee("abc") === null && app.refScriptFee("") === null);
+
+/* total minimum fee — the ledger minimum is the exact sum of the three
+   proven parts; hand-derived vectors (arithmetic from the component
+   rules, not from the code) */
+check("totalfee form present", html.includes('id="totalfeecalc"') && html.includes('id="totalfee-result"'));
+check("total plain 200-byte tx = size fee only", JSON.stringify(app.totalTxFee("200", "0", "0", "0")) === JSON.stringify({ sizeFeeLovelace: "164181", exunitFeeLovelace: "0", refScriptFeeLovelace: "0", totalLovelace: "164181" }));
+check("total script tx: 199381 + 93750 = 293131", app.totalTxFee("1000", "1000000", "500000000", "0").totalLovelace === "293131");
+check("total rounding probes combined: 177381 + 1 + 2857686 = 3035068", app.totalTxFee("500", "1", "1", "128003").totalLovelace === "3035068" && app.totalTxFee("500", "1", "1", "128003").exunitFeeLovelace === "1" && app.totalTxFee("500", "1", "1", "128003").refScriptFeeLovelace === "2857686");
+check("total at all per-tx maxima: 876277 + 1673050 + 6335648 = 8884975", app.totalTxFee("16384", "16500000", "10000000000", "204800").totalLovelace === "8884975");
+check("total ref 1 byte adds exactly 15", app.totalTxFee("200", "0", "0", "1").totalLovelace === "164196");
+check("total rejects size 0 and over-max size", app.totalTxFee("0", "0", "0", "0") === null && app.totalTxFee("16385", "0", "0", "0") === null);
+check("total rejects over-cap execution units", app.totalTxFee("200", "16500001", "0", "0") === null && app.totalTxFee("200", "0", "10000000001", "0") === null);
+check("total rejects ref scripts over the per-tx limit (impossible tx, though the standalone tool prices it flagged)", app.totalTxFee("200", "0", "0", "204801") === null);
+check("total rejects empty, garbage and fractional in any field", app.totalTxFee("", "0", "0", "0") === null && app.totalTxFee("200", "", "0", "0") === null && app.totalTxFee("200", "0", "0", "abc") === null && app.totalTxFee("200.5", "0", "0", "0") === null);
+check("total is the exact sum of its parts on assorted inputs", [["300", "123456", "987654321", "999"], ["1", "17", "0", "25601"], ["999", "16500000", "1", "76800"]].every(function (c) {
+  var t = app.totalTxFee(c[0], c[1], c[2], c[3]);
+  return t && t.totalLovelace === (BigInt(app.minFee(c[0]).feeLovelace) + BigInt(app.exunitCost(c[1], c[2]).costLovelace) + BigInt(app.refScriptFee(c[3]).feeLovelace)).toString();
+}));
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core
    (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the

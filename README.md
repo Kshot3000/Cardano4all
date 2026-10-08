@@ -87,6 +87,13 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   price, floored once over the exact rational total — the ledger's
   `tierRefScriptFee`. The 204,800-byte per-transaction limit is flagged,
   not silently priced past.
+- **Total minimum fee calculator** — the ledger's minimum fee for a whole
+  transaction is the exact sum of the three parts above (size fee +
+  `txscriptfee` + tiered reference-script fee), so this composes the
+  three proven calculators and adds no rounding of its own. Validation
+  composes too: any input past a per-transaction protocol limit —
+  including reference scripts over 204,800 bytes — is rejected rather
+  than priced, since no valid transaction exists to quote.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

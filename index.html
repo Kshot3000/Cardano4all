@@ -215,6 +215,20 @@
         <button type="submit" class="btn primary">Calculate reference script fee</button>
         <p id="refscript-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="totalfeecalc">
+        <h3>Total minimum fee calculator</h3>
+        <p>All three parts of a transaction's minimum fee in one place — the ledger's minimum is their exact <strong>sum</strong>: the size fee (<strong>44 lovelace/byte + 155,381</strong>), the Plutus execution cost (<strong>⌈ memory × 0.0577 + steps × 0.0000721 ⌉</strong>) and the tiered <strong>reference script fee</strong> (15 lovelace/byte rising 1.2× per 25,600-byte tier), each computed by the proven calculators above with their own rounding exactly where the ledger puts it — the total itself is never rounded. Mainnet parameters, checked against the live protocol parameters for epoch 660. Leave the script fields at 0 for a plain transaction.</p>
+        <label for="total-size">Transaction size (bytes)</label>
+        <input id="total-size" inputmode="numeric" placeholder="e.g. 1000" autocomplete="off">
+        <label for="total-mem">Total execution memory units (0 if no Plutus script)</label>
+        <input id="total-mem" inputmode="numeric" placeholder="e.g. 1000000" autocomplete="off">
+        <label for="total-steps">Total execution step units (0 if no Plutus script)</label>
+        <input id="total-steps" inputmode="numeric" placeholder="e.g. 500000000" autocomplete="off">
+        <label for="total-ref">Total reference script size (bytes, 0 if none)</label>
+        <input id="total-ref" inputmode="numeric" placeholder="e.g. 0" autocomplete="off">
+        <button type="submit" class="btn primary">Calculate total minimum fee</button>
+        <p id="totalfee-result" role="status" aria-live="polite"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -405,6 +419,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

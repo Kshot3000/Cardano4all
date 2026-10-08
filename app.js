@@ -417,6 +417,44 @@ function refScriptFee(sizeStr) {
   };
 }
 
+/* Total minimum fee — the ledger's minimum fee for a whole transaction
+   is the SUM of the three parts above, each already proven on its own
+   in this file: the size fee (44 x size + 155,381), the script part
+   txscriptfee (one ceiling over mem x price_mem + steps x price_step)
+   and, since Conway, the tiered reference-script fee (floored once).
+   The formal ledger specification's minfee adds the script fee to the
+   size fee, and Conway adds the reference-script charge the same way;
+   the rounded parts are all integers by then, so the total is an exact
+   integer sum with NO further rounding. This composer adds no maths of
+   its own — it exists so the three parts are never added by hand.
+   Validation composes strictly: any part that would make the
+   transaction invalid makes the total null — including reference
+   scripts over the 204,800-byte per-transaction limit (the standalone
+   reference-script tool prices those with a warning flag; a total fee
+   for a transaction that cannot exist must not be quoted). Zero
+   execution units and zero reference-script bytes are the plain
+   transaction case and price as 0. */
+
+/* totalTxFee(sizeStr, memStr, stepsStr, refStr) -> { sizeFeeLovelace,
+   exunitFeeLovelace, refScriptFeeLovelace, totalLovelace } (decimal
+   strings) or null when any part is empty, fractional, non-numeric or
+   beyond a per-transaction limit. */
+function totalTxFee(sizeStr, memStr, stepsStr, refStr) {
+  var sf = minFee(sizeStr);
+  if (!sf) return null;
+  var ec = exunitCost(memStr, stepsStr);
+  if (!ec) return null;
+  var rf = refScriptFee(refStr);
+  if (!rf || rf.overTxLimit) return null;
+  var total = BigInt(sf.feeLovelace) + BigInt(ec.costLovelace) + BigInt(rf.feeLovelace);
+  return {
+    sizeFeeLovelace: sf.feeLovelace,
+    exunitFeeLovelace: ec.costLovelace,
+    refScriptFeeLovelace: rf.feeLovelace,
+    totalLovelace: total.toString()
+  };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -1605,7 +1643,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1773,6 +1811,24 @@ if (typeof document !== "undefined") {
         (res.overTxLimit
           ? " Warning: that is over the 204,800-byte per-transaction limit — no single transaction can carry that much reference script; split it across transactions."
           : "");
+    });
+
+    /* --- total minimum fee (size + execution + reference scripts) --- */
+    document.getElementById("totalfeecalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = totalTxFee(
+        document.getElementById("total-size").value,
+        document.getElementById("total-mem").value,
+        document.getElementById("total-steps").value,
+        document.getElementById("total-ref").value);
+      var out = document.getElementById("totalfee-result");
+      if (!res) {
+        out.textContent = "Enter the whole transaction: size 1 to 16,384 bytes; memory 0 to 16,500,000 units and steps 0 to 10,000,000,000 (0 if it runs no Plutus script); reference scripts 0 to 204,800 bytes total (0 if it uses none). Each limit is a per-transaction protocol maximum — past one, no valid transaction exists to price.";
+        return;
+      }
+      out.textContent = "Total minimum fee = " + res.totalLovelace + " lovelace (" + lovelaceToAda(res.totalLovelace) +
+        " ADA): size fee " + res.sizeFeeLovelace + " + execution cost " + res.exunitFeeLovelace +
+        " + reference script fee " + res.refScriptFeeLovelace + " lovelace. This is the ledger minimum for the figures entered — a wallet may pay above it, and this prices the units entered; measuring a script to find its units is node work.";
     });
 
     /* --- minimum-UTxO calculator (ledger formula, serialised size) --- */
