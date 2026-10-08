@@ -4126,6 +4126,208 @@ function parseMetadataView(raw) {
   return { form: form, hasMetadata: true, labels: labels, nft: nft, royalties: royalties };
 }
 
+/* CIP-68 datum metadata viewer (candidate) — CIP-0068's datum form:
+   Constr 0 [metadata, version, extra] where the metadata in the
+   222 / 333 / 444 standards is a property map with byte-string keys
+   (or, at version 4, the nested "721" map), plus CIP-0067 asset
+   name labels: a 4-byte prefix [0000 | 16-bit label | CRC-8
+   checksum | 0000] on the asset name. Provenance: the CIP-0067 /
+   CIP-0068 texts (prefix test vectors, datum CDDL, class table),
+   pycardano serialisations and one real mainnet datum (an ADA
+   Handle reference NFT's inline datum, via Koios) in scratch. */
+var CIP68_CLASSES = { "100": "reference NFT", "222": "NFT user token", "333": "FT user token", "444": "RFT user token" };
+function cip68Crc8(labelBytes) {
+  var crc = 0;
+  for (var i = 0; i < labelBytes.length; i++) {
+    crc ^= labelBytes[i];
+    for (var j = 0; j < 8; j++) crc = (crc & 0x80) ? ((crc << 1) ^ 0x07) & 0xff : (crc << 1) & 0xff;
+  }
+  return crc;
+}
+function cip68Utf8(bytes) {
+  if (typeof TextDecoder === "undefined") return null;
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes)); }
+  catch (e) { return null; }
+}
+function cip67PrefixHex(label) {
+  var crc = cip68Crc8([(label >> 8) & 0xff, label & 0xff]);
+  var v = ((label << 12) | (crc << 4)) >>> 0;
+  return bytesToHex([(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff]);
+}
+function cip67LabelFromBytes(nameBytes) {
+  if (!nameBytes || nameBytes.length < 4) return null;
+  var v = ((nameBytes[0] << 24) | (nameBytes[1] << 16) | (nameBytes[2] << 8) | nameBytes[3]) >>> 0;
+  if ((v >>> 28) !== 0 || (v & 0xf) !== 0) return null; /* the 0000 brackets */
+  var label = (v >>> 12) & 0xffff;
+  var crc = (v >>> 4) & 0xff;
+  var content = Array.prototype.slice.call(nameBytes, 4);
+  return { label: label, checksumOk: cip68Crc8([(label >> 8) & 0xff, label & 0xff]) === crc,
+           contentHex: bytesToHex(content), contentText: cip68Utf8(content) };
+}
+function cip67Label(raw) {
+  var s = (raw || "").trim().toLowerCase().replace(/^0x/, "");
+  if (!/^([0-9a-f]{2})+$/.test(s) || s.length > 64) return null;
+  return cip67LabelFromBytes(hexToBytes(s));
+}
+function cip68Value(node) {
+  if (node.t === "bytes") {
+    var t = cip68Utf8(node.bytes);
+    return t !== null ? { text: t, rendered: null } : { text: null, rendered: "h'" + bytesToHex(node.bytes) + "'" };
+  }
+  if (node.t === "int") return { text: node.v.toString(), rendered: null };
+  if (node.t === "array" && node.items.length > 0 && node.items.every(function (x) { return x.t === "bytes"; })) {
+    var all = [];
+    node.items.forEach(function (x) { all = all.concat(Array.prototype.slice.call(x.bytes)); });
+    var jt = cip68Utf8(all);
+    if (jt !== null) return { text: jt, rendered: null };
+  }
+  return { text: null, rendered: cborRender(node) };
+}
+function cip68Props(mapNode) {
+  var props = [], files = [], warnings = [], seen = {};
+  for (var i = 0; i < mapNode.pairs.length; i++) {
+    var k = mapNode.pairs[i][0], val = mapNode.pairs[i][1];
+    if (k.t !== "bytes") return null; /* CIP-68 property keys are byte strings */
+    var kh = bytesToHex(k.bytes);
+    if (seen[kh] !== undefined) return null; /* a map: one value per key */
+    seen[kh] = 1;
+    var keyText = cip68Utf8(k.bytes);
+    if (keyText === "files" && val.t === "array") {
+      for (var f = 0; f < val.items.length; f++) {
+        var fn = val.items[f];
+        if (fn.t !== "map") { warnings.push("a files entry is not a map — shown uninterpreted in the raw decode"); continue; }
+        var file = { name: null, mediaType: null, src: null, others: [], warnings: [] }, fseen = {};
+        for (var g = 0; g < fn.pairs.length; g++) {
+          var fk = fn.pairs[g][0], fv = fn.pairs[g][1];
+          if (fk.t !== "bytes") return null;
+          var fkh = bytesToHex(fk.bytes);
+          if (fseen[fkh] !== undefined) return null;
+          fseen[fkh] = 1;
+          var fkt = cip68Utf8(fk.bytes), fvv = cip68Value(fv);
+          if (fkt === "name") file.name = fvv.text !== null ? fvv.text : fvv.rendered;
+          else if (fkt === "mediaType") file.mediaType = fvv.text !== null ? fvv.text : fvv.rendered;
+          else if (fkt === "src") file.src = fvv.text !== null ? fvv.text : fvv.rendered;
+          else file.others.push({ key: fkt !== null ? fkt : "0x" + fkh, text: fvv.text, rendered: fvv.rendered });
+        }
+        if (file.mediaType === null) file.warnings.push('file has no "mediaType"');
+        if (file.src === null) file.warnings.push('file has no "src"');
+        files.push(file);
+      }
+      continue;
+    }
+    var v = cip68Value(val);
+    props.push({ key: keyText, keyHex: kh, text: v.text, rendered: v.rendered });
+    if (keyText === "decimals" && val.t !== "int") warnings.push('"decimals" is not an integer');
+  }
+  var has = function (name) { return props.some(function (p) { return p.key === name; }); };
+  if (!has("name")) warnings.push('no "name" property');
+  if (!has("image") && !has("logo")) warnings.push('no "image" (or "logo") property');
+  return { props: props, files: files, warnings: warnings };
+}
+function parseCip68(rawDatum, rawName) {
+  /* Plutus data grammar gate — a self-contained copy of the
+     witness decoder's proven gate (bounded bytes ≤ 64, bignums,
+     Constr tags 121–127 / 1280–1400, tag 102), so this tool does
+     not drift from the hub's one definition of valid data. */
+  function validData(n, depth) {
+    if (depth > 100) return false;
+    if (n.t === "int") return true;
+    if (n.t === "bytes") return n.bytes.length <= 64;
+    if (n.t === "array") {
+      for (var i = 0; i < n.items.length; i++) if (!validData(n.items[i], depth + 1)) return false;
+      return true;
+    }
+    if (n.t === "map") {
+      for (var j = 0; j < n.pairs.length; j++)
+        if (!validData(n.pairs[j][0], depth + 1) || !validData(n.pairs[j][1], depth + 1)) return false;
+      return true;
+    }
+    if (n.t === "tag") {
+      if ((n.n === 2n || n.n === 3n) && n.item.t === "bytes") return n.item.bytes.length <= 64;
+      if (n.n === 102n) {
+        if (n.item.t !== "array" || n.item.items.length !== 2) return false;
+        if (n.item.items[0].t !== "int" || n.item.items[0].v < 0n) return false;
+        if (n.item.items[1].t !== "array") return false;
+        for (var k = 0; k < n.item.items[1].items.length; k++)
+          if (!validData(n.item.items[1].items[k], depth + 1)) return false;
+        return true;
+      }
+      if ((n.n >= 121n && n.n <= 127n) || (n.n >= 1280n && n.n <= 1400n)) {
+        if (n.item.t !== "array") return false;
+        for (var m = 0; m < n.item.items.length; m++)
+          if (!validData(n.item.items[m], depth + 1)) return false;
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+  var asset = null;
+  if (rawName !== undefined && rawName !== null && String(rawName).trim() !== "") {
+    var ns = String(rawName).trim().toLowerCase().replace(/^0x/, "");
+    if (!/^([0-9a-f]{2})+$/.test(ns) || ns.length > 64) return null;
+    var nb = hexToBytes(ns), lab = cip67LabelFromBytes(nb);
+    asset = { nameHex: ns, nameText: cip68Utf8(nb), label: null, checksumOk: null, klass: null, contentHex: null, contentText: null, refNameHex: null };
+    if (lab !== null) {
+      asset.label = lab.label; asset.checksumOk = lab.checksumOk;
+      asset.klass = CIP68_CLASSES[String(lab.label)] || null;
+      asset.contentHex = lab.contentHex; asset.contentText = lab.contentText;
+      asset.refNameHex = cip67PrefixHex(100) + lab.contentHex;
+    }
+  }
+  var bytes = cleanHex(rawDatum, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var node = parsed.node;
+  if (!validData(node, 0)) return null;
+  var fields = null;
+  if (node.t === "tag" && node.n === 121n && node.item.t === "array") fields = node.item.items;
+  else if (node.t === "tag" && node.n === 102n && node.item.t === "array" && node.item.items.length === 2 &&
+           node.item.items[0].t === "int" && node.item.items[0].v === 0n && node.item.items[1].t === "array") fields = node.item.items[1].items;
+  if (fields === null || fields.length !== 3) return null; /* datum = Constr 0 [metadata, version, extra] */
+  var metaNode = fields[0], verNode = fields[1], extraNode = fields[2];
+  if (verNode.t !== "int" || verNode.v < 0n) return null;
+  var out = { version: verNode.v.toString(), form: "generic", props: [], files: [], warnings: [],
+              nested: [], genericRendered: null, extraRendered: cborRender(extraNode),
+              extraIsUnit: false, asset: asset };
+  if (verNode.v > 4n) out.warnings.push("datum version " + out.version + " is newer than CIP-68 version 4 — the metadata is shown as written");
+  out.extraIsUnit = (extraNode.t === "tag" && extraNode.n === 121n && extraNode.item.t === "array" && extraNode.item.items.length === 0) ||
+    (extraNode.t === "tag" && extraNode.n === 102n && extraNode.item.t === "array" && extraNode.item.items.length === 2 &&
+     extraNode.item.items[0].t === "int" && extraNode.item.items[0].v === 0n && extraNode.item.items[1].t === "array" && extraNode.item.items[1].items.length === 0);
+  if (metaNode.t !== "map") { out.genericRendered = cborRender(metaNode); return out; }
+  /* nested "721" form (version 4): the map's only key is the bytes "721" */
+  if (metaNode.pairs.length === 1 && metaNode.pairs[0][0].t === "bytes" &&
+      bytesToHex(metaNode.pairs[0][0].bytes) === "373231" && metaNode.pairs[0][1].t === "map") {
+    out.form = "nested";
+    var polMap = metaNode.pairs[0][1], pseen = {};
+    for (var i = 0; i < polMap.pairs.length; i++) {
+      var pk = polMap.pairs[i][0], pv = polMap.pairs[i][1];
+      if (pk.t !== "bytes" || pv.t !== "map") return null;
+      var ph = bytesToHex(pk.bytes);
+      if (pseen[ph] !== undefined) return null;
+      pseen[ph] = 1;
+      var aseen = {};
+      for (var j = 0; j < pv.pairs.length; j++) {
+        var ak = pv.pairs[j][0], av = pv.pairs[j][1];
+        if (ak.t !== "bytes" || av.t !== "map") return null;
+        var ah = bytesToHex(ak.bytes);
+        if (aseen[ah] !== undefined) return null;
+        aseen[ah] = 1;
+        var sub = cip68Props(av);
+        if (sub === null) return null;
+        out.nested.push({ policyHex: ph, policyBytes: pk.bytes.length, assetHex: ah,
+                          assetText: cip68Utf8(ak.bytes), props: sub.props, files: sub.files, warnings: sub.warnings });
+      }
+    }
+    return out;
+  }
+  var direct = cip68Props(metaNode);
+  if (direct === null) return null;
+  out.form = "direct"; out.props = direct.props; out.files = direct.files; out.warnings = out.warnings.concat(direct.warnings);
+  return out;
+}
+
 if (typeof module !== "undefined" && module.exports) {
 
 /* Script data hash calculator — the blake2b-256 a transaction
@@ -4338,7 +4540,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -4928,6 +5130,57 @@ if (typeof document !== "undefined") {
       if (!res.nft && !res.royalties && res.labels.length) {
         lines.push("No CIP-25 (label 721) or CIP-27 (label 777) content — the labels above are shown uninterpreted by the auxiliary data decoder above.");
       }
+      out.textContent = lines.join("\n");
+    });
+    /* --- CIP-68 datum metadata viewer (+ CIP-67 asset name labels) --- */
+    document.getElementById("cip68view").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseCip68(document.getElementById("cip68view-input").value, document.getElementById("cip68view-name").value);
+      var out = document.getElementById("cip68view-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of a CIP-68 metadata datum — constructor 0 with exactly three fields: the metadata, the version integer and the extra data field (at least Unit) — optionally with the asset name hex of the reference NFT or user token (at most 32 bytes). The datum must be valid Plutus data (byte strings of at most 64 bytes); a property map's keys are byte strings and no key may repeat. Transaction metadata (CIP-25) is a different shape — the token metadata viewer above reads it.";
+        return;
+      }
+      function propLines(props, files, warnings, indent) {
+        var ls = [];
+        props.forEach(function (p) { ls.push(indent + (p.key !== null ? p.key : "0x" + p.keyHex) + ": " + (p.text !== null ? p.text : p.rendered)); });
+        files.forEach(function (f) {
+          var parts = [];
+          if (f.name !== null) parts.push("name " + f.name);
+          if (f.mediaType !== null) parts.push("media type " + f.mediaType);
+          if (f.src !== null) parts.push("src " + f.src);
+          ls.push(indent + "File: " + (parts.length ? parts.join(", ") : "(empty entry)"));
+          f.others.forEach(function (o) { ls.push(indent + "  " + o.key + ": " + (o.text !== null ? o.text : o.rendered)); });
+          f.warnings.forEach(function (w) { ls.push(indent + "  Warning: " + w + "."); });
+        });
+        warnings.forEach(function (w) { ls.push(indent + "Warning: " + w + "."); });
+        return ls;
+      }
+      var lines = [];
+      if (res.asset) {
+        if (res.asset.label === null) {
+          lines.push("Asset name " + res.asset.nameHex + " carries no CIP-67 label — its first four bytes are not a bracketed label prefix.");
+        } else {
+          lines.push("Asset name: CIP-67 label " + res.asset.label + (res.asset.klass ? " — " + res.asset.klass : " — no registered class") + ", checksum " + (res.asset.checksumOk ? "valid" : "INVALID — the prefix does not match its label") + "; name content " + (res.asset.contentText !== null && res.asset.contentText !== "" ? JSON.stringify(res.asset.contentText) : "0x" + res.asset.contentHex) + ".");
+          lines.push(res.asset.label === 100 ? "This is the reference NFT's own name." : "Its reference NFT is named " + res.asset.refNameHex + " under the same policy.");
+        }
+        lines.push("");
+      }
+      lines.push("CIP-68 datum — version " + res.version + "; extra field: " + (res.extraIsUnit ? "Unit (no extra data)." : "custom data, shown as Plutus data: " + res.extraRendered + "."));
+      if (res.form === "direct") {
+        lines.push("Metadata (direct property map):");
+        lines = lines.concat(propLines(res.props, res.files, [], "  "));
+      } else if (res.form === "nested") {
+        lines.push("Metadata (nested map — the version-4 form, CIP-25-style organisation):");
+        res.nested.forEach(function (e) {
+          lines.push("  Policy " + e.policyHex + (e.policyBytes !== 28 ? " (warning: a policy ID is 28 bytes)" : "") + " — asset " + (e.assetText !== null ? JSON.stringify(e.assetText) : "0x" + e.assetHex) + " (asset name hex " + e.assetHex + "):");
+          lines = lines.concat(propLines(e.props, e.files, e.warnings, "    "));
+        });
+        if (res.nested.length === 0) lines.push("  The nested map names no assets.");
+      } else {
+        lines.push("Metadata is not a property map — the generic CIP-68 form allows a list, an integer or a byte string here; shown as Plutus data: " + res.genericRendered);
+      }
+      res.warnings.forEach(function (w) { lines.push("Warning: " + w + "."); });
       out.textContent = lines.join("\n");
     });
     /* --- transaction witness set decoder (a standalone witness set's CBOR) --- */

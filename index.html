@@ -363,6 +363,16 @@
         <button type="submit" class="btn primary">View token metadata</button>
         <p id="metaview-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="cip68view">
+        <h3>CIP-68 datum metadata viewer</h3>
+        <p>Where the viewer above reads metadata out of a transaction, <strong>CIP-68</strong> keeps it in a <strong>datum</strong>: a <strong>reference NFT</strong> (asset name label <strong>100</strong>) sits in an output whose inline datum holds the metadata for the user token in your wallet — an <strong>NFT (222)</strong>, a <strong>fungible token (333)</strong> or a <strong>rich fungible token (444)</strong> — so it can evolve and Plutus scripts can read it. Paste that datum: constructor 0 holding the <strong>metadata</strong>, a <strong>version</strong> and an <strong>extra</strong> field for the issuer's own script data. A property map is read out property by property (byte-string keys as text, chunked URIs rejoined, the <strong>files</strong> list expanded), the version-4 <strong>nested &ldquo;721&rdquo; map</strong> is unpacked per policy and asset, and a non-map metadata field is shown as the Plutus data it is. Add the asset name and its <strong>CIP-67 label</strong> is decoded and its CRC-8 checksum verified, with the matching reference NFT name computed. Structural violations refuse the input; a <em>missing</em> name or image is flagged as a warning instead. Read locally; nothing is signed or sent.</p>
+        <label for="cip68view-input">CIP-68 datum CBOR (hex)</label>
+        <textarea id="cip68view-input" rows="3" spellcheck="false" placeholder="e.g. d8799f… (constructor 0: metadata, version, extra)" autocomplete="off"></textarea>
+        <label for="cip68view-name">Asset name (hex, optional — reference NFT or user token)</label>
+        <input id="cip68view-name" type="text" spellcheck="false" placeholder="e.g. 000643b0… (label 100) or 000de140… (label 222)" autocomplete="off">
+        <button type="submit" class="btn primary">View CIP-68 metadata</button>
+        <p id="cip68view-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="witnessdecode">
         <h3>Transaction witness set decoder</h3>
         <p>One transaction's <strong>witness set</strong> on its own — the signatures and scripts that authorise the body, carried as the second element of every transaction. Every key is optional (a script-only transaction carries no key witness, and an empty set decodes): <strong>key witnesses</strong> (key and 64-byte signature, with the <strong>key hash</strong> the chain actually names), <strong>native scripts</strong> decoded recursively with their script hashes, Byron-era <strong>bootstrap witnesses</strong>, <strong>Plutus V1/V2/V3 scripts</strong> with size and script hash, <strong>Plutus data</strong> rendered with each datum's hash, and <strong>redeemers in both serialisations</strong> — the legacy array and the Conway map — with their data and exact execution units. Lists and sets must be non-empty, set-held scripts may not repeat, and redeemer indices and ex-units are held to the ledger's own ranges. Signatures are shown as carried, <strong>not verified</strong> — putting a witness set together with the body it authorises is the full transaction decoder's job below.</p>
@@ -583,6 +593,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=40"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>

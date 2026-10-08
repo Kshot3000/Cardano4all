@@ -516,6 +516,64 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   data block (label 674, cross-checked against Koios's
   own rendering) proving the extraction layer against
   the chain as it is today.
+- **CIP-68 datum metadata viewer** — the successor
+  standard to the CIP-25 viewer above, and the one new
+  mints actually use: the metadata lives in the inline
+  datum of a reference NFT's output, as Plutus data of
+  the form Constr 0 `[metadata, version, extra]`.
+  Paste that datum (an output's inline datum is exactly
+  what explorers and Koios show) and, optionally, the
+  asset name of the reference NFT or the user token.
+  The datum must first satisfy the hub's Plutus data
+  grammar (byte strings of at most 64 bytes, the
+  ledger's bounded_bytes), be constructor 0 with
+  exactly three fields, and carry a non-negative
+  integer version — anything else refuses. The
+  metadata field then decodes three ways, all from the
+  CIP-68 text: a direct property map (the 222 NFT,
+  333 FT and 444 RFT standards) read out property by
+  property — byte-string keys as text, integer values
+  exact, a byte-string list rejoined as one URI, the
+  `files` list expanded with its own entries, nested
+  values rendered as Plutus data; the version-4
+  nested form, whose only key is the byte string
+  "721", unpacked per policy ID and asset name; and
+  the generic form (a list, an integer or a byte
+  string where a map could be), shown uninterpreted.
+  The extra field — the issuer's own script data,
+  required to be present and at least Unit — is
+  rendered as Plutus data, never interpreted. The
+  same strictness split as the CIP-25 viewer, recorded
+  so nobody "aligns" it away: structural violations
+  (a two-field datum, constructor 1, a text or
+  negative version, a non-byte-string or repeated
+  property key) refuse the input, while a missing
+  `name` or `image`/`logo` property — and a files
+  entry without `mediaType` or `src` — is a warning
+  on the asset, because real datums omit them. The
+  asset name, when given, is read as a CIP-67 label:
+  the 4-byte prefix `[0000 | 16-bit label | CRC-8
+  checksum | 0000]` is decoded and the checksum
+  (CRC-8, polynomial 0x07, over the two label bytes)
+  is verified before the label is believed — 100 is
+  the reference NFT, 222 the NFT user token, 333 the
+  FT and 444 the RFT class — and the matching
+  reference NFT name (label 100 over the same name
+  content) is computed, which is the lookup the CIP
+  prescribes. Proven against the CIP-67 text's own
+  fourteen prefix vectors (0 to 65535, checksums
+  included), pycardano 0.19.2 serialisations that
+  round-trip byte-for-byte (222 direct with files,
+  333 direct, 444 with an integer extra field, the
+  version-4 nested map, both generic forms), the
+  rejection set beside them, and one real mainnet
+  datum: the inline datum of an ADA Handle reference
+  NFT (policy f0ff48bb…, name (100)heptasean, fetched
+  via Koios from the UTxO that still holds it — its
+  eleven direct properties, its version, its map
+  extra field and the (222) user token's label,
+  checksum and reference name all read off the chain
+  artefact itself).
 - **Transaction witness set decoder** — one transaction's
   witness set on its own, the second element of every
   transaction: the signatures and scripts that authorise
