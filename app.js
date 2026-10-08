@@ -3752,8 +3752,153 @@ function parseWitnessSetCbor(raw) {
            plutusData: plutusData, redeemers: redeemers };
 }
 
+/* Full transaction decoder — a WHOLE transaction on its own:
+   the four-element Conway array [body, witness_set, is_valid,
+   auxiliary_data / nil] that cardano-cli and wallets emit (CDDL
+   `transaction`), or the three-element [body, witness_set,
+   auxiliary_data / nil] form that predates the is-valid flag.
+   Until now the hub decoded every PART of a transaction — the
+   inspector does the body, the witness decoder the witness set,
+   the auxiliary decoder the metadata block — but nothing put a
+   whole transaction together and CHECKED THE PARTS AGAINST EACH
+   OTHER. This composes those three proven decoders over the
+   exact byte spans of the array's elements (located with the
+   proven CBOR parser, never re-serialised — the txId lesson)
+   and adds the consistency checks only a whole transaction
+   makes possible:
+   - auxiliary data hash: blake2b-256 of the attached auxiliary
+     data against the hash the body commits to at key 7 —
+     match, mismatch, declared-but-absent, attached-but-
+     undeclared, or neither;
+   - required signers: every key hash the body names at key 14
+     checked against the key hashes of the key and bootstrap
+     witnesses actually present (a signer may also be covered
+     by a native script in the set — that is reported as the
+     plain witness fact, not guessed at);
+   - datum availability: every output carrying a datum HASH
+     checked against the Plutus data in the witness set — the
+     datum a script spending that output will need;
+   - redeemer ranges: every redeemer's index checked against
+     the count of things it can point at in the body (inputs
+     for spend, mint policies for mint, certificates, withdrawn
+     reward accounts, voters, proposals) — an index past the end
+     points at nothing. Indices address the ledger's canonically
+     ordered lists, so this is a range check, not a mapping.
+   Strictness composes too: if any part fails its own decoder's
+   gates (a malformed body, a witness set the witness decoder
+   rejects, auxiliary data over the metadatum caps) the whole
+   transaction is refused — a decoder that quietly skipped a
+   broken part would misdescribe the transaction. A body alone
+   is refused here (the inspector's job), as is anything that
+   is not a 3- or 4-element array with a map witness set and,
+   in the Conway form, a boolean is-valid flag. Honest limits,
+   stated on the page too: signatures are shown via the witness
+   decoder, NOT cryptographically verified (no Ed25519 check is
+   performed), and the script data hash is not recomputed (that
+   needs the ledger's language-view encoding of the cost
+   models). Input capped at max_tx_size (16,384) like the
+   other transaction tools. Proven against pycardano 0.19.2
+   full Transaction serialisations in scratch (fulltx_py.py /
+   fulltx_vectors.json, oracle from_cbor round-trip asserted in
+   the generator): a signed body with one witnessed and one
+   unwitnessed required signer, auxiliary data matching /
+   mismatching / undeclared / declared-but-absent, the is-valid
+   flag false, and a Plutus transaction whose datum and redeemer
+   checks pass and fail in the expected places; the legacy
+   three-element form and an over-cap auxiliary block are
+   byte-assembled from oracle parts (pycardano emits only the
+   four-element form). A REAL mainnet transaction — the Plutus
+   transaction the inspector and witness tests carry, fetched
+   via Koios — decodes end-to-end with its auxiliary hash
+   matching and its required signer witnessed. Display only;
+   nothing is signed or sent. */
+function decodeFullTx(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var root = parsed.node;
+  if (root.t !== "array" || (root.items.length !== 3 && root.items.length !== 4)) return null;
+  var ai = bytes[0] & 31;
+  if (ai === 31) return null; /* indefinite-length array: not a serialised tx */
+  var head = cborReadUint(bytes, 1, ai);
+  if (!head) return null;
+  var spans = [], pos = head.next;
+  for (var i = 0; i < root.items.length; i++) {
+    var p = cborParseItem(bytes, pos, 0);
+    if (!p) return null;
+    spans.push([pos, p.next]);
+    pos = p.next;
+  }
+  if (pos !== bytes.length) return null;
+  function spanHex(s) { return bytesToHex(bytes.slice(s[0], s[1])); }
+
+  var form = root.items.length === 4 ? "conway" : "legacy";
+  var isValid = null, auxNode, auxSpan;
+  if (root.items[1].t !== "map") return null; /* the witness set is a map */
+  if (form === "conway") {
+    if (root.items[2].t !== "bool") return null;
+    isValid = root.items[2].v;
+    auxNode = root.items[3]; auxSpan = spans[3];
+  } else {
+    auxNode = root.items[2]; auxSpan = spans[2];
+  }
+
+  var body = inspectTx(spanHex(spans[0]));
+  if (body === null) return null;
+  var wset = parseWitnessSetCbor(spanHex(spans[1]));
+  if (wset === null) return null;
+  var aux = null;
+  if (auxNode.t !== "null") {
+    aux = parseAuxDataCbor(spanHex(auxSpan));
+    if (aux === null) return null;
+  }
+
+  var auxHashCheck;
+  if (body.auxDataHash !== null && aux !== null)
+    auxHashCheck = body.auxDataHash === aux.hash ? "match" : "mismatch";
+  else if (body.auxDataHash !== null) auxHashCheck = "missing";
+  else if (aux !== null) auxHashCheck = "undeclared";
+  else auxHashCheck = "none";
+
+  var witnessed = {};
+  wset.vkeyWitnesses.forEach(function (w) { witnessed[w.keyHash] = true; });
+  wset.bootstrapWitnesses.forEach(function (w) { witnessed[w.keyHash] = true; });
+  var signerChecks = body.requiredSigners.map(function (h) {
+    return { hash: h, witnessed: witnessed[h] === true };
+  });
+
+  var datumHashes = {};
+  wset.plutusData.forEach(function (d) { datumHashes[d.hash] = true; });
+  var datumChecks = [];
+  body.outputs.forEach(function (o, idx) {
+    if (o.datum.kind === "hash")
+      datumChecks.push({ output: idx, hash: o.datum.hash, supplied: datumHashes[o.datum.hash] === true });
+  });
+
+  var policySet = {};
+  body.mint.forEach(function (a) { policySet[a.policy] = true; });
+  var limits = { spend: body.inputs.length, mint: Object.keys(policySet).length,
+                 cert: body.certificates, reward: body.withdrawals.length,
+                 voting: body.votingProcedures, proposing: body.proposals };
+  var redeemerChecks = [];
+  if (wset.redeemers !== null) {
+    wset.redeemers.entries.forEach(function (r) {
+      redeemerChecks.push({ tag: r.tagName, index: r.index, limit: limits[r.tagName],
+                            ok: r.index < limits[r.tagName] });
+    });
+  }
+
+  return { form: form, isValid: isValid, txId: body.txId,
+           totalBytes: bytes.length, bodyBytes: body.bodyBytes,
+           body: body, witnesses: wset,
+           auxPresent: aux !== null, aux: aux, auxHashCheck: auxHashCheck,
+           signerChecks: signerChecks, datumChecks: datumChecks,
+           redeemerChecks: redeemerChecks };
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -4325,6 +4470,68 @@ if (typeof document !== "undefined") {
       }
       if (total === 0) lines.push("This witness set is empty — it authorises nothing on its own; a transaction carrying it would need its witnesses supplied another way.");
       lines.push("Signatures are shown as carried, not verified — checking one needs the transaction body it signs.");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- full transaction decoder (a whole transaction's CBOR) --- */
+    document.getElementById("fulltxdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = decodeFullTx(document.getElementById("fulltxdecode-input").value);
+      var out = document.getElementById("fulltxdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one whole transaction: the Conway array [body, witness set, is-valid flag, auxiliary data or null], or the older three-element form without the flag. Every part must pass its own decoder's gates — a malformed body, witness set or auxiliary block refuses the whole transaction. A body alone is the transaction inspector's job; a witness set or auxiliary block alone has its own decoder above.";
+        return;
+      }
+      var b = res.body, w = res.witnesses, lines = [];
+      lines.push("Full transaction — " + (res.form === "conway" ? "Conway four-element form" : "legacy three-element form (no is-valid flag)") + ", " + res.totalBytes + " bytes in total, body " + res.bodyBytes + " bytes.");
+      lines.push("Transaction ID: " + res.txId);
+      if (res.isValid !== null) lines.push("Is-valid flag: " + (res.isValid ? "true — the transaction declares its scripts passed (phase-2 validation succeeded when it was built)" : "false — the transaction declares phase-2 validation FAILED; if it is accepted on chain it is recorded for its collateral only"));
+      lines.push("");
+      lines.push("Body: " + b.inputs.length + (b.inputs.length === 1 ? " input" : " inputs") + ", " + b.outputs.length + (b.outputs.length === 1 ? " output" : " outputs") + " totalling " + b.outputTotal + " lovelace (" + lovelaceToAda(b.outputTotal) + " ADA), declared fee " + b.fee + " lovelace (" + lovelaceToAda(b.fee) + " ADA).");
+      var extras = [];
+      if (b.mint.length) extras.push(b.mint.length + " mint entr" + (b.mint.length === 1 ? "y" : "ies"));
+      if (b.withdrawals.length) extras.push(b.withdrawals.length + " withdrawal(s)");
+      if (b.certificates) extras.push(b.certificates + " certificate(s)");
+      if (b.collateral.length) extras.push(b.collateral.length + " collateral input(s)");
+      if (b.referenceInputs.length) extras.push(b.referenceInputs.length + " reference input(s)");
+      if (b.votingProcedures) extras.push(b.votingProcedures + " voter(s) with voting procedures");
+      if (b.proposals) extras.push(b.proposals + " governance proposal(s)");
+      if (extras.length) lines.push("Also in the body: " + extras.join(", ") + ". (Full body detail: the transaction inspector above.)");
+      lines.push("");
+      var wparts = [];
+      if (w.vkeyWitnesses.length) wparts.push(w.vkeyWitnesses.length + " key witness(es)");
+      if (w.nativeScripts.length) wparts.push(w.nativeScripts.length + " native script(s)");
+      if (w.bootstrapWitnesses.length) wparts.push(w.bootstrapWitnesses.length + " bootstrap witness(es)");
+      if (w.plutusScripts.length) wparts.push(w.plutusScripts.length + " Plutus script(s)");
+      if (w.plutusData.length) wparts.push(w.plutusData.length + " Plutus datum item(s)");
+      if (w.redeemers) wparts.push(w.redeemers.entries.length + " redeemer(s)");
+      lines.push("Witness set: " + (wparts.length ? wparts.join(", ") + "." : "empty — nothing in it authorises the body."));
+      lines.push("Auxiliary data: " + (res.auxPresent ? "present (" + res.aux.format + " form" + (res.aux.metadata && res.aux.metadata.length ? ", " + res.aux.metadata.length + " metadata label(s)" : "") + "), hash " + res.aux.hash + "." : "none attached."));
+      lines.push("");
+      lines.push("Consistency checks (body against witnesses and auxiliary data):");
+      var auxLine = { match: "auxiliary data hash MATCHES the hash the body commits to at key 7",
+                      mismatch: "auxiliary data hash DOES NOT MATCH the hash the body commits to at key 7 — this auxiliary data does not belong to this body",
+                      missing: "the body commits to an auxiliary data hash at key 7 but NO auxiliary data is attached",
+                      undeclared: "auxiliary data is attached but the body declares no hash for it at key 7",
+                      none: "no auxiliary data and no auxiliary data hash — nothing to check" }[res.auxHashCheck];
+      lines.push("  • " + auxLine + ".");
+      if (res.signerChecks.length) {
+        res.signerChecks.forEach(function (s) {
+          lines.push("  • required signer " + s.hash + ": " + (s.witnessed ? "a key witness with this hash IS present" : "NO key witness with this hash is present (a native script in the set can also cover a required signer)") + ".");
+        });
+      } else lines.push("  • the body names no required signers.");
+      if (res.datumChecks.length) {
+        res.datumChecks.forEach(function (d) {
+          lines.push("  • output " + (d.output + 1) + " datum hash " + d.hash + ": " + (d.supplied ? "the datum IS supplied in the witness set" : "the datum is NOT in the witness set — a script spending this output cannot run until it is supplied") + ".");
+        });
+      } else lines.push("  • no output carries a datum hash.");
+      if (res.redeemerChecks.length) {
+        res.redeemerChecks.forEach(function (r) {
+          lines.push("  • redeemer " + r.tag + " #" + r.index + ": " + (r.ok ? "in range — the body has " + r.limit + " it can point at" : "OUT OF RANGE — the body has only " + r.limit + " for it to point at") + ".");
+        });
+      } else lines.push("  • no redeemers in the witness set.");
+      lines.push("");
+      lines.push("Signatures are NOT cryptographically verified by this tool, and the script data hash is not recomputed — the checks above are structural: the parts of the transaction agree with each other, or they do not.");
       out.textContent = lines.join("\n");
     });
 

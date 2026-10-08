@@ -506,6 +506,38 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   set (from the Plutus transaction the inspector tests
   carry, fetched via Koios), whose key hash matches its
   body's required signer.
+- **Full transaction decoder** — a whole transaction on its
+  own: the four-element Conway array `[body, witness_set,
+  is_valid, auxiliary_data / nil]` (the three-element form
+  without the flag decodes too). The three proven decoders
+  above are composed over the array elements' exact byte
+  spans, and the parts are then checked against each other —
+  the checks only a whole transaction makes possible: the
+  auxiliary data's blake2b-256 against the hash the body
+  commits to at key 7 (match, mismatch, declared-but-absent,
+  attached-but-undeclared); every required signer (key 14)
+  against the key hashes of the key and bootstrap witnesses
+  present; every output datum hash against the Plutus data
+  in the witness set; and every redeemer index against the
+  count of inputs, mint policies, certificates, withdrawals,
+  voters or proposals it can point at (indices address the
+  ledger's canonically ordered lists, so this is a range
+  check, not a mapping). Strictness composes: any part
+  failing its own decoder's gates refuses the whole
+  transaction. Proven against pycardano 0.19.2 full
+  `Transaction` serialisations (oracle `from_cbor`
+  round-trip asserted in the generator): witnessed and
+  unwitnessed required signers, all four auxiliary-hash
+  states, the is-valid flag false, datum and redeemer checks
+  passing and failing in the expected places; the legacy
+  form and an over-cap auxiliary block are byte-assembled
+  from oracle parts. A real mainnet Plutus transaction (the
+  one the inspector and witness tests carry, fetched via
+  Koios) decodes end-to-end with its auxiliary hash matching
+  and its required signer witnessed. Stated on the page:
+  signatures are not cryptographically verified and the
+  script data hash is not recomputed — the checks are
+  structural.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

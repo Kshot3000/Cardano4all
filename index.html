@@ -357,11 +357,19 @@
       </form>
       <form class="tool" id="witnessdecode">
         <h3>Transaction witness set decoder</h3>
-        <p>One transaction's <strong>witness set</strong> on its own — the signatures and scripts that authorise the body, carried as the second element of every transaction. Every key is optional (a script-only transaction carries no key witness, and an empty set decodes): <strong>key witnesses</strong> (key and 64-byte signature, with the <strong>key hash</strong> the chain actually names), <strong>native scripts</strong> decoded recursively with their script hashes, Byron-era <strong>bootstrap witnesses</strong>, <strong>Plutus V1/V2/V3 scripts</strong> with size and script hash, <strong>Plutus data</strong> rendered with each datum's hash, and <strong>redeemers in both serialisations</strong> — the legacy array and the Conway map — with their data and exact execution units. Lists and sets must be non-empty, set-held scripts may not repeat, and redeemer indices and ex-units are held to the ledger's own ranges. Signatures are shown as carried, <strong>not verified</strong> — checking one needs the body it signs, which is the transaction inspector's job.</p>
+        <p>One transaction's <strong>witness set</strong> on its own — the signatures and scripts that authorise the body, carried as the second element of every transaction. Every key is optional (a script-only transaction carries no key witness, and an empty set decodes): <strong>key witnesses</strong> (key and 64-byte signature, with the <strong>key hash</strong> the chain actually names), <strong>native scripts</strong> decoded recursively with their script hashes, Byron-era <strong>bootstrap witnesses</strong>, <strong>Plutus V1/V2/V3 scripts</strong> with size and script hash, <strong>Plutus data</strong> rendered with each datum's hash, and <strong>redeemers in both serialisations</strong> — the legacy array and the Conway map — with their data and exact execution units. Lists and sets must be non-empty, set-held scripts may not repeat, and redeemer indices and ex-units are held to the ledger's own ranges. Signatures are shown as carried, <strong>not verified</strong> — putting a witness set together with the body it authorises is the full transaction decoder's job below.</p>
         <label for="witnessdecode-input">Witness set CBOR (hex)</label>
         <textarea id="witnessdecode-input" rows="3" spellcheck="false" placeholder="e.g. a200… (a map of witnesses) — or a0 for an empty witness set" autocomplete="off"></textarea>
         <button type="submit" class="btn primary">Decode witness set</button>
         <p id="witnessdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
+      <form class="tool" id="fulltxdecode">
+        <h3>Full transaction decoder</h3>
+        <p>A <strong>whole transaction</strong> on its own — the array <code>cardano-cli</code> and wallets actually emit: <strong>[body, witness set, is-valid flag, auxiliary data]</strong> (the older three-element form without the flag decodes too). The body, the witness set and the auxiliary data each pass through the proven decoders above, and then the parts are <strong>checked against each other</strong> — the checks only a whole transaction makes possible: the <strong>auxiliary data's blake2b-256 hash</strong> against the hash the body commits to at key 7; every <strong>required signer</strong> the body names against the key hashes of the witnesses actually present; every output's <strong>datum hash</strong> against the Plutus data supplied in the witness set; and every <strong>redeemer's index</strong> against the number of inputs, mint policies, certificates, withdrawals, voters or proposals it could point at. If any part fails its own decoder's gates the whole transaction is refused, never partially described. Signatures are <strong>not cryptographically verified</strong> and the script data hash is not recomputed — the checks are structural: the parts agree with each other, or they do not. Decoded locally; nothing is signed or sent.</p>
+        <label for="fulltxdecode-input">Full transaction CBOR (hex)</label>
+        <textarea id="fulltxdecode-input" rows="3" spellcheck="false" placeholder="e.g. 84a1… (a whole transaction: body, witness set, flag, auxiliary data)" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode full transaction</button>
+        <p id="fulltxdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
@@ -553,6 +561,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=37"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>
