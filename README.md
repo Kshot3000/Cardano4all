@@ -104,6 +104,16 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   fees: they return on deregistration, pool retirement, or when a
   governance action is enacted or expires; updating an existing pool
   charges no new pool deposit.
+- **Transaction ID calculator** — a transaction's ID is blake2b-256 of
+  its body's CBOR bytes and nothing else, so it is fixed before signing.
+  Paste a body's CBOR hex, or a whole transaction's (the array
+  `cardano-cli` and wallets emit) and the body is extracted by span —
+  never re-serialised, since the hash covers the bytes as transmitted.
+  The body is gated on the ledger's required entries (inputs, outputs,
+  fee, with their types) so arbitrary CBOR is not mislabelled as a
+  transaction. Proven against pycardano 0.19.2, whose `Transaction.id`
+  agreed on bodies carrying a TTL, a validity interval start and an
+  auxiliary data hash, and on the full transactions wrapping them.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

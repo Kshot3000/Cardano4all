@@ -27,7 +27,7 @@ check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
 check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=22"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=23"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -647,6 +647,28 @@ check("nativescript: script address is the type-7 enterprise address carrying th
 check("nativescript rejects unknown types and bad JSON", app.nativeScript('{"type":"bogus"}') === null && app.nativeScript("{nope") === null && app.nativeScript("[1,2]") === null && app.nativeScript("") === null);
 check("nativescript rejects bad key hashes and missing lists", app.nativeScript('{"type":"sig","keyHash":"abcd"}') === null && app.nativeScript('{"type":"all"}') === null && app.nativeScript('{"type":"any","scripts":{}}') === null);
 check("nativescript rejects bad slots and counts", app.nativeScript('{"type":"after","slot":-5}') === null && app.nativeScript('{"type":"before","slot":18446744073709551616}') === null && app.nativeScript('{"type":"atLeast","required":1.5,"scripts":[]}') === null && app.nativeScript('{"type":"atLeast","scripts":[]}') === null);
+
+/* Transaction ID — blake2b-256 of the body CBOR, nothing else. Bodies and
+   full transactions below were built by pycardano 0.19.2 and its
+   Transaction.id agreed with every expected ID in scratch first; the
+   empty-draft vector's expected hash came from Python hashlib. Bodies
+   reuse the hub's known key hashes in a base address output. */
+const TX_BODY1 = "a30081825820000000000000000000000000000000000000000000000000000000000000000000018182583901" + PAY_KH + STAKE_KH + "1a001e8480021a00030d40";
+const TX_ID1 = "4b999e818b9748f5a6dc41505e8b93ee10df99c9b4f860f8d70034ca219cddbf";
+const TX_BODY2 = "a40082825820" + "00".repeat(32) + "00825820" + "ab".repeat(32) + "03018282583901" + PAY_KH + STAKE_KH + "1a001e848082583901" + PAY_KH + STAKE_KH + "1a001e8480021a00029810031a0be9bfc7";
+const TX_ID2 = "c75202a9d2dd4c2e3a236c7b9c053fd8402f6df2524b88e33a95e52a44dbeb0d";
+const TX_BODY3 = "a60081825820" + "00".repeat(32) + "00018182583901" + PAY_KH + STAKE_KH + "1a001e8480021a0002bf20031a0bebc200075820" + "11".repeat(32) + "081a0bdc7fc0";
+const TX_ID3 = "8100226584ea4826cd2e46f860d06370e69e3df4ebc9e1fd43d3756362062639";
+check("txid form present", html.includes('id="txidcalc"') && html.includes('id="txid-input"') && html.includes('id="txid-result"'));
+check("txid: simple body (pycardano)", app.txId(TX_BODY1).txId === TX_ID1 && app.txId(TX_BODY1).source === "body");
+check("txid: body with ttl and two inputs/outputs (pycardano)", app.txId(TX_BODY2).txId === TX_ID2);
+check("txid: body with aux data hash, validity start and ttl (pycardano)", app.txId(TX_BODY3).txId === TX_ID3);
+check("txid: full transaction yields its body's ID", app.txId("84" + TX_BODY1 + "a0f5f6").txId === TX_ID1 && app.txId("84" + TX_BODY1 + "a0f5f6").source === "transaction" && app.txId("84" + TX_BODY3 + "a0f5f6").txId === TX_ID3);
+check("txid: empty draft body {0:[],1:[],2:5} (hashlib)", app.txId("a3008001800205").txId === "af13324af31f408113a777515bd5c60f04075c66d4aadc26e3ee90d043665e2b");
+check("txid: 0x prefix and surrounding space tolerated", app.txId(" 0x" + TX_BODY1 + " ").txId === TX_ID1);
+check("txid rejects non-body CBOR (datum, plain array, map without the required entries)", app.txId("d8799f182a182bff") === null && app.txId("8100") === null && app.txId("a10001") === null && app.txId("a30000018180021a00030d40") === null);
+check("txid rejects malformed transactions (trailing bytes, 2-element array, witness set not a map, is_valid not a bool)", app.txId(TX_BODY1 + "00") === null && app.txId("82" + TX_BODY1 + "a0") === null && app.txId("84" + TX_BODY1 + "80f5f6") === null && app.txId("84" + TX_BODY1 + "a000f6") === null);
+check("txid rejects garbage, empty and oversize input", app.txId("zzzz") === null && app.txId("") === null && app.txId("00".repeat(16385)) === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

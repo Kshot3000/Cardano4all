@@ -1685,6 +1685,58 @@ function nativeScript(text) {
   };
 }
 
+/* Transaction ID — the identifier every explorer shows for a transaction
+   is blake2b-256 of the transaction BODY's CBOR bytes, and nothing else:
+   the witness set, the is-valid flag and the auxiliary data are not part
+   of it, so a transaction's ID is fixed before it is signed. Input may be
+   the body alone (a CBOR map) or a whole transaction (the CBOR array
+   [body, witness set, is_valid, auxiliary data] that cardano-cli and
+   wallets emit); for a whole transaction the body's exact original bytes
+   are taken out by span and hashed — never re-serialised, since the hash
+   covers the bytes as transmitted. The body is gated on the ledger's
+   required entries with their types (0 inputs: array, 1 outputs: array,
+   2 fee: integer) so an arbitrary CBOR map is not mislabelled as a
+   transaction; anything else returns null. Capped at the mainnet
+   max_tx_size (16,384 bytes). Proven against pycardano 0.19.2:
+   Transaction.id agreed with this function on bodies carrying a ttl, a
+   validity interval start and an auxiliary data hash, and on the full
+   transaction arrays wrapping them. */
+function txId(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var node = parsed.node, bodyNode = null, bodyBytes = null, source = null;
+  if (node.t === "map") {
+    bodyNode = node; bodyBytes = bytes; source = "body";
+  } else if (node.t === "array") {
+    if (node.items.length !== 3 && node.items.length !== 4) return null;
+    if (node.items[0].t !== "map" || node.items[1].t !== "map") return null;
+    if (node.items.length === 4 && node.items[2].t !== "bool") return null;
+    var ai = bytes[0] & 31;
+    if (ai === 31) return null; /* indefinite-length array: not a serialised tx */
+    var head = cborReadUint(bytes, 1, ai);
+    if (!head) return null;
+    var bodyParsed = cborParseItem(bytes, head.next, 0);
+    if (!bodyParsed) return null;
+    bodyNode = node.items[0];
+    bodyBytes = bytes.slice(head.next, bodyParsed.next);
+    source = "transaction";
+  } else return null;
+  var seen = {};
+  for (var i = 0; i < bodyNode.pairs.length; i++) {
+    var k = bodyNode.pairs[i][0], v = bodyNode.pairs[i][1];
+    if (k.t !== "int") return null;
+    seen[k.v.toString()] = v;
+  }
+  if (!seen["0"] || seen["0"].t !== "array") return null;
+  if (!seen["1"] || seen["1"].t !== "array") return null;
+  if (!seen["2"] || seen["2"].t !== "int") return null;
+  var digest = blake2b(bodyBytes, 32);
+  if (digest === null) return null;
+  return { txId: bytesToHex(digest), source: source, bodyBytes: bodyBytes.length, totalBytes: bytes.length };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -1697,7 +1749,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1902,6 +1954,20 @@ if (typeof document !== "undefined") {
         " ADA): stake registrations " + res.stakeLovelace + " + new pools " + res.poolLovelace +
         " + DReps " + res.drepLovelace + " + governance actions " + res.govLovelace +
         " lovelace. Deposits are refundable — they come back on deregistration, pool retirement, or when a governance action is enacted or expires; they are not fees. Updating an existing pool charges no new pool deposit.";
+    });
+
+    /* --- transaction ID (blake2b-256 of the body CBOR) --- */
+    document.getElementById("txidcalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = txId(document.getElementById("txid-input").value);
+      var out = document.getElementById("txid-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of a transaction body (a CBOR map holding inputs, outputs and fee) or of a whole transaction (the CBOR array of body, witness set, is-valid flag and auxiliary data), at most 16,384 bytes. A datum, a script or any other CBOR item is not a transaction body and has no transaction ID.";
+        return;
+      }
+      out.textContent = "Transaction ID: " + res.txId + (res.source === "transaction"
+        ? " — taken from the body inside the full transaction (" + res.bodyBytes + " of " + res.totalBytes + " bytes); the witness set, is-valid flag and auxiliary data are not part of the ID, so it does not change when the transaction is signed."
+        : " — blake2b-256 of the " + res.bodyBytes + "-byte body; the ID is fixed before signing, since witnesses are not part of it.");
     });
 
     /* --- minimum-UTxO calculator (ledger formula, serialised size) --- */

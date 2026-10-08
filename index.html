@@ -243,6 +243,14 @@
         <button type="submit" class="btn primary">Calculate total deposits</button>
         <p id="deposit-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="txidcalc">
+        <h3>Transaction ID calculator</h3>
+        <p>A transaction's ID — the identifier every explorer shows — is <strong>blake2b-256 of the transaction body's CBOR bytes</strong>, and nothing else: the witness set, the is-valid flag and the auxiliary data are not part of it, so the ID is fixed before the transaction is signed. Paste the body's CBOR hex, or a whole transaction's CBOR hex (the array <code>cardano-cli</code> and wallets emit) and the body is taken out exactly as transmitted — never re-serialised. Computed locally; nothing is signed or sent.</p>
+        <label for="txid-input">Transaction body CBOR, or full transaction CBOR (hex)</label>
+        <textarea id="txid-input" rows="3" spellcheck="false" placeholder="e.g. a30081825820… (a body) or 84a30081825820…a0f5f6 (a full transaction)" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Calculate transaction ID</button>
+        <p id="txid-result" role="status" aria-live="polite"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -433,6 +441,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=22"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>
