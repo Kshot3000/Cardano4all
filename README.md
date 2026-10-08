@@ -361,6 +361,71 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   and a two-voter map in which one DRep votes on two actions
   and a committee member votes on one of the same actions
   decode field-for-field.
+- **Governance proposals decoder** — one transaction's proposals
+  field CBOR on its own (body key 20): the governance actions
+  the transaction proposes, in the order encoded. The Conway
+  CDDL's field rule is `proposal_procedures =
+  nonempty_oset<proposal_procedure>` — a non-empty ordered
+  set, plain array or CBOR set tag 258 (pycardano emits the
+  tag form); the same proposal twice is rejected. Each
+  proposal is `[deposit, reward_account, gov_action,
+  anchor]`: the deposit (returned to the reward account,
+  shown as the 29-byte reward address in bech32 with the
+  same gate as the withdrawals decoder), the action, and an
+  anchor that is required here (a URL of at most 128 bytes
+  and its data hash). All seven actions decode: info (the
+  one-element array `[6]`), no confidence, hard fork
+  initiation (protocol version `[major 0..12, minor]`),
+  parameter change, treasury withdrawals (per-account
+  amounts and an exact total; the map may be empty per the
+  CDDL's `{*}`), committee update (cold credentials to
+  remove as a set, additions with their expiry epochs, and
+  the quorum as a unit interval) and new constitution —
+  each naming its previous governance action
+  (`[hash32, index .size 2]`) or none, and a guardrails
+  script hash where the action carries one. A parameter
+  change validates every named update: keys must be a
+  subset of 0–11 and 16–33 (keys 12–15 do not exist in the
+  Conway update, and a repeated key is rejected), sized
+  integers are range-checked (`.size 2` / `.size 4`),
+  intervals are CBOR tag 30 with the CDDL's own unit
+  interval constraints (denominator above zero, numerator
+  at most the denominator; a nonnegative interval's
+  numerator may exceed it), cost models map a language byte
+  0–255 to int64 values, execution prices are a pair of
+  nonnegative intervals, execution-unit caps run to
+  max_int64, and the threshold arrays hold exactly 5 (pool)
+  and 10 (DRep) unit intervals. An empty update map decodes
+  (every key in the CDDL map is optional; pycardano emits
+  `a0` for one too). Four oracle divergences are recorded
+  here so nobody "aligns" them away: pycardano 0.19.2
+  cannot represent a hard fork initiation action at all —
+  its `protocol_version` field is mistyped as a Fraction
+  (construction validates against the pair form,
+  serialisation validates against Fraction, parsing a real
+  `[major, minor]` array raises) and its stale range check
+  would refuse majors 0 and 11–12 — so that vector is built
+  from the CDDL text and the decoder follows the CDDL's
+  0..12. Its validator crashes on a cost-models update (a
+  bare `Dict` type hint), so that vector is CDDL-built too;
+  and it emits a new-constitution proposal it cannot parse
+  back (its tuple restore path raises), so that vector is
+  proven encoder-side plus CDDL. The empty field and an
+  anchor URL over 128 bytes are both rejected even though
+  pycardano emits them (`d90102 80`, a 149-byte URL) — the
+  CDDL governs cardinality and sizes, the oracle only proves
+  byte shapes, the same split as the mint decoder. On the
+  previous-action index the authorities agree: pycardano's
+  `GovActionId` itself raises above 65,535. Proven against
+  pycardano 0.19.2's `TransactionBody` serialisation
+  (whole-body round-trip asserted byte-for-byte in the
+  generator): an info action, a no-confidence motion with a
+  previous action, a fifteen-field parameter change
+  including both threshold arrays and the live execution
+  prices, a minimal parameter change, treasury withdrawals
+  over two accounts, a committee update, and a two-proposal
+  field in encoded order decode field-for-field, alongside
+  the CDDL-built hard-fork and cost-models vectors.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

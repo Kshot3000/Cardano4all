@@ -2822,6 +2822,356 @@ function parseVotingCbor(raw) {
   return { voters: voters, voterCount: voters.length, voteCount: voteCount };
 }
 
+/* Governance proposals decoder — a standalone PROPOSALS
+   field on its own (body key 20): the governance actions a
+   transaction proposes, which until now only ever appeared
+   inside the transaction inspector as a governance-field
+   count. Ledger CDDL (Conway): proposal_procedures =
+   nonempty_oset<proposal_procedure> — a NON-EMPTY ordered
+   set, serialised as a plain array or under CBOR set tag
+   258 (pycardano emits the tag form); the same proposal
+   twice is rejected (set semantics — pycardano's ordered
+   set silently dedupes it, the CDDL governs). Each
+   proposal_procedure is [deposit: coin, reward_account,
+   gov_action, anchor]: the deposit that backs the proposal
+   (returned to the reward account if it expires or is
+   enacted), the reward account as a 29-byte reward address
+   with header type 14/15 (the CDDL types the field as bare
+   bytes; this decoder applies the same reward-address gate
+   as the withdrawals decoder, and shows the bech32 form),
+   and an anchor that is REQUIRED here (unlike a vote's
+   optional rationale anchor): [url (text, at most 128
+   bytes), data hash32]. A gov_action is an array whose
+   first item is its code, except that the info action is
+   the one-element array [6] (the CDDL's group choice
+   contributes just the code): 0 = parameter change
+   [0, previous action / nil, protocol_param_update,
+   guardrails script hash / nil], 1 = hard fork initiation
+   [1, previous / nil, protocol_version], 2 = treasury
+   withdrawals [2, {+ reward_account => coin} (the map may
+   be empty per the CDDL's {*}), guardrails / nil],
+   3 = no confidence [3, previous / nil], 4 = update
+   committee [4, previous / nil, set of cold credentials to
+   remove, {cold credential => expiry epoch} to add,
+   quorum unit_interval], 5 = new constitution
+   [5, previous / nil, [anchor, guardrails / nil]].
+   A previous action is a gov_action_id
+   [transaction_id: hash32, index: uint .size 2] or nil.
+   protocol_version is [major 0..12, minor: uint .size 4]
+   per the CDDL. The protocol_param_update is a map whose
+   keys are a subset of 0-11, 16-33 (keys 12-15 do not
+   exist in the Conway update; a repeated key is rejected):
+   coin fields and sized integers are range-checked per
+   the CDDL (uint .size 2 / .size 4), intervals are CBOR
+   tag 30 (unit_interval: denominator above zero and
+   numerator at most the denominator, per the CDDL's own
+   comment; nonnegative_interval: denominator above zero,
+   numerator may exceed it), cost models map a language
+   byte 0..255 to int64 values, execution prices are a pair
+   of nonnegative intervals, execution-unit caps are
+   0..max_int64, and the voting thresholds are arrays of
+   exactly 5 (pool) and 10 (DRep) unit intervals. An EMPTY
+   update map decodes — every key in the CDDL map is
+   optional — and pycardano agrees, emitting a0 for one.
+   ORACLE DIVERGENCES, recorded so nobody "aligns" them
+   away: pycardano 0.19.2 cannot represent a hard fork
+   initiation action AT ALL (its protocol_version field is
+   mistyped as a Fraction: construction validates against
+   the pair form, serialisation validates against Fraction,
+   and parsing a real [major, minor] array raises), and
+   its own stale range check would also refuse majors
+   0 and 11-12 that the CDDL allows — so the hard-fork
+   vector is built from the CDDL text and this decoder
+   follows the CDDL range 0..12. Its validator also
+   crashes on a cost_models update (a bare Dict type hint),
+   so that vector is likewise CDDL-built; and it EMITS a
+   new-constitution proposal it cannot parse back (its
+   tuple restore path raises), so that vector is proven
+   encoder-side plus CDDL. Two permissive-oracle gates
+   follow the usual split (the CDDL governs, the oracle
+   only proves byte shapes): the empty field is rejected
+   even though pycardano emits d90102 80 for one, and an
+   anchor URL over 128 bytes is rejected even though
+   pycardano serialises one. On the previous-action index
+   the authorities agree: pycardano's GovActionId itself
+   raises above 65,535. Proven in scratch
+   (proposals_py.py / proposals_vectors.json /
+   proposals_proto.js, 61/61): pycardano TransactionBody
+   serialisations with whole-body round-trips asserted
+   byte-for-byte (info, no-confidence, a fifteen-field
+   parameter change incl. both threshold arrays and the
+   live execution prices, a minimal parameter change,
+   treasury withdrawals over two accounts, a committee
+   update, and a two-proposal field in encoded order)
+   decode field-for-field, alongside the CDDL-built
+   hard-fork and cost-models vectors. Input capped at
+   max_tx_size (16,384) like the transaction tools.
+   Display only — nothing is proposed, signed or sent. */
+function parseProposalsCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t === "tag" && n.n === 258n) n = n.item;
+  if (n.t !== "array" || n.items.length === 0) return null;
+  var MAX_U16 = 65535n, MAX_U32 = 4294967295n, MAX_U64 = 18446744073709551615n,
+    MAX_I64 = 9223372036854775807n, MIN_I64 = -9223372036854775808n;
+  function textBytesOk(node, max) {
+    return node.t === "text" && new TextEncoder().encode(node.v).length <= max;
+  }
+  function coinStr(node) {
+    return (node && node.t === "int" && node.v >= 0n) ? node.v.toString() : null;
+  }
+  function uintUpTo(node, max) {
+    return (node && node.t === "int" && node.v >= 0n && node.v <= max) ? node.v : null;
+  }
+  function hashHex(node, len) {
+    return (node && node.t === "bytes" && node.bytes.length === len) ? bytesToHex(node.bytes) : null;
+  }
+  function cred(node) {
+    if (!node || node.t !== "array" || node.items.length !== 2) return null;
+    if (node.items[0].t !== "int" || (node.items[0].v !== 0n && node.items[0].v !== 1n)) return null;
+    var h = hashHex(node.items[1], 28); if (h === null) return null;
+    return { kind: node.items[0].v === 0n ? "key" : "script", hash: h };
+  }
+  function rewardAccount(node) {
+    if (!node || node.t !== "bytes" || node.bytes.length !== 29) return null;
+    var header = node.bytes[0], type = header >> 4, net = header & 15;
+    if ((type !== 14 && type !== 15) || (net !== 0 && net !== 1)) return null;
+    var addr = encodeAddressBytes(net === 1 ? "stake" : "stake_test", node.bytes);
+    if (addr === null || decodeAddress(addr) === null) return null;
+    return { address: addr, addressHex: bytesToHex(node.bytes),
+      stakeKind: type === 15 ? "script" : "key", network: net === 1 ? "mainnet" : "testnet",
+      stakeHash: bytesToHex(node.bytes.slice(1)) };
+  }
+  function anchorReq(node) {
+    if (!node || node.t !== "array" || node.items.length !== 2) return null;
+    if (!textBytesOk(node.items[0], 128)) return null;
+    var h = hashHex(node.items[1], 32); if (h === null) return null;
+    return { url: node.items[0].v, dataHash: h };
+  }
+  function prevOrBad(node) {
+    if (node.t === "null") return null;
+    if (node.t !== "array" || node.items.length !== 2) return "bad";
+    var tx = hashHex(node.items[0], 32); if (tx === null) return "bad";
+    var ix = uintUpTo(node.items[1], MAX_U16); if (ix === null) return "bad";
+    return { txHash: tx, index: Number(ix), ref: tx + "#" + Number(ix) };
+  }
+  function hashOrBad(node) {
+    if (node.t === "null") return null;
+    var h = hashHex(node, 28);
+    return h === null ? "bad" : h;
+  }
+  function interval(node, isUnit) {
+    if (!node || node.t !== "tag" || node.n !== 30n) return null;
+    var it = node.item;
+    if (!it || it.t !== "array" || it.items.length !== 2) return null;
+    if (it.items[0].t !== "int" || it.items[1].t !== "int") return null;
+    var num = it.items[0].v, den = it.items[1].v;
+    if (num < 0n || den <= 0n) return null;
+    if (isUnit && num > den) return null;
+    return { numerator: num.toString(), denominator: den.toString() };
+  }
+  function intervalList(node, count, isUnit) {
+    if (!node || node.t !== "array" || node.items.length !== count) return null;
+    var out = [];
+    for (var i = 0; i < count; i++) {
+      var iv = interval(node.items[i], isUnit); if (iv === null) return null;
+      out.push(iv);
+    }
+    return out;
+  }
+  function nodeKey(node) {
+    if (node.t === "int") return "i" + node.v.toString();
+    if (node.t === "bytes") return "b" + bytesToHex(node.bytes);
+    if (node.t === "text") return "t" + node.v;
+    if (node.t === "null") return "n";
+    if (node.t === "bool") return node.v ? "y" : "z";
+    if (node.t === "tag") return "g" + node.n.toString() + "(" + nodeKey(node.item) + ")";
+    if (node.t === "array") return "a[" + node.items.map(nodeKey).join(",") + "]";
+    if (node.t === "map") return "m{" + node.pairs.map(function (pr) { return nodeKey(pr[0]) + "=" + nodeKey(pr[1]); }).join(",") + "}";
+    return "?" + node.t;
+  }
+  var PARAMS = {
+    0: ["minfee_a", "coin"], 1: ["minfee_b", "coin"],
+    2: ["max_block_body_size", "u32"], 3: ["max_transaction_size", "u32"],
+    4: ["max_block_header_size", "u16"], 5: ["key_deposit", "coin"],
+    6: ["pool_deposit", "coin"], 7: ["maximum_epoch", "u32"],
+    8: ["n_opt", "u16"], 9: ["pool_pledge_influence", "nonneg"],
+    10: ["expansion_rate", "unit"], 11: ["treasury_growth_rate", "unit"],
+    16: ["min_pool_cost", "coin"], 17: ["ada_per_utxo_byte", "coin"],
+    18: ["cost_models", "costmodels"], 19: ["execution_unit_prices", "prices"],
+    20: ["max_tx_execution_units", "exunits"], 21: ["max_block_execution_units", "exunits"],
+    22: ["max_value_size", "u32"], 23: ["collateral_percentage", "u16"],
+    24: ["max_collateral_inputs", "u16"], 25: ["pool_voting_thresholds", "poolthr"],
+    26: ["drep_voting_thresholds", "drep thr"], 27: ["min_committee_size", "u16"],
+    28: ["committee_term_limit", "u32"], 29: ["governance_action_validity_period", "u32"],
+    30: ["governance_action_deposit", "coin"], 31: ["drep_deposit", "coin"],
+    32: ["drep_inactivity_period", "u32"], 33: ["min_fee_ref_script_cost_per_byte", "nonneg"]
+  };
+  function paramUpdate(node) {
+    if (!node || node.t !== "map") return null;
+    var updates = [], seen = {};
+    for (var i = 0; i < node.pairs.length; i++) {
+      var k = node.pairs[i][0], v = node.pairs[i][1];
+      if (k.t !== "int" || k.v < 0n || k.v > 4294967295n) return null;
+      var key = Number(k.v), spec = PARAMS[key];
+      if (spec === undefined) return null;
+      if (seen[key] !== undefined) return null;
+      seen[key] = true;
+      var name = spec[0], kind = spec[1], u = { key: key, name: name };
+      if (kind === "coin") {
+        var cv = coinStr(v); if (cv === null) return null;
+        u.value = cv;
+      } else if (kind === "u32" || kind === "u16") {
+        var uv = uintUpTo(v, kind === "u32" ? MAX_U32 : MAX_U16); if (uv === null) return null;
+        u.value = uv.toString();
+      } else if (kind === "unit" || kind === "nonneg") {
+        var iv = interval(v, kind === "unit"); if (iv === null) return null;
+        u.numerator = iv.numerator; u.denominator = iv.denominator;
+      } else if (kind === "costmodels") {
+        if (v.t !== "map") return null;
+        var models = [], seenLang = {};
+        for (var j = 0; j < v.pairs.length; j++) {
+          var lk = v.pairs[j][0], lv = v.pairs[j][1];
+          if (lk.t !== "int" || lk.v < 0n || lk.v > 255n) return null;
+          var lang = Number(lk.v);
+          if (seenLang[lang] !== undefined) return null;
+          seenLang[lang] = true;
+          if (lv.t !== "array") return null;
+          var costs = [];
+          for (var m = 0; m < lv.items.length; m++) {
+            var c = lv.items[m];
+            if (c.t !== "int" || c.v < MIN_I64 || c.v > MAX_I64) return null;
+            costs.push(c.v.toString());
+          }
+          models.push({ language: lang, costs: costs });
+        }
+        u.models = models;
+      } else if (kind === "prices") {
+        if (v.t !== "array" || v.items.length !== 2) return null;
+        var mp = interval(v.items[0], false), sp = interval(v.items[1], false);
+        if (mp === null || sp === null) return null;
+        u.memPrice = mp; u.stepPrice = sp;
+      } else if (kind === "exunits") {
+        if (v.t !== "array" || v.items.length !== 2) return null;
+        var mem = uintUpTo(v.items[0], MAX_I64), steps = uintUpTo(v.items[1], MAX_I64);
+        if (mem === null || steps === null) return null;
+        u.mem = mem.toString(); u.steps = steps.toString();
+      } else if (kind === "poolthr" || kind === "drep thr") {
+        var th = intervalList(v, kind === "poolthr" ? 5 : 10, true);
+        if (th === null) return null;
+        u.thresholds = th;
+      }
+      updates.push(u);
+    }
+    return updates;
+  }
+  function govAction(node) {
+    if (!node || node.t !== "array" || node.items.length === 0) return null;
+    if (node.items[0].t !== "int") return null;
+    var code = node.items[0].v, it = node.items;
+    if (code === 6n) {
+      if (it.length !== 1) return null;
+      return { type: 6, name: "info_action" };
+    }
+    if (code === 0n) {
+      if (it.length !== 4) return null;
+      var pv0 = prevOrBad(it[1]); if (pv0 === "bad") return null;
+      var upd = paramUpdate(it[2]); if (upd === null) return null;
+      var g0 = hashOrBad(it[3]); if (g0 === "bad") return null;
+      return { type: 0, name: "parameter_change", prevAction: pv0, updates: upd, guardrailsScriptHash: g0 };
+    }
+    if (code === 1n) {
+      if (it.length !== 3) return null;
+      var pv1 = prevOrBad(it[1]); if (pv1 === "bad") return null;
+      var ver = it[2];
+      if (!ver || ver.t !== "array" || ver.items.length !== 2) return null;
+      var major = uintUpTo(ver.items[0], 12n), minor = uintUpTo(ver.items[1], MAX_U32);
+      if (major === null || minor === null) return null;
+      return { type: 1, name: "hard_fork_initiation", prevAction: pv1,
+        protocolVersion: { major: Number(major), minor: Number(minor) } };
+    }
+    if (code === 2n) {
+      if (it.length !== 3) return null;
+      var wm = it[1];
+      if (!wm || wm.t !== "map") return null;
+      var withdrawals = [], seenW = {}, total = 0n;
+      for (var wi = 0; wi < wm.pairs.length; wi++) {
+        var ra = rewardAccount(wm.pairs[wi][0]); if (ra === null) return null;
+        if (seenW[ra.addressHex] !== undefined) return null;
+        seenW[ra.addressHex] = true;
+        var amt = coinStr(wm.pairs[wi][1]); if (amt === null) return null;
+        total += BigInt(amt);
+        withdrawals.push({ rewardAccount: ra, lovelace: amt });
+      }
+      var g2 = hashOrBad(it[2]); if (g2 === "bad") return null;
+      return { type: 2, name: "treasury_withdrawals", withdrawals: withdrawals,
+        totalLovelace: total.toString(), guardrailsScriptHash: g2 };
+    }
+    if (code === 3n) {
+      if (it.length !== 2) return null;
+      var pv3 = prevOrBad(it[1]); if (pv3 === "bad") return null;
+      return { type: 3, name: "no_confidence", prevAction: pv3 };
+    }
+    if (code === 4n) {
+      if (it.length !== 5) return null;
+      var pv4 = prevOrBad(it[1]); if (pv4 === "bad") return null;
+      var rem = it[2];
+      if (rem && rem.t === "tag" && rem.n === 258n) rem = rem.item;
+      if (!rem || rem.t !== "array") return null;
+      var removed = [], seenR = {};
+      for (var ri = 0; ri < rem.items.length; ri++) {
+        var rc = cred(rem.items[ri]); if (rc === null) return null;
+        var rk = rc.kind + ":" + rc.hash;
+        if (seenR[rk] !== undefined) return null;
+        seenR[rk] = true; removed.push(rc);
+      }
+      var add = it[3];
+      if (!add || add.t !== "map") return null;
+      var added = [], seenA = {};
+      for (var ai = 0; ai < add.pairs.length; ai++) {
+        var ac = cred(add.pairs[ai][0]); if (ac === null) return null;
+        var ak = ac.kind + ":" + ac.hash;
+        if (seenA[ak] !== undefined) return null;
+        seenA[ak] = true;
+        var ep = uintUpTo(add.pairs[ai][1], MAX_U64); if (ep === null) return null;
+        added.push({ credential: ac, epoch: ep.toString() });
+      }
+      var quorum = interval(it[4], true); if (quorum === null) return null;
+      return { type: 4, name: "update_committee", prevAction: pv4,
+        removed: removed, added: added, quorum: quorum };
+    }
+    if (code === 5n) {
+      if (it.length !== 3) return null;
+      var pv5 = prevOrBad(it[1]); if (pv5 === "bad") return null;
+      var con = it[2];
+      if (!con || con.t !== "array" || con.items.length !== 2) return null;
+      var ca = anchorReq(con.items[0]); if (ca === null) return null;
+      var g5 = hashOrBad(con.items[1]); if (g5 === "bad") return null;
+      return { type: 5, name: "new_constitution", prevAction: pv5,
+        constitution: { anchor: ca, guardrailsScriptHash: g5 } };
+    }
+    return null;
+  }
+  var proposals = [], seenP = {};
+  for (var pi = 0; pi < n.items.length; pi++) {
+    var pn = n.items[pi];
+    if (pn.t !== "array" || pn.items.length !== 4) return null;
+    var pk = nodeKey(pn);
+    if (seenP[pk] !== undefined) return null;
+    seenP[pk] = true;
+    var deposit = coinStr(pn.items[0]); if (deposit === null) return null;
+    var reward = rewardAccount(pn.items[1]); if (reward === null) return null;
+    var action = govAction(pn.items[2]); if (action === null) return null;
+    var anchor = anchorReq(pn.items[3]); if (anchor === null) return null;
+    proposals.push({ deposit: deposit, rewardAccount: reward, action: action, anchor: anchor });
+  }
+  return { proposals: proposals, count: proposals.length };
+}
+
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2834,7 +3184,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -3335,6 +3685,74 @@ if (typeof document !== "undefined") {
           lines.push("      on action " + x.action.ref + " (transaction " + x.action.txHash + ", action " + x.action.index + "): " + x.procedure.vote.toUpperCase() +
             (x.procedure.anchor === null ? "" : " — anchor " + x.procedure.anchor.url + " (data hash " + x.procedure.anchor.dataHash + ")"));
         });
+      });
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- governance proposals decoder (a standalone proposals field's CBOR) --- */
+    document.getElementById("proposalsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseProposalsCbor(document.getElementById("proposalsdecode-input").value);
+      var out = document.getElementById("proposalsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one proposals field: a non-empty set (plain array or set tag 258) of proposals, each a deposit, a reward account for its return, one governance action and its anchor — an info action, a motion of no confidence, a hard fork initiation, a parameter change, treasury withdrawals, a committee update or a new constitution — with no proposal repeated. An empty set, one proposal on its own or a whole transaction is a different shape — the transaction inspector above reads whole transactions.";
+        return;
+      }
+      function prevLine(pa) {
+        return pa === null ? "no previous governance action" :
+          "previous action " + pa.ref + " (transaction " + pa.txHash + ", action " + pa.index + ")";
+      }
+      function guardLine(g) {
+        return g === null ? "no guardrails script" : "guardrails script hash " + g;
+      }
+      function updateLine(u) {
+        if (u.value !== undefined) return u.name + " → " + u.value;
+        if (u.models !== undefined) return u.name + " → " + u.models.map(function (m) {
+          return "language " + m.language + ": " + m.costs.length + (m.costs.length === 1 ? " value" : " values");
+        }).join("; ");
+        if (u.memPrice !== undefined) return u.name + " → memory price " + u.memPrice.numerator + "/" + u.memPrice.denominator +
+          ", step price " + u.stepPrice.numerator + "/" + u.stepPrice.denominator;
+        if (u.mem !== undefined) return u.name + " → memory " + u.mem + ", steps " + u.steps;
+        if (u.thresholds !== undefined) return u.name + " → " + u.thresholds.map(function (t) {
+          return t.numerator + "/" + t.denominator;
+        }).join(", ");
+        return u.name + " → " + u.numerator + "/" + u.denominator;
+      }
+      var lines = [];
+      lines.push(res.count + (res.count === 1 ? " governance proposal" : " governance proposals") + " (the actions this transaction proposes):");
+      res.proposals.forEach(function (p, i) {
+        var a = p.action;
+        lines.push("Proposal " + (i + 1) + " — deposit " + p.deposit + " lovelace (" + lovelaceToAda(p.deposit) +
+          " ADA), returned to reward account " + p.rewardAccount.address + " (" + p.rewardAccount.stakeKind + " credential, " + p.rewardAccount.network + ")");
+        if (a.name === "info_action") {
+          lines.push("  Action: info action — no direct effect on the chain");
+        } else if (a.name === "no_confidence") {
+          lines.push("  Action: motion of no confidence — " + prevLine(a.prevAction));
+        } else if (a.name === "hard_fork_initiation") {
+          lines.push("  Action: hard fork initiation — protocol version " + a.protocolVersion.major + "." + a.protocolVersion.minor + " — " + prevLine(a.prevAction));
+        } else if (a.name === "parameter_change") {
+          lines.push("  Action: parameter change — " + prevLine(a.prevAction) + ", " + guardLine(a.guardrailsScriptHash));
+          if (a.updates.length === 0) lines.push("      (the update names no parameters)");
+          a.updates.forEach(function (u) { lines.push("      " + updateLine(u)); });
+        } else if (a.name === "treasury_withdrawals") {
+          lines.push("  Action: treasury withdrawals totalling " + a.totalLovelace + " lovelace (" + lovelaceToAda(a.totalLovelace) + " ADA) — " + guardLine(a.guardrailsScriptHash));
+          a.withdrawals.forEach(function (w) {
+            lines.push("      " + w.lovelace + " lovelace (" + lovelaceToAda(w.lovelace) + " ADA) to " + w.rewardAccount.address);
+          });
+        } else if (a.name === "update_committee") {
+          lines.push("  Action: update constitutional committee — " + prevLine(a.prevAction) +
+            ", quorum " + a.quorum.numerator + "/" + a.quorum.denominator);
+          a.removed.forEach(function (c) {
+            lines.push("      remove cold credential (" + c.kind + " hash " + c.hash + ")");
+          });
+          a.added.forEach(function (e) {
+            lines.push("      add cold credential (" + e.credential.kind + " hash " + e.credential.hash + "), term expiring at epoch " + e.epoch);
+          });
+        } else if (a.name === "new_constitution") {
+          lines.push("  Action: new constitution — " + prevLine(a.prevAction) + ", " + guardLine(a.constitution.guardrailsScriptHash));
+          lines.push("      constitution anchor " + a.constitution.anchor.url + " (data hash " + a.constitution.anchor.dataHash + ")");
+        }
+        lines.push("  Anchor: " + p.anchor.url + " (data hash " + p.anchor.dataHash + ")");
       });
       out.textContent = lines.join("\n");
     });

@@ -339,6 +339,14 @@
         <button type="submit" class="btn primary">Decode votes</button>
         <p id="votingdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="proposalsdecode">
+        <h3>Governance proposals decoder</h3>
+        <p>One transaction's <strong>proposals field</strong> on its own — body key 20, the Conway governance actions the transaction proposes: an <strong>info action</strong>, a <strong>motion of no confidence</strong>, a <strong>hard fork initiation</strong>, a <strong>parameter change</strong>, <strong>treasury withdrawals</strong>, a <strong>committee update</strong> or a <strong>new constitution</strong> — decoded locally, in the order encoded. The Conway CDDL makes the field a <strong><code>nonempty_oset</code></strong> (an ordered set, plain array or CBOR set tag 258; the same proposal twice is rejected), and each proposal is its <strong>deposit</strong>, the <strong>reward account</strong> the deposit returns to, the action itself, and its <strong>anchor</strong> (a URL of at most 128 bytes and its data hash — required here, unlike a vote's optional rationale anchor). Actions name the previous governance action they build on, or none. A parameter change shows every named parameter with its new value — sized integers, rational rates and prices as exact fractions, cost models, execution-unit caps and all fifteen pool and DRep voting thresholds — and rejects the update keys that don't exist in Conway (12–15) outright. A whole transaction is decoded by the transaction inspector above.</p>
+        <label for="proposalsdecode-input">Proposals field CBOR (hex)</label>
+        <textarea id="proposalsdecode-input" rows="3" spellcheck="false" placeholder="e.g. d9010281… (one info-action proposal, set form) — or 81… for the plain array form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode proposals</button>
+        <p id="proposalsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -529,6 +537,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=34"></script>
+<script src="app.js?v=35"></script>
 </body>
 </html>
