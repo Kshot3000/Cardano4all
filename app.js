@@ -2732,6 +2732,96 @@ function parseCertificatesCbor(raw) {
   return { certificates: certs, count: certs.length };
 }
 
+/* Voting procedures decoder — a standalone VOTING PROCEDURES
+   field on its own (body key 19): who voted on which governance
+   actions, and how, which until now only ever appeared inside
+   the transaction inspector as a governance-field count.
+   Ledger CDDL (Conway): voting_procedures =
+   {+ voter => {+ gov_action_id => voting_procedure}} — a
+   NON-EMPTY map of voters, each with a NON-EMPTY map of the
+   governance actions they voted on. A voter is
+   [code, hash28]: 0 = committee hot key hash, 1 = committee hot
+   script hash, 2 = DRep key hash, 3 = DRep script hash,
+   4 = stake pool key hash (a pool voter is a key hash only —
+   there is no script form). A gov_action_id is
+   [transaction_id: hash32, gov_action_index: uint .size 2], the
+   same .size 2 bound as a transaction input index. A
+   voting_procedure is [vote, anchor / nil]: vote is
+   0 = no, 1 = yes, 2 = abstain, and the optional anchor is
+   [url (text, at most 128 bytes), data hash32] or nil.
+   Map semantics are enforced at both levels: the same voter
+   twice, or the same governance action twice under one voter,
+   is rejected — the same action under DIFFERENT voters is the
+   normal case and decodes. One gate overrules the oracle, in
+   the mint run's split (the CDDL governs emptiness, the oracle
+   only proves byte shapes): the empty map is rejected even
+   though pycardano 0.19.2 serialises an empty VotingProcedures
+   to a0 with the field present. On the index range the two
+   authorities AGREE: pycardano's GovActionId itself raises
+   above 65535. Note pycardano's dict serialiser emits map keys
+   in canonical encoded-byte order, not insertion order; this
+   decoder preserves the ENCODED order it is given, like the
+   sibling map decoders. Input capped at max_tx_size (16,384)
+   like the transaction tools. Proven against pycardano
+   0.19.2's TransactionBody serialisation in scratch
+   (voting_py.py / voting_vectors.json, whole-body round-trip
+   asserted byte-for-byte in the generator): a DRep key-hash
+   yes vote with no anchor, a committee hot script-hash no vote
+   with an anchor at action index 65535, a stake pool abstain,
+   and a two-voter map in which one DRep votes on two actions
+   and a committee member votes on one of the same actions
+   decode field-for-field. Display only — nothing is voted,
+   signed or sent. */
+function parseVotingCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t !== "map" || n.pairs.length === 0) return null;
+  var ROLES = { 0: "committee_hot", 1: "committee_hot", 2: "drep", 3: "drep", 4: "staking_pool" };
+  var VOTES = { 0: "no", 1: "yes", 2: "abstain" };
+  var voters = [], seenVoter = {}, voteCount = 0;
+  for (var i = 0; i < n.pairs.length; i++) {
+    var vk = n.pairs[i][0], vv = n.pairs[i][1];
+    if (vk.t !== "array" || vk.items.length !== 2) return null;
+    if (vk.items[0].t !== "int" || ROLES[Number(vk.items[0].v)] === undefined) return null;
+    if (vk.items[1].t !== "bytes" || vk.items[1].bytes.length !== 28) return null;
+    var code = Number(vk.items[0].v);
+    var vHash = bytesToHex(vk.items[1].bytes);
+    var vKey = code + ":" + vHash;
+    if (seenVoter[vKey] !== undefined) return null; /* same voter twice: a map */
+    seenVoter[vKey] = true;
+    if (vv.t !== "map" || vv.pairs.length === 0) return null;
+    var votes = [], seenAction = {};
+    for (var j = 0; j < vv.pairs.length; j++) {
+      var ak = vv.pairs[j][0], av = vv.pairs[j][1];
+      if (ak.t !== "array" || ak.items.length !== 2) return null;
+      if (ak.items[0].t !== "bytes" || ak.items[0].bytes.length !== 32) return null;
+      if (ak.items[1].t !== "int" || ak.items[1].v < 0n || ak.items[1].v > 65535n) return null;
+      var txHash = bytesToHex(ak.items[0].bytes);
+      var index = Number(ak.items[1].v);
+      var aKey = txHash + "#" + index;
+      if (seenAction[aKey] !== undefined) return null; /* same action twice under one voter */
+      seenAction[aKey] = true;
+      if (av.t !== "array" || av.items.length !== 2) return null;
+      if (av.items[0].t !== "int" || VOTES[Number(av.items[0].v)] === undefined) return null;
+      var anchor = null, an = av.items[1];
+      if (an.t === "null") anchor = null;
+      else if (an.t === "array" && an.items.length === 2 &&
+        an.items[0].t === "text" && new TextEncoder().encode(an.items[0].v).length <= 128 &&
+        an.items[1].t === "bytes" && an.items[1].bytes.length === 32) {
+        anchor = { url: an.items[0].v, dataHash: bytesToHex(an.items[1].bytes) };
+      } else return null;
+      votes.push({ action: { txHash: txHash, index: index, ref: aKey },
+        procedure: { vote: VOTES[Number(av.items[0].v)], voteCode: Number(av.items[0].v), anchor: anchor } });
+      voteCount++;
+    }
+    voters.push({ voter: { code: code, role: ROLES[code], kind: code % 2 === 1 ? "script" : "key", hash: vHash }, votes: votes });
+  }
+  return { voters: voters, voterCount: voters.length, voteCount: voteCount };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2744,7 +2834,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -3223,6 +3313,28 @@ if (typeof document !== "undefined") {
           });
           lines.push("      metadata: " + (p.metadata === null ? "none" : p.metadata.url + " (hash " + p.metadata.hash + ")"));
         }
+      });
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- voting procedures decoder (a standalone voting field's CBOR) --- */
+    document.getElementById("votingdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseVotingCbor(document.getElementById("votingdecode-input").value);
+      var out = document.getElementById("votingdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one voting procedures field: a non-empty map of voters — committee hot, DRep or stake pool credentials, key hash or script hash — each with a non-empty map of the governance actions they voted on (transaction ID + index 0–65,535), every procedure a vote (no, yes or abstain) with an anchor or none, and no voter or action repeated. An empty map, one voter on its own or a whole transaction is a different shape — the transaction inspector above reads whole transactions.";
+        return;
+      }
+      var ROLE = { committee_hot: "Constitutional committee (hot credential)", drep: "DRep", staking_pool: "Stake pool" };
+      var lines = [];
+      lines.push(res.voteCount + (res.voteCount === 1 ? " vote" : " votes") + " from " + res.voterCount + (res.voterCount === 1 ? " voter" : " voters") + " (who voted on which governance actions, and how):");
+      res.voters.forEach(function (e) {
+        lines.push("  " + ROLE[e.voter.role] + " — " + (e.voter.kind === "key" ? "key hash " : "script hash ") + e.voter.hash);
+        e.votes.forEach(function (x) {
+          lines.push("      on action " + x.action.ref + " (transaction " + x.action.txHash + ", action " + x.action.index + "): " + x.procedure.vote.toUpperCase() +
+            (x.procedure.anchor === null ? "" : " — anchor " + x.procedure.anchor.url + " (data hash " + x.procedure.anchor.dataHash + ")"));
+        });
       });
       out.textContent = lines.join("\n");
     });

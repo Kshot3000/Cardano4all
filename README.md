@@ -327,6 +327,40 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   no owners, relays or metadata — a three-certificate
   combination in encoded order, and the tag-258 ordered-set
   form of it all decode field-for-field.
+- **Voting procedures decoder** — one transaction's voting
+  procedures field CBOR on its own (body key 19): who voted on
+  which governance actions, and how, in the order encoded. The
+  Conway CDDL's field rule is `voting_procedures =
+  {+ voter => {+ gov_action_id => voting_procedure}}` — both
+  maps are non-empty. A voter is `[code, hash28]`: 0 = committee
+  hot key hash, 1 = committee hot script hash, 2 = DRep key
+  hash, 3 = DRep script hash, 4 = stake pool key hash (a pool
+  voter is a key hash only — there is no script form). A
+  governance action ID is `[transaction_id: hash32,
+  gov_action_index: uint .size 2]`, and a voting procedure is
+  `[vote, anchor / nil]` with vote 0 = no, 1 = yes, 2 = abstain
+  and the anchor `[url ≤ 128 bytes, hash32]` or nil. Map
+  semantics are enforced at both levels: the same voter twice,
+  or the same action twice under one voter, is rejected — the
+  same action under different voters is the normal case and
+  decodes. One gate overrules the oracle, recorded here so
+  nobody "aligns" it away: the empty map is rejected even
+  though pycardano serialises an empty `VotingProcedures` to
+  `a0` with the field present — the CDDL's `{+ }` grammar
+  governs emptiness while the oracle only proves byte shapes,
+  the same split as the mint decoder. On the index range the
+  two authorities agree: pycardano's `GovActionId` itself
+  raises above 65,535. Note also that pycardano's dict
+  serialiser emits map keys in canonical encoded-byte order,
+  not insertion order; this decoder preserves the encoded
+  order it is given. Proven against pycardano 0.19.2's
+  `TransactionBody` serialisation (whole-body round-trip
+  asserted byte-for-byte in the generator): a DRep key-hash
+  yes vote with no anchor, a committee hot script-hash no vote
+  with an anchor at action index 65,535, a stake pool abstain,
+  and a two-voter map in which one DRep votes on two actions
+  and a committee member votes on one of the same actions
+  decode field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
