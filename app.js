@@ -2475,6 +2475,263 @@ function parseCollateralCbor(raw) {
   return { entries: entries, count: entries.length };
 }
 
+/* Certificates decoder — a standalone CERTIFICATES field on its
+   own (body key 4): the stake, pool, committee and DRep actions a
+   transaction carries — registering or retiring a stake credential
+   or a pool, delegating stake or voting power, authorising a
+   committee hot credential, registering a DRep — which until now
+   only ever appeared inside the transaction inspector as a count.
+   Ledger CDDL (Conway): certificates =
+   nonempty_oset<certificate> = #6.258([+ certificate]) /
+   [+ certificate], an ORDERED set: an empty field is forbidden by
+   the grammar itself, and the same certificate twice is not a
+   thing (the same credential in two DIFFERENT certificates is
+   fine — registering and delegating in one transaction is the
+   normal wallet flow). All seventeen Conway certificate types
+   decode (0-4, 7-18; types 5 and 6 were genesis / MIR
+   certificates from earlier eras and do not exist in the Conway
+   CDDL, so they are rejected, as is any other unknown type).
+   The parts: a credential is [0, addr_keyhash] or [1, script_hash]
+   (28 bytes either way); a DRep is [0, key hash], [1, script hash],
+   [2] (always abstain) or [3] (always no confidence) — the two
+   constant DReps carry NO hash, so a hash after a 2 or 3 is
+   rejected; an anchor is [url (text, at most 128 bytes), hash32]
+   or nil; deposits and refunds are coin (exact, shown as decimal
+   strings). A pool registration (type 3) carries the full
+   pool_params group in place: operator (pool key hash), VRF key
+   hash (32 bytes), pledge and cost (coin), margin — a
+   unit_interval, CBOR tag 30 over [numerator, denominator] with
+   denominator above zero and numerator at most the denominator,
+   the two constraints the CDDL's own comment states — the reward
+   account (a 29-byte reward address: header type 14/15, network
+   0/1; shown in bech32 as well as hex), the pool owners (a set of
+   key hashes — plain array or tag-258 form, no repeats), the
+   relays (single-host address with optional port and IPv4/IPv6
+   byte strings of exactly 4/16 bytes, single-host name, and
+   multi-host name, DNS names at most 128 bytes, ports at most
+   65,535), and the pool metadata ([url, hash bytes] or nil).
+   Two gates overrule the oracle, in the mint run's split (the
+   CDDL governs cardinality and set semantics, the oracle only
+   proves byte shapes): the empty set and a duplicated
+   certificate are both rejected even though pycardano 0.19.2
+   serialises an empty certificates list to 80 with the field
+   present and serialises the same certificate twice, reading it
+   back as two. (One oracle quirk is recorded so nobody chases
+   it: pycardano reads its own type-16 DRep registration back as
+   a list nested inside the ordered set — its ENCODING is
+   byte-identical to the CDDL form and round-trips exactly, which
+   is what the proof below asserts.) Input capped at max_tx_size
+   (16,384) like the transaction tools. Proven against pycardano
+   0.19.2's TransactionBody serialisation in scratch (certs_py.py
+   / certs_vectors.json, whole-body round-trip asserted
+   byte-for-byte in the generator): every one of the seventeen
+   types on its own — including a full pool registration with
+   five relays of all three kinds, two owners and metadata, and
+   a minimal one with no owners, relays or metadata — a
+   three-certificate combination in encoded order, and the
+   tag-258 ordered-set form of it all decode field-for-field.
+   Display only — nothing is registered, signed or sent. */
+function parseCertificatesCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t === "tag" && n.n === 258n) n = n.item;
+  if (n.t !== "array" || n.items.length === 0) return null;
+  function textBytesOk(node, max) {
+    return node.t === "text" && new TextEncoder().encode(node.v).length <= max;
+  }
+  function cred(node) {
+    if (!node || node.t !== "array" || node.items.length !== 2) return null;
+    if (node.items[0].t !== "int" || (node.items[0].v !== 0n && node.items[0].v !== 1n)) return null;
+    if (node.items[1].t !== "bytes" || node.items[1].bytes.length !== 28) return null;
+    return { kind: node.items[0].v === 0n ? "key" : "script", hash: bytesToHex(node.items[1].bytes) };
+  }
+  function hash28(node) {
+    return (node && node.t === "bytes" && node.bytes.length === 28) ? bytesToHex(node.bytes) : null;
+  }
+  function coinStr(node) {
+    return (node && node.t === "int" && node.v >= 0n) ? node.v.toString() : null;
+  }
+  function drep(node) {
+    if (!node || node.t !== "array" || node.items.length < 1 || node.items.length > 2) return null;
+    if (node.items[0].t !== "int") return null;
+    var k = node.items[0].v;
+    if (k === 2n && node.items.length === 1) return { kind: "always_abstain" };
+    if (k === 3n && node.items.length === 1) return { kind: "always_no_confidence" };
+    if ((k === 0n || k === 1n) && node.items.length === 2) {
+      var h = hash28(node.items[1]);
+      if (h === null) return null;
+      return { kind: k === 0n ? "key" : "script", hash: h };
+    }
+    return null;
+  }
+  function anchorOrBad(node) {
+    if (node.t === "null") return null;
+    if (node.t !== "array" || node.items.length !== 2) return "bad";
+    if (!textBytesOk(node.items[0], 128)) return "bad";
+    if (node.items[1].t !== "bytes" || node.items[1].bytes.length !== 32) return "bad";
+    return { url: node.items[0].v, dataHash: bytesToHex(node.items[1].bytes) };
+  }
+  function relay(node) {
+    if (!node || node.t !== "array" || node.items.length < 2 || node.items[0].t !== "int") return null;
+    var k = node.items[0].v;
+    function port(node2) {
+      if (node2.t === "null") return null;
+      if (node2.t === "int" && node2.v >= 0n && node2.v <= 65535n) return Number(node2.v);
+      return "bad";
+    }
+    if (k === 0n) {
+      if (node.items.length !== 4) return null;
+      var p = port(node.items[1]); if (p === "bad") return null;
+      var v4 = null, v6 = null;
+      if (node.items[2].t === "bytes" && node.items[2].bytes.length === 4) v4 = node.items[2].bytes.join(".");
+      else if (node.items[2].t !== "null") return null;
+      if (node.items[3].t === "bytes" && node.items[3].bytes.length === 16) {
+        var groups = [];
+        for (var g = 0; g < 8; g++) groups.push(((node.items[3].bytes[2 * g] << 8) | node.items[3].bytes[2 * g + 1]).toString(16).padStart(4, "0"));
+        v6 = groups.join(":");
+      } else if (node.items[3].t !== "null") return null;
+      return { kind: "single_host_addr", port: p, ipv4: v4, ipv6: v6 };
+    }
+    if (k === 1n) {
+      if (node.items.length !== 3) return null;
+      var p1 = port(node.items[1]); if (p1 === "bad") return null;
+      if (!textBytesOk(node.items[2], 128)) return null;
+      return { kind: "single_host_name", port: p1, dnsName: node.items[2].v };
+    }
+    if (k === 2n) {
+      if (node.items.length !== 2) return null;
+      if (!textBytesOk(node.items[1], 128)) return null;
+      return { kind: "multi_host_name", dnsName: node.items[1].v };
+    }
+    return null;
+  }
+  function poolParams(items) {
+    var operator = hash28(items[1]); if (operator === null) return null;
+    if (!items[2] || items[2].t !== "bytes" || items[2].bytes.length !== 32) return null;
+    var pledge = coinStr(items[3]); if (pledge === null) return null;
+    var cost = coinStr(items[4]); if (cost === null) return null;
+    var mg = items[5];
+    if (!mg || mg.t !== "tag" || mg.n !== 30n || mg.item.t !== "array" || mg.item.items.length !== 2) return null;
+    if (mg.item.items[0].t !== "int" || mg.item.items[1].t !== "int") return null;
+    if (mg.item.items[1].v <= 0n || mg.item.items[0].v < 0n || mg.item.items[0].v > mg.item.items[1].v) return null;
+    var ra = items[6];
+    if (!ra || ra.t !== "bytes" || ra.bytes.length !== 29) return null;
+    var rHead = ra.bytes[0], rType = rHead >> 4, rNet = rHead & 15;
+    if ((rType !== 14 && rType !== 15) || (rNet !== 0 && rNet !== 1)) return null;
+    var reward = { hex: bytesToHex(ra.bytes), address: encodeAddressBytes(rNet === 1 ? "stake" : "stake_test", ra.bytes) };
+    if (reward.address === null) return null;
+    var ow = items[7];
+    if (ow && ow.t === "tag" && ow.n === 258n) ow = ow.item;
+    if (!ow || ow.t !== "array") return null;
+    var owners = [], seenO = {};
+    for (var oi = 0; oi < ow.items.length; oi++) {
+      var oh = hash28(ow.items[oi]); if (oh === null) return null;
+      if (seenO[oh] !== undefined) return null;
+      seenO[oh] = true; owners.push(oh);
+    }
+    if (!items[8] || items[8].t !== "array") return null;
+    var relays = [];
+    for (var ri = 0; ri < items[8].items.length; ri++) {
+      var rl = relay(items[8].items[ri]); if (rl === null) return null;
+      relays.push(rl);
+    }
+    var md = items[9], metadata = null;
+    if (md.t === "null") metadata = null;
+    else if (md.t === "array" && md.items.length === 2 && textBytesOk(md.items[0], 128) && md.items[1].t === "bytes") {
+      metadata = { url: md.items[0].v, hash: bytesToHex(md.items[1].bytes) };
+    } else return null;
+    return { operator: operator, vrfKeyHash: bytesToHex(items[2].bytes), pledge: pledge, cost: cost,
+      margin: { numerator: mg.item.items[0].v.toString(), denominator: mg.item.items[1].v.toString() },
+      rewardAccount: reward, owners: owners, relays: relays, metadata: metadata };
+  }
+  function nodeKey(node) {
+    if (node.t === "int") return "i" + node.v.toString();
+    if (node.t === "bytes") return "b" + bytesToHex(node.bytes);
+    if (node.t === "text") return "t" + node.v;
+    if (node.t === "null") return "n";
+    if (node.t === "bool") return node.v ? "y" : "z";
+    if (node.t === "tag") return "g" + node.n.toString() + "(" + nodeKey(node.item) + ")";
+    if (node.t === "array") return "a[" + node.items.map(nodeKey).join(",") + "]";
+    if (node.t === "map") return "m{" + node.pairs.map(function (pr) { return nodeKey(pr[0]) + "=" + nodeKey(pr[1]); }).join(",") + "}";
+    return "?" + node.t;
+  }
+  var NAMES = { 0: "account_registration", 1: "account_unregistration", 2: "delegation_to_stake_pool",
+    3: "pool_registration", 4: "pool_retirement", 7: "account_registration_deposit",
+    8: "account_unregistration_deposit", 9: "delegation_to_drep", 10: "delegation_to_stake_pool_and_drep",
+    11: "account_registration_delegation_to_stake_pool", 12: "account_registration_delegation_to_drep",
+    13: "account_registration_delegation_to_stake_pool_and_drep", 14: "committee_authorization",
+    15: "committee_resignation", 16: "drep_registration", 17: "drep_unregistration", 18: "drep_update" };
+  var certs = [], seen = {};
+  for (var ci = 0; ci < n.items.length; ci++) {
+    var cn = n.items[ci];
+    if (cn.t !== "array" || cn.items.length < 2 || cn.items[0].t !== "int") return null;
+    var type = Number(cn.items[0].v);
+    if (NAMES[type] === undefined) return null;
+    var key = nodeKey(cn);
+    if (seen[key] !== undefined) return null;
+    seen[key] = true;
+    var c = { type: type, name: NAMES[type] }, it = cn.items;
+    if (type === 0 || type === 1) {
+      if (it.length !== 2) return null;
+      c.credential = cred(it[1]); if (c.credential === null) return null;
+    } else if (type === 2) {
+      if (it.length !== 3) return null;
+      c.credential = cred(it[1]); c.pool = hash28(it[2]);
+      if (c.credential === null || c.pool === null) return null;
+    } else if (type === 3) {
+      if (it.length !== 10) return null;
+      c.poolParams = poolParams(it); if (c.poolParams === null) return null;
+    } else if (type === 4) {
+      if (it.length !== 3) return null;
+      c.pool = hash28(it[1]); c.epoch = coinStr(it[2]);
+      if (c.pool === null || c.epoch === null) return null;
+    } else if (type === 7 || type === 8 || type === 17) {
+      if (it.length !== 3) return null;
+      c.credential = cred(it[1]); c.coin = coinStr(it[2]);
+      if (c.credential === null || c.coin === null) return null;
+    } else if (type === 9) {
+      if (it.length !== 3) return null;
+      c.credential = cred(it[1]); c.drep = drep(it[2]);
+      if (c.credential === null || c.drep === null) return null;
+    } else if (type === 10) {
+      if (it.length !== 4) return null;
+      c.credential = cred(it[1]); c.pool = hash28(it[2]); c.drep = drep(it[3]);
+      if (c.credential === null || c.pool === null || c.drep === null) return null;
+    } else if (type === 11) {
+      if (it.length !== 4) return null;
+      c.credential = cred(it[1]); c.pool = hash28(it[2]); c.coin = coinStr(it[3]);
+      if (c.credential === null || c.pool === null || c.coin === null) return null;
+    } else if (type === 12) {
+      if (it.length !== 4) return null;
+      c.credential = cred(it[1]); c.drep = drep(it[2]); c.coin = coinStr(it[3]);
+      if (c.credential === null || c.drep === null || c.coin === null) return null;
+    } else if (type === 13) {
+      if (it.length !== 5) return null;
+      c.credential = cred(it[1]); c.pool = hash28(it[2]); c.drep = drep(it[3]); c.coin = coinStr(it[4]);
+      if (c.credential === null || c.pool === null || c.drep === null || c.coin === null) return null;
+    } else if (type === 14) {
+      if (it.length !== 3) return null;
+      c.coldCredential = cred(it[1]); c.hotCredential = cred(it[2]);
+      if (c.coldCredential === null || c.hotCredential === null) return null;
+    } else if (type === 15 || type === 18) {
+      if (it.length !== 3) return null;
+      if (type === 15) { c.coldCredential = cred(it[1]); if (c.coldCredential === null) return null; }
+      else { c.credential = cred(it[1]); if (c.credential === null) return null; }
+      c.anchor = anchorOrBad(it[2]); if (c.anchor === "bad") return null;
+    } else if (type === 16) {
+      if (it.length !== 4) return null;
+      c.credential = cred(it[1]); c.coin = coinStr(it[2]);
+      if (c.credential === null || c.coin === null) return null;
+      c.anchor = anchorOrBad(it[3]); if (c.anchor === "bad") return null;
+    }
+    certs.push(c);
+  }
+  return { certificates: certs, count: certs.length };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2487,7 +2744,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2915,6 +3172,57 @@ if (typeof document !== "undefined") {
       lines.push((res.count === 1 ? "1 collateral input" : res.count + " collateral inputs") + " (the UTxOs this transaction puts at risk if its scripts fail):");
       res.entries.forEach(function (e) {
         lines.push("  " + e.ref + "  (transaction " + e.txHash + ", output " + e.index + ")");
+      });
+      out.textContent = lines.join("\n");
+    });
+
+
+    document.getElementById("certsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseCertificatesCbor(document.getElementById("certsdecode-input").value);
+      var out = document.getElementById("certsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one certificates field: a non-empty ordered set of certificates — a plain array or the tag-258 set form — using only the seventeen Conway certificate types (0–4 and 7–18), with every credential and pool hash exactly 28 bytes, every coin a non-negative integer, and no certificate repeated. One certificate on its own, a whole transaction, or a genesis / MIR certificate (types 5 and 6, which do not exist in the Conway CDDL) is a different shape — the transaction inspector above reads whole transactions.";
+        return;
+      }
+      var LABEL = { account_registration: "Account registration", account_unregistration: "Account unregistration", delegation_to_stake_pool: "Delegation to a stake pool", pool_registration: "Pool registration", pool_retirement: "Pool retirement", account_registration_deposit: "Account registration (with deposit)", account_unregistration_deposit: "Account unregistration (with deposit refund)", delegation_to_drep: "Delegation to a DRep", delegation_to_stake_pool_and_drep: "Delegation to a stake pool and a DRep", account_registration_delegation_to_stake_pool: "Account registration and delegation to a stake pool", account_registration_delegation_to_drep: "Account registration and delegation to a DRep", account_registration_delegation_to_stake_pool_and_drep: "Account registration and delegation to a stake pool and a DRep", committee_authorization: "Committee authorisation", committee_resignation: "Committee resignation", drep_registration: "DRep registration", drep_unregistration: "DRep unregistration", drep_update: "DRep update" };
+      function credText(c) { return (c.kind === "key" ? "key hash " : "script hash ") + c.hash; }
+      function drepText(d) {
+        if (d.kind === "always_abstain") return "always abstain";
+        if (d.kind === "always_no_confidence") return "always no confidence";
+        return (d.kind === "key" ? "key hash " : "script hash ") + d.hash;
+      }
+      function anchorText(a) { return a === null ? "no anchor" : "anchor " + a.url + " (data hash " + a.dataHash + ")"; }
+      function poolText(h) { var b = poolIdFromHex(h); return h + (b ? " (" + b + ")" : ""); }
+      var lines = [];
+      lines.push((res.count === 1 ? "1 certificate" : res.count + " certificates") + " (the stake, pool and governance actions this transaction carries):");
+      res.certificates.forEach(function (c, i) {
+        lines.push("  " + (i + 1) + ". " + LABEL[c.name] + " (type " + c.type + ")");
+        if (c.credential) lines.push("      credential: " + credText(c.credential));
+        if (c.coldCredential) lines.push("      cold credential: " + credText(c.coldCredential));
+        if (c.hotCredential) lines.push("      hot credential: " + credText(c.hotCredential));
+        if (c.pool) lines.push("      pool: " + poolText(c.pool));
+        if (c.coin !== undefined) lines.push("      amount: " + c.coin + " lovelace (" + lovelaceToAda(c.coin) + " ADA) — a deposit when registering, a refund when unregistering");
+        if (c.epoch !== undefined) lines.push("      retires at epoch: " + c.epoch);
+        if (c.drep) lines.push("      DRep: " + drepText(c.drep));
+        if (c.anchor !== undefined) lines.push("      " + anchorText(c.anchor));
+        if (c.poolParams) {
+          var p = c.poolParams;
+          lines.push("      operator (pool): " + poolText(p.operator));
+          lines.push("      VRF key hash: " + p.vrfKeyHash);
+          lines.push("      pledge: " + p.pledge + " lovelace (" + lovelaceToAda(p.pledge) + " ADA)");
+          lines.push("      cost: " + p.cost + " lovelace (" + lovelaceToAda(p.cost) + " ADA)");
+          lines.push("      margin: " + p.margin.numerator + "/" + p.margin.denominator);
+          lines.push("      reward account: " + p.rewardAccount.address + " (hex " + p.rewardAccount.hex + ")");
+          lines.push("      owners: " + (p.owners.length ? p.owners.join(", ") : "none"));
+          if (p.relays.length === 0) lines.push("      relays: none");
+          p.relays.forEach(function (r) {
+            if (r.kind === "single_host_addr") lines.push("      relay: single host address — port " + (r.port === null ? "none" : r.port) + ", IPv4 " + (r.ipv4 === null ? "none" : r.ipv4) + ", IPv6 " + (r.ipv6 === null ? "none" : r.ipv6));
+            else if (r.kind === "single_host_name") lines.push("      relay: single host name — " + r.dnsName + (r.port === null ? "" : ", port " + r.port));
+            else lines.push("      relay: multi host name (SRV) — " + r.dnsName);
+          });
+          lines.push("      metadata: " + (p.metadata === null ? "none" : p.metadata.url + " (hash " + p.metadata.hash + ")"));
+        }
       });
       out.textContent = lines.join("\n");
     });

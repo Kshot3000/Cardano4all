@@ -280,6 +280,53 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   transaction ID at two indices, the same three in the other
   order, and the tag-258 set form of the three all decode
   field-for-field.
+- **Certificates decoder** — one transaction's certificates
+  field CBOR on its own (body key 4): the stake, pool, committee
+  and DRep actions a transaction carries, in the order encoded.
+  The Conway CDDL's field rule is `certificates =
+  nonempty_oset<certificate>` (`#6.258([+ a]) / [+ a]`) — an
+  ordered set — and all seventeen Conway certificate types
+  decode (0–4, 7–18): account registration / unregistration
+  (plain and with-deposit forms), delegation to a stake pool
+  and/or a DRep, pool registration and retirement, the combined
+  registration-and-delegation forms, committee authorisation and
+  resignation, and DRep registration / unregistration / update.
+  Credentials are `[0, addr_keyhash]` or `[1, script_hash]`; a
+  DRep is a key hash, a script hash, `[2]` (always abstain) or
+  `[3]` (always no confidence) — the constant DReps carry no hash,
+  so a hash after a 2 or 3 is rejected; anchors are
+  `[url ≤ 128 bytes, hash32]` or nil; deposits and refunds are
+  exact coins. A pool registration decodes the full `pool_params`
+  group in place: operator, VRF key hash, pledge, cost, the
+  margin as a `unit_interval` (CBOR tag 30 over
+  `[numerator, denominator]`, denominator above zero and
+  numerator at most the denominator, per the CDDL's own comment),
+  the reward account (a 29-byte reward address, header type
+  14/15 — also shown in bech32), the owners (a set of key hashes,
+  plain or tag-258 form, no repeats), all three relay kinds
+  (ports ≤ 65,535, IPv4/IPv6 byte strings of exactly 4/16 bytes,
+  DNS names ≤ 128 bytes) and the metadata pointer. Two gates
+  overrule the oracle, recorded here so nobody "aligns" them
+  away: the empty set and a duplicated certificate are both
+  rejected even though pycardano serialises an empty certificates
+  list to `80` with the field present and the same certificate
+  twice (reading it back as two) — the field is an ordered set,
+  and the CDDL governs cardinality and set semantics while the
+  oracle only proves byte shapes, the same split as the mint
+  decoder. Types 5 and 6 (genesis / MIR certificates) do not
+  exist in the Conway CDDL and are rejected. One oracle quirk is
+  also recorded: pycardano reads its own type-16 DRep
+  registration back as a list nested inside the ordered set —
+  its encoding is byte-identical to the CDDL form and round-trips
+  exactly, which is what the proof asserts. Proven against
+  pycardano 0.19.2's `TransactionBody` serialisation
+  (whole-body round-trip asserted byte-for-byte in the
+  generator): every one of the seventeen types on its own —
+  including a full pool registration with five relays of all
+  three kinds, two owners and metadata, and a minimal one with
+  no owners, relays or metadata — a three-certificate
+  combination in encoded order, and the tag-258 ordered-set
+  form of it all decode field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
