@@ -2300,6 +2300,56 @@ function parseInputsCbor(raw) {
   return { entries: entries, count: entries.length };
 }
 
+/* Required signers decoder — a standalone REQUIRED SIGNERS field on
+   its own (body key 14): the set of key hashes a transaction
+   declares must sign it (native-script and Plutus witnesses are
+   checked against it), which until now only ever appeared inside
+   the transaction inspector's signer list. Ledger CDDL (Conway):
+   required_signers = nonempty_set<addr_keyhash> with
+   addr_keyhash = hash28 (exactly 28 bytes), and
+   nonempty_set<a> = #6.258([+ a]) / [+ a] — serialised either
+   under CBOR set tag 258 or as a plain array; both decode here
+   (pycardano emits only the plain array). The gates each rest on
+   the CDDL text itself, and two of them overrule the oracle, in
+   the mint run's split (the CDDL governs cardinality and set
+   semantics, the oracle only proves byte shapes): the field must
+   name AT LEAST ONE signer — the grammar's [+ a] forbids the
+   empty set outright, unlike the inputs field (a plain set<>,
+   whose empty rejection rests on the separate must-spend-a-UTxO
+   validity rule) — even though pycardano serialises an empty
+   required_signers list to 80 with the field present; and a
+   repeated key hash is rejected — the field is a set — even
+   though pycardano serialises a duplicated hash twice and reads
+   it back as two entries. A 32-byte hash is rejected by both the
+   CDDL and pycardano itself (its VerificationKeyHash asserts the
+   28-byte size): a transaction ID is not a key hash. Entries are
+   shown in the order encoded. Input capped at max_tx_size
+   (16,384) like the transaction tools. Proven against pycardano
+   0.19.2's TransactionBody serialisation in scratch
+   (signers_py.py / signers_vectors.json): a single signer, two
+   signers, three signers in a non-sorted order, and the tag-258
+   set form of the pair all decode field-for-field. Display
+   only — nothing is signed or sent. */
+function parseSignersCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t === "tag" && n.n === 258n) n = n.item;
+  if (n.t !== "array" || n.items.length === 0) return null;
+  var entries = [], seen = {};
+  for (var i = 0; i < n.items.length; i++) {
+    var it = n.items[i];
+    if (it.t !== "bytes" || it.bytes.length !== 28) return null;
+    var h = bytesToHex(it.bytes);
+    if (seen[h] !== undefined) return null; /* duplicate key hash: a set */
+    seen[h] = true;
+    entries.push(h);
+  }
+  return { entries: entries, count: entries.length };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2312,7 +2362,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2690,6 +2740,23 @@ if (typeof document !== "undefined") {
       lines.push((res.count === 1 ? "1 input" : res.count + " inputs") + " (the UTxOs this transaction spends):");
       res.entries.forEach(function (e) {
         lines.push("  " + e.ref + "  (transaction " + e.txHash + ", output " + e.index + ")");
+      });
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- required signers decoder (a standalone required-signers field's CBOR) --- */
+    document.getElementById("signersdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseSignersCbor(document.getElementById("signersdecode-input").value);
+      var out = document.getElementById("signersdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one required signers field: a non-empty set of key hashes — a plain array or the tag-258 set form — with every hash exactly 28 bytes and no hash repeated. A single hash on its own, an inputs field or a whole transaction is a different shape — the decoders and transaction inspector above decode those.";
+        return;
+      }
+      var lines = [];
+      lines.push((res.count === 1 ? "1 required signer" : res.count + " required signers") + " (key hashes this transaction declares must sign it):");
+      res.entries.forEach(function (h) {
+        lines.push("  " + h);
       });
       out.textContent = lines.join("\n");
     });

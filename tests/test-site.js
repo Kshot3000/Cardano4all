@@ -27,7 +27,7 @@ check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
 check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=29"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=30"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -802,6 +802,28 @@ check("inputsdecode rejects index 65536 (CDDL .size 2; pycardano emits it)", app
 check("inputsdecode rejects duplicate reference, accepts same tx other index", app.parseInputsCbor("82" + IN_ONE + IN_ONE) === null && app.parseInputsCbor("82" + IN_ONE + "825820" + IN_H1 + "03") !== null);
 check("inputsdecode rejects a lone input, short hash, negative index", app.parseInputsCbor(IN_ONE) === null && app.parseInputsCbor("818241" + "aa".repeat(31) + "00") === null && app.parseInputsCbor("81825820" + IN_H1 + "20") === null);
 check("inputsdecode rejects trailing bytes, other tags, wrong shapes", app.parseInputsCbor("81" + IN_ONE + "00") === null && app.parseInputsCbor("d81881" + IN_ONE) === null && app.parseInputsCbor("a0") === null && app.parseInputsCbor("") === null && app.parseInputsCbor("zzzz") === null);
+
+
+/* required signers decoder — a standalone required signers field's CBOR
+   (body key 14). All hex vectors are pycardano 0.19.2 TransactionBody
+   serialisations (scratch signers_py.py / signers_vectors.json),
+   self-verified by TransactionBody.from_cbor round-trip in the
+   generator. The rule is the Conway CDDL's: required_signers =
+   nonempty_set<addr_keyhash>, addr_keyhash = hash28 (28 bytes),
+   nonempty_set<a> = #6.258([+ a]) / [+ a] — hence the empty set and
+   a repeated hash are rejected even though pycardano serialises an
+   empty list to 80 with the field present and a duplicated hash
+   twice: the CDDL governs cardinality and set semantics, the oracle
+   only proves byte shapes (the mint run's split). */
+check("signersdecode form present", html.includes('id="signersdecode"') && html.includes('id="signersdecode-input"') && html.includes('id="signersdecode-result"'));
+check("signersdecode single signer (pycardano)", (() => { const r = app.parseSignersCbor("81581c" + PAY_KH); return r !== null && r.count === 1 && r.entries[0] === PAY_KH; })());
+check("signersdecode two signers (pycardano)", (() => { const r = app.parseSignersCbor("82581c" + PAY_KH + "581c" + STAKE_KH); return r !== null && r.count === 2 && r.entries[0] === PAY_KH && r.entries[1] === STAKE_KH; })());
+check("signersdecode three signers, encoded order kept (pycardano)", (() => { const r = app.parseSignersCbor("83581c000102030405060708090a0b0c0d0e0f101112131415161718191a1b581c" + STAKE_KH + "581c" + PAY_KH); return r !== null && r.count === 3 && r.entries[0] === "000102030405060708090a0b0c0d0e0f101112131415161718191a1b" && r.entries[1] === STAKE_KH && r.entries[2] === PAY_KH; })());
+check("signersdecode tag-258 set form decodes the same (CDDL nonempty_set)", (() => { const r = app.parseSignersCbor("d9010282581c" + PAY_KH + "581c" + STAKE_KH); return r !== null && r.count === 2 && r.entries[0] === PAY_KH && r.entries[1] === STAKE_KH; })());
+check("signersdecode rejects empty set, plain and tagged (CDDL [+ a]; pycardano emits 80)", app.parseSignersCbor("80") === null && app.parseSignersCbor("d9010280") === null);
+check("signersdecode rejects duplicate hash (a set; pycardano emits it twice)", app.parseSignersCbor("82581c" + PAY_KH + "581c" + PAY_KH) === null);
+check("signersdecode rejects 32-byte and 27-byte hashes", app.parseSignersCbor("815820" + "00".repeat(32)) === null && app.parseSignersCbor("81581b" + "00".repeat(27)) === null);
+check("signersdecode rejects lone hash, inputs shape, trailing bytes", app.parseSignersCbor("581c" + PAY_KH) === null && app.parseSignersCbor("81825820" + "00".repeat(32) + "00") === null && app.parseSignersCbor("81581c" + PAY_KH + "00") === null && app.parseSignersCbor("") === null && app.parseSignersCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

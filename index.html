@@ -299,6 +299,14 @@
         <button type="submit" class="btn primary">Decode inputs</button>
         <p id="inputsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="signersdecode">
+        <h3>Required signers decoder</h3>
+        <p>One transaction's <strong>required signers field</strong> on its own — body key 14, the set of key hashes a transaction declares must sign it (native-script and Plutus witnesses are checked against this list) — decoded locally: every required signer's key hash, in the order encoded. The ledger rule (Conway CDDL) is <code>required_signers = nonempty_set&lt;addr_keyhash&gt;</code>: a <strong>non-empty set</strong> of 28-byte key hashes, serialised as a plain array or under CBOR set tag 258 — both forms decode here — with no hash repeated. The non-empty rule is in the grammar itself here (<code>nonempty_set</code>), unlike the inputs field above, whose empty rejection rests on the separate must-spend rule. A 32-byte transaction ID is not a key hash and is rejected. The inputs a transaction spends are decoded by the inputs decoder above; a whole transaction by the transaction inspector.</p>
+        <label for="signersdecode-input">Required signers field CBOR (hex)</label>
+        <textarea id="signersdecode-input" rows="3" spellcheck="false" placeholder="e.g. 81581c… (one 28-byte key hash) — or d90102… for the set form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode required signers</button>
+        <p id="signersdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -489,6 +497,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=29"></script>
+<script src="app.js?v=30"></script>
 </body>
 </html>

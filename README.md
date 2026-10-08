@@ -202,6 +202,28 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   serialisation: a single input, two inputs including the index
   maximum, the same pair in the other order, and the tag-258 set
   form of the pair all decode field-for-field.
+- **Required signers decoder** — one transaction's required
+  signers field CBOR on its own (body key 14): every key hash the
+  transaction declares must sign it, in the order encoded. Follows
+  the Conway CDDL fetched from IntersectMBO/cardano-ledger
+  (`required_signers = nonempty_set<addr_keyhash>`,
+  `addr_keyhash = hash28`, `nonempty_set<a> = #6.258([+ a]) /
+  [+ a]`): at least one entry, every hash exactly 28 bytes,
+  repeated hashes rejected, and both serialisations decode.
+  Two pycardano behaviours the CDDL overrules, recorded here so
+  nobody "fixes" the decoder to match them: pycardano serialises
+  an empty `required_signers` list to `80` with the field present,
+  where the grammar's `[+ a]` forbids an empty set outright; and
+  it serialises a duplicated hash twice and reads it back as two
+  entries, where a set carries each hash once. (On the 28-byte
+  size the two agree: pycardano's `VerificationKeyHash` asserts
+  it too.) One contrast with the inputs decoder, recorded for the
+  same reason: the inputs field is a plain `set<>`, so its empty
+  rejection rests on the must-spend-a-UTxO validity rule — this
+  field's rests on the grammar itself. Proven against pycardano
+  0.19.2's `TransactionBody` serialisation: a single signer, two
+  signers, three signers in a non-sorted order, and the tag-258
+  set form of the pair all decode field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
