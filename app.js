@@ -455,6 +455,60 @@ function totalTxFee(sizeStr, memStr, stepsStr, refStr) {
   };
 }
 
+/* Ledger deposits — the refundable ADA a transaction must put down
+   when it registers things on chain (Conway era). Each registration
+   or proposal charges its protocol parameter exactly once:
+     stake credential registration  stakeAddressDeposit (Koios
+                                    key_deposit)    =     2,000,000
+     NEW stake pool registration    stakePoolDeposit (Koios
+                                    pool_deposit)   =   500,000,000
+     DRep registration              dRepDeposit      =   500,000,000
+     governance action proposal     govActionDeposit = 100,000,000,000
+   lovelace, all verified against the live protocol parameters via
+   Koios epoch_params for epoch 660 on 2026-10-07 (the two Conway
+   values also match the published Chang-era parameter tables).
+   The total is the exact integer sum — no rounding anywhere.
+   Deposits are NOT fees: a stake deposit comes back when the
+   credential is deregistered, a pool deposit when the pool retires,
+   a DRep deposit on deregistration, and a governance action deposit
+   when the action is enacted or expires (it is paid to the
+   proposal's reward account). Two ledger subtleties the counts must
+   respect: re-registering (updating) an EXISTING pool charges no new
+   pool deposit, and a delegation certificate on its own charges
+   nothing — only registrations and proposals do. Counts are capped
+   at 10,000 each as an input sanity bound (not a protocol limit). */
+var STAKE_REG_DEPOSIT = 2000000n;
+var POOL_REG_DEPOSIT = 500000000n;
+var DREP_REG_DEPOSIT = 500000000n;
+var GOV_ACTION_DEPOSIT = 100000000000n;
+var MAX_DEPOSIT_COUNT = 10000n;
+
+function parseDepositCount(raw) {
+  var t = (raw || "").trim();
+  if (!/^\d+$/.test(t)) return null;
+  var n = BigInt(t);
+  return n <= MAX_DEPOSIT_COUNT ? n : null;
+}
+
+/* depositTotal(stakeStr, poolStr, drepStr, govStr) -> itemised
+   { stakeLovelace, poolLovelace, drepLovelace, govLovelace,
+   totalLovelace } as decimal strings, or null for empty, fractional,
+   negative, non-numeric or over-cap counts in any field. */
+function depositTotal(stakeStr, poolStr, drepStr, govStr) {
+  var s = parseDepositCount(stakeStr), p = parseDepositCount(poolStr),
+      d = parseDepositCount(drepStr), g = parseDepositCount(govStr);
+  if (s === null || p === null || d === null || g === null) return null;
+  var stake = s * STAKE_REG_DEPOSIT, pool = p * POOL_REG_DEPOSIT,
+      drep = d * DREP_REG_DEPOSIT, gov = g * GOV_ACTION_DEPOSIT;
+  return {
+    stakeLovelace: stake.toString(),
+    poolLovelace: pool.toString(),
+    drepLovelace: drep.toString(),
+    govLovelace: gov.toString(),
+    totalLovelace: (stake + pool + drep + gov).toString()
+  };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -1643,7 +1697,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1829,6 +1883,25 @@ if (typeof document !== "undefined") {
       out.textContent = "Total minimum fee = " + res.totalLovelace + " lovelace (" + lovelaceToAda(res.totalLovelace) +
         " ADA): size fee " + res.sizeFeeLovelace + " + execution cost " + res.exunitFeeLovelace +
         " + reference script fee " + res.refScriptFeeLovelace + " lovelace. This is the ledger minimum for the figures entered — a wallet may pay above it, and this prices the units entered; measuring a script to find its units is node work.";
+    });
+
+    /* --- ledger deposits calculator (refundable registration deposits) --- */
+    document.getElementById("depositcalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = depositTotal(
+        document.getElementById("dep-stake").value,
+        document.getElementById("dep-pool").value,
+        document.getElementById("dep-drep").value,
+        document.getElementById("dep-gov").value);
+      var out = document.getElementById("deposit-result");
+      if (!res) {
+        out.textContent = "Enter whole-number counts (0 to 10,000 each) for every field: stake credential registrations, NEW stake pool registrations, DRep registrations and governance action proposals in the transaction.";
+        return;
+      }
+      out.textContent = "Total deposits = " + res.totalLovelace + " lovelace (" + lovelaceToAda(res.totalLovelace) +
+        " ADA): stake registrations " + res.stakeLovelace + " + new pools " + res.poolLovelace +
+        " + DReps " + res.drepLovelace + " + governance actions " + res.govLovelace +
+        " lovelace. Deposits are refundable — they come back on deregistration, pool retirement, or when a governance action is enacted or expires; they are not fees. Updating an existing pool charges no new pool deposit.";
     });
 
     /* --- minimum-UTxO calculator (ledger formula, serialised size) --- */

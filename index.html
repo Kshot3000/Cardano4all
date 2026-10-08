@@ -229,6 +229,20 @@
         <button type="submit" class="btn primary">Calculate total minimum fee</button>
         <p id="totalfee-result" role="status" aria-live="polite"></p>
       </form>
+      <form class="tool" id="depositcalc">
+        <h3>Ledger deposits calculator</h3>
+        <p>Registering on chain takes a <strong>refundable deposit</strong>, charged once per registration at the current mainnet protocol parameters (checked against the live protocol parameters for epoch 660): a stake credential registration is <strong>2 ADA</strong>, a <strong>new</strong> stake pool registration <strong>500 ADA</strong>, a DRep registration <strong>500 ADA</strong> and a governance action proposal <strong>100,000 ADA</strong>. The total below is their exact sum — and deposits are <strong>not fees</strong>: they come back on deregistration, on pool retirement, or when a governance action is enacted or expires. Updating an existing pool charges no new pool deposit, and delegating on its own charges nothing.</p>
+        <label for="dep-stake">Stake credential registrations</label>
+        <input id="dep-stake" inputmode="numeric" placeholder="e.g. 1" autocomplete="off">
+        <label for="dep-pool">New stake pool registrations</label>
+        <input id="dep-pool" inputmode="numeric" placeholder="e.g. 0" autocomplete="off">
+        <label for="dep-drep">DRep registrations</label>
+        <input id="dep-drep" inputmode="numeric" placeholder="e.g. 0" autocomplete="off">
+        <label for="dep-gov">Governance action proposals</label>
+        <input id="dep-gov" inputmode="numeric" placeholder="e.g. 0" autocomplete="off">
+        <button type="submit" class="btn primary">Calculate total deposits</button>
+        <p id="deposit-result" role="status" aria-live="polite"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -419,6 +433,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

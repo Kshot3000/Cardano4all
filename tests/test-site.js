@@ -27,7 +27,7 @@ check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
 check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=21"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=22"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -217,6 +217,25 @@ check("total rejects empty, garbage and fractional in any field", app.totalTxFee
 check("total is the exact sum of its parts on assorted inputs", [["300", "123456", "987654321", "999"], ["1", "17", "0", "25601"], ["999", "16500000", "1", "76800"]].every(function (c) {
   var t = app.totalTxFee(c[0], c[1], c[2], c[3]);
   return t && t.totalLovelace === (BigInt(app.minFee(c[0]).feeLovelace) + BigInt(app.exunitCost(c[1], c[2]).costLovelace) + BigInt(app.refScriptFee(c[3]).feeLovelace)).toString();
+}));
+
+/* ledger deposits — parameters verified live via Koios epoch_params
+   epoch 660 on 2026-10-07 (key_deposit 2000000, pool_deposit 500000000,
+   drep_deposit 500000000, gov_action_deposit 100000000000); vectors are
+   hand-derived lovelace arithmetic from those parameters */
+check("deposit form present", html.includes('id="depositcalc"') && html.includes('id="deposit-result"'));
+check("one stake registration = 2 ADA", JSON.stringify(app.depositTotal("1", "0", "0", "0")) === JSON.stringify({ stakeLovelace: "2000000", poolLovelace: "0", drepLovelace: "0", govLovelace: "0", totalLovelace: "2000000" }));
+check("one new pool = 500 ADA", app.depositTotal("0", "1", "0", "0").totalLovelace === "500000000");
+check("one DRep = 500 ADA", app.depositTotal("0", "0", "1", "0").totalLovelace === "500000000");
+check("one governance action = 100,000 ADA", app.depositTotal("0", "0", "0", "1").totalLovelace === "100000000000");
+check("combo 2 stake + 1 pool + 1 drep + 1 gov = 101,004 ADA", app.depositTotal("2", "1", "1", "1").totalLovelace === "101004000000");
+check("3 stake + 2 drep = 1,006 ADA", app.depositTotal("3", "0", "2", "0").totalLovelace === "1006000000");
+check("all zero counts = 0", app.depositTotal("0", "0", "0", "0").totalLovelace === "0");
+check("count cap boundary: 10000 stake = 20,000 ADA", app.depositTotal("10000", "0", "0", "0").totalLovelace === "20000000000");
+check("deposit rejects empty, garbage, fractional, negative and over-cap in any field", app.depositTotal("", "0", "0", "0") === null && app.depositTotal("1", "", "0", "0") === null && app.depositTotal("1", "0", "abc", "0") === null && app.depositTotal("1", "0", "0", "1.5") === null && app.depositTotal("-1", "0", "0", "0") === null && app.depositTotal("1", "0", "0", "10001") === null);
+check("deposit total is the exact sum of its parts on assorted inputs", [["5", "3", "0", "2"], ["0", "7", "7", "0"], ["9999", "1", "1", "1"], ["10", "0", "0", "10"]].every(function (c) {
+  var t = app.depositTotal(c[0], c[1], c[2], c[3]);
+  return t && t.totalLovelace === (BigInt(t.stakeLovelace) + BigInt(t.poolLovelace) + BigInt(t.drepLovelace) + BigInt(t.govLovelace)).toString();
 }));
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core

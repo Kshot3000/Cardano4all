@@ -94,6 +94,16 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   composes too: any input past a per-transaction protocol limit —
   including reference scripts over 204,800 bytes — is rejected rather
   than priced, since no valid transaction exists to quote.
+- **Ledger deposits calculator** — the refundable ADA a transaction
+  must put down to register on chain, at the live mainnet protocol
+  parameters (verified via Koios for epoch 660): stake credential
+  registration 2 ADA (`key_deposit`), new stake pool registration
+  500 ADA (`pool_deposit`), DRep registration 500 ADA (`drep_deposit`),
+  governance action proposal 100,000 ADA (`gov_action_deposit`) — each
+  charged once per registration, totalled exactly. Deposits are not
+  fees: they return on deregistration, pool retirement, or when a
+  governance action is enacted or expires; updating an existing pool
+  charges no new pool deposit.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
