@@ -2195,6 +2195,56 @@ function parseMintCbor(raw) {
   return { assets: assets, assetCount: assets.length, policyCount: policyCount, mintCount: mintCount, burnCount: burnCount };
 }
 
+/* Withdrawals decoder — a standalone transaction WITHDRAWALS field
+   on its own (body key 5): the map a transaction carries when it
+   takes staking rewards out of reward accounts, which until now
+   only ever appeared inside the transaction inspector's withdrawal
+   list. Ledger CDDL (Conway, fetched from IntersectMBO/cardano-ledger
+   this run): withdrawals = {+ reward_account => coin}, with
+   coin = uint — at least one entry, every key a reward account and
+   every amount an unsigned amount (the parser's major type 0 caps
+   it at uint64, the uint64-max vector below included). Two
+   deliberate strictnesses in the spirit of the sibling decoders:
+   the key must be a Shelley REWARD address (29 bytes, header type
+   14 key / 15 script — a payment address is not a reward account,
+   the mirror of the output decoder rejecting reward addresses),
+   verified end-to-end through the proven CIP-19 decoder, and
+   repeated reward-account keys are rejected (a withdrawals field
+   is a map). Unlike the mint field, a ZERO amount is accepted:
+   the CDDL says plain coin here, not nonzero — the mint decoder's
+   zero ban comes from its own field's nonzero_int64 rule and does
+   not carry over. Exact BigInt amounts throughout; input capped at
+   max_tx_size (16,384) like the transaction tools. Proven against
+   pycardano 0.19.2's Withdrawals serialisation in scratch
+   (withdraw_gen.py / withdraw_vectors.json): a single mainnet key
+   withdrawal, a mixed key + script pair, a testnet withdrawal, a
+   zero amount and the uint64 maximum decode field-for-field.
+   Display only — nothing is signed or sent. */
+function parseWithdrawalsCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t !== "map" || n.pairs.length === 0) return null;
+  var entries = [], seen = {}, total = 0n;
+  for (var i = 0; i < n.pairs.length; i++) {
+    var k = n.pairs[i][0], v = n.pairs[i][1];
+    if (k.t !== "bytes" || k.bytes.length !== 29 || v.t !== "int" || v.v < 0n) return null;
+    var header = k.bytes[0], type = header >> 4, net = header & 15;
+    if ((type !== 14 && type !== 15) || (net !== 0 && net !== 1)) return null;
+    var hex = bytesToHex(k.bytes);
+    if (seen[hex] !== undefined) return null; /* duplicate reward account */
+    seen[hex] = true;
+    var addr = encodeAddressBytes(net === 1 ? "stake" : "stake_test", k.bytes);
+    if (addr === null || decodeAddress(addr) === null) return null;
+    total += v.v;
+    entries.push({ address: addr, addressHex: hex, stakeKind: type === 15 ? "script" : "key", network: net === 1 ? "mainnet" : "testnet", stakeHash: bytesToHex(k.bytes.slice(1)), lovelace: v.v.toString() });
+  }
+  entries.sort(function (x, y) { return x.addressHex < y.addressHex ? -1 : 1; });
+  return { entries: entries, count: entries.length, totalLovelace: total.toString() };
+}
+
 /* Current slot/epoch derived from the local clock + the fixed parameters
    above. An estimate from wall-clock time, NOT live chain data. */
 function nowSlotEpoch(nowMs) {
@@ -2207,7 +2257,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -2550,6 +2600,24 @@ if (typeof document !== "undefined") {
       lines.push((res.mintCount + res.burnCount) + (res.assetCount === 1 ? " asset" : " assets") + " across " + res.policyCount + (res.policyCount === 1 ? " policy" : " policies") + ": " + res.mintCount + " minting, " + res.burnCount + " burning");
       res.assets.forEach(function (a) {
         lines.push("  " + (a.action === "mint" ? "mint +" : "burn ") + a.quantity + " \u00d7 policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")") + " — fingerprint " + assetFingerprint(a.policy, a.name));
+      });
+      out.textContent = lines.join("\n");
+    });
+
+
+    /* --- withdrawals decoder (a standalone withdrawals field's CBOR) --- */
+    document.getElementById("withdrawdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseWithdrawalsCbor(document.getElementById("withdrawdecode-input").value);
+      var out = document.getElementById("withdrawdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one withdrawals field: {reward address bytes: amount} with at least one entry, every key a Shelley reward address (stake1… / stake_test1…) and every amount a whole number of lovelace. A payment address is not a reward account, and no account may appear twice. An output value, a mint field or a whole transaction is a different shape — the decoders and transaction inspector above decode those.";
+        return;
+      }
+      var lines = [];
+      lines.push((res.count === 1 ? "1 withdrawal" : res.count + " withdrawals") + ", total " + res.totalLovelace + " lovelace (" + lovelaceToAda(res.totalLovelace) + " ADA):");
+      res.entries.forEach(function (e) {
+        lines.push("  " + e.address + " (" + e.stakeKind + " credential, " + e.network + ") — " + e.lovelace + " lovelace (" + lovelaceToAda(e.lovelace) + " ADA)");
       });
       out.textContent = lines.join("\n");
     });

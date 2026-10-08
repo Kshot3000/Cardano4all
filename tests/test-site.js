@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=27"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=28"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -761,6 +761,32 @@ check("mintdecode rejects zero quantity and out-of-int64 quantities", app.parseM
 check("mintdecode rejects empty mint and empty policy maps (CDDL +)", app.parseMintCbor("a0") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a0") === null);
 check("mintdecode rejects value shapes, bare coin, trailing bytes", app.parseMintCbor("821a001e8480a1581c" + V_POL + "a14650415441544501") === null && app.parseMintCbor("1a000eedc2") === null && app.parseMintCbor("a1581c" + V_POL + "a1465041544154451864" + "00") === null && app.parseMintCbor("") === null && app.parseMintCbor("zzzz") === null);
 check("mintdecode rejects duplicate keys and oversize parts", app.parseMintCbor("a2581c" + "aa".repeat(28) + "a1415801" + "581c" + "aa".repeat(28) + "a1415802") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a2415801415802") === null && app.parseMintCbor("a1581b" + "aa".repeat(27) + "a1415801") === null && app.parseMintCbor("a1581c" + "aa".repeat(28) + "a15821" + "00".repeat(33) + "01") === null);
+
+/* withdrawals decoder — a standalone withdrawals field's CBOR (body key 5).
+   All hex vectors are pycardano 0.19.2 Withdrawals serialisations
+   (scratch withdraw_gen.py / withdraw_vectors.json; keys are raw
+   reward-address bytes), self-verified by Withdrawals.from_cbor
+   round-trip in the generator. The rule is the Conway CDDL's,
+   fetched from IntersectMBO/cardano-ledger this run:
+   withdrawals = {+ reward_account => coin}, coin = uint — hence
+   the empty map is rejected (the "+") but a ZERO amount is
+   accepted, the exact opposite of the mint field's nonzero rule;
+   don't "align" the two. Keys must be Shelley reward addresses
+   (29 bytes, type 14 key / 15 script), proven through decodeAddress. */
+const REW_MAIN = "stake1u8ke0ya7at0s22z255al95huahj7xejt7t27mj4ql6rzeqsfy7dg5";
+const REW_SCRIPT = "stake17xerse3s7xepp3vdper0zvhfxxek9slnwd59zxqp3exe2mcnf80yw";
+const REW_TEST = "stake_test1urke0ya7at0s22z255al95huahj7xejt7t27mj4ql6rzeqsww50vf";
+const REW_BYTES = "581de1" + STAKE_KH;
+check("withdrawdecode form present", html.includes('id="withdrawdecode"') && html.includes('id="withdrawdecode-input"') && html.includes('id="withdrawdecode-result"'));
+check("withdrawdecode single mainnet key (pycardano)", (() => { const r = app.parseWithdrawalsCbor("a1" + REW_BYTES + "1a001e8480"); return r !== null && r.count === 1 && r.totalLovelace === "2000000" && r.entries[0].address === REW_MAIN && r.entries[0].stakeKind === "key" && r.entries[0].network === "mainnet" && r.entries[0].stakeHash === STAKE_KH && r.entries[0].lovelace === "2000000"; })());
+check("withdrawdecode mixed key + script pair, total (pycardano)", (() => { const r = app.parseWithdrawalsCbor("a2581de1" + STAKE_KH + "1a0016e360581df1" + REDEEM_SH + "1a0ee6b280"); return r !== null && r.count === 2 && r.totalLovelace === "251500000" && r.entries.some(e => e.address === REW_SCRIPT && e.stakeKind === "script" && e.lovelace === "250000000"); })());
+check("withdrawdecode testnet key (pycardano)", (() => { const r = app.parseWithdrawalsCbor("a1581de0" + STAKE_KH + "1a075bcd15"); return r !== null && r.entries[0].address === REW_TEST && r.entries[0].network === "testnet" && r.entries[0].lovelace === "123456789"; })());
+check("withdrawdecode uint64-max exact as text (pycardano)", (() => { const r = app.parseWithdrawalsCbor("a1" + REW_BYTES + "1bffffffffffffffff"); return r !== null && r.entries[0].lovelace === "18446744073709551615" && r.totalLovelace === "18446744073709551615"; })());
+check("withdrawdecode zero amount accepted (CDDL coin, not nonzero)", (() => { const r = app.parseWithdrawalsCbor("a1" + REW_BYTES + "00"); return r !== null && r.entries[0].lovelace === "0" && r.totalLovelace === "0"; })());
+check("withdrawdecode rejects empty map (CDDL +)", app.parseWithdrawalsCbor("a0") === null);
+check("withdrawdecode rejects payment address and negative amount", app.parseWithdrawalsCbor("a1581d61" + STAKE_KH + "01") === null && app.parseWithdrawalsCbor("a1" + REW_BYTES + "20") === null);
+check("withdrawdecode rejects duplicate accounts and trailing bytes", app.parseWithdrawalsCbor("a2" + REW_BYTES + "01" + REW_BYTES + "02") === null && app.parseWithdrawalsCbor("a1" + REW_BYTES + "1a001e8480" + "00") === null && app.parseWithdrawalsCbor("") === null && app.parseWithdrawalsCbor("zzzz") === null);
+check("withdrawdecode rejects bad network, short key, mint/value shapes", app.parseWithdrawalsCbor("a1581de3" + STAKE_KH + "01") === null && app.parseWithdrawalsCbor("a1581ce1" + STAKE_KH.slice(0, 54) + "01") === null && app.parseWithdrawalsCbor("1a000eedc2") === null && app.parseWithdrawalsCbor("a1581c" + "aa".repeat(28) + "a1465041544154451864") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

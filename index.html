@@ -283,6 +283,14 @@
         <button type="submit" class="btn primary">Decode mint field</button>
         <p id="mintdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="withdrawdecode">
+        <h3>Withdrawals decoder</h3>
+        <p>One transaction's <strong>withdrawals field</strong> on its own — body key 5, the map a transaction carries when it takes staking rewards out of reward accounts — decoded locally: every reward account with its stake credential (key or script), network and exact amount in lovelace, plus the total. The ledger rule (Conway CDDL) is <code>withdrawals = {+ reward_account =&gt; coin}</code>: at least one entry, every key a Shelley <strong>reward address</strong> — a payment address is not a reward account — and every amount an unsigned coin amount. Unlike a mint field's quantities, a zero amount is a legal entry here: this field's rule is plain <code>coin</code>, not <code>nonzero</code>. Repeated accounts are rejected — a withdrawals field is a map. An output value is decoded by the value decoder above; a whole transaction by the transaction inspector.</p>
+        <label for="withdrawdecode-input">Withdrawals field CBOR (hex)</label>
+        <textarea id="withdrawdecode-input" rows="3" spellcheck="false" placeholder="e.g. a1581de1… (one reward account) 1a001e8480 (its amount)" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode withdrawals</button>
+        <p id="withdrawdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -473,6 +481,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=27"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>

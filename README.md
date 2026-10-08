@@ -170,6 +170,21 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   pycardano serialises an empty `MultiAsset` to the empty map the
   CDDL's `+` forbids in a mint field, and it silently drops
   zero-quantity assets instead of carrying them.)
+- **Withdrawals decoder** — one transaction's withdrawals field
+  CBOR on its own (body key 5): every reward account with its stake
+  credential kind (key or script), network and exact amount, plus
+  the total. Follows the Conway CDDL fetched from
+  IntersectMBO/cardano-ledger (`withdrawals = {+ reward_account =>
+  coin}`, `coin = uint`): at least one entry, repeated accounts
+  rejected, and keys must be Shelley reward addresses — a payment
+  address is not a reward account, the mirror of the output decoder
+  rejecting reward addresses. One deliberate contrast with the mint
+  decoder, recorded so nobody "aligns" them: a zero amount is
+  accepted here, because this field's rule is plain `coin` where
+  the mint field's is `nonzero_int64`. Proven against pycardano
+  0.19.2's `Withdrawals` serialisation: a single mainnet key
+  withdrawal, a mixed key + script pair, a testnet withdrawal, a
+  zero amount and the uint64 maximum decode field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
