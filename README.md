@@ -74,6 +74,12 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   verified live via Koios for epoch 660), in exact BigInt lovelace maths.
   Labelled as the size-based floor: script execution and reference-script
   costs come on top.
+- **Plutus execution cost calculator** — the script part of a transaction's
+  fee: the ledger's txscriptfee, ⌈ memory × 0.0577 + steps × 0.0000721 ⌉
+  lovelace, with one ceiling over the sum exactly as the ledger defines it
+  and exact BigInt rational maths (prices verified live via Koios for
+  epoch 660; per-transaction unit caps enforced). It prices execution
+  units you supply — measuring a script to find its units is node work.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

@@ -27,7 +27,7 @@ check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
 check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=18"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=19"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -160,6 +160,27 @@ check("fractional size rejected", app.minFee("200.5") === null);
 check("garbage size rejected", app.minFee("abc") === null);
 check("empty size rejected", app.minFee("") === null);
 check("fee result carries size echo", app.minFee("200").sizeBytes === 200);
+
+/* Plutus execution cost — the ledger's txscriptfee: one ceiling over
+   mem x price_mem + steps x price_step. Prices verified live via Koios
+   epoch_params for epoch 660 (2026-10-07): price_mem = 0.0577 = 577/10000,
+   price_step = 0.0000721 = 721/10000000; caps max_tx_ex_mem = 16,500,000,
+   max_tx_ex_steps = 10,000,000,000. Hand-derived vectors:
+   1e6 mem = 57,700 exactly; 5e8 steps = 36,050 exactly; sum 93,750.
+   The (1,1) vector pins the ceiling placement: a single ceiling over the
+   sum gives 1 lovelace, ceiling each part separately would give 2. */
+check("exunit calculator in page", html.includes('id="exunitcalc"') && html.includes('id="exunit-result"'));
+check("exunit zero units cost zero", app.exunitCost("0", "0").costLovelace === "0");
+check("exunit 1 mem + 1 step = 1 lovelace (single ceiling over the sum)", app.exunitCost("1", "1").costLovelace === "1");
+check("exunit 1000 mem = ceil(57.7) = 58", app.exunitCost("1000", "0").costLovelace === "58");
+check("exunit 1e6 steps = ceil(72.1) = 73", app.exunitCost("0", "1000000").costLovelace === "73");
+check("exunit typical script: 1e6 mem + 5e8 steps = 93750 exactly", app.exunitCost("1000000", "500000000").costLovelace === "93750" && app.exunitCost("1000000", "500000000").exactLovelace === "93750");
+check("exunit exact decimal kept un-rounded", app.exunitCost("1000", "0").exactLovelace === "57.7");
+check("exunit 17 mem rounds up to 1, 18 mem to 2", app.exunitCost("17", "0").costLovelace === "1" && app.exunitCost("18", "0").costLovelace === "2");
+check("exunit at per-tx maxima = 952050 + 721000 = 1673050", app.exunitCost("16500000", "10000000000").costLovelace === "1673050");
+check("exunit above mem cap rejected", app.exunitCost("16500001", "0") === null);
+check("exunit above step cap rejected", app.exunitCost("0", "10000000001") === null);
+check("exunit fractional, garbage and empty rejected", app.exunitCost("1.5", "0") === null && app.exunitCost("abc", "0") === null && app.exunitCost("", "0") === null && app.exunitCost("0", "") === null);
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core
    (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the

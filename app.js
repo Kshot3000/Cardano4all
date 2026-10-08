@@ -301,6 +301,51 @@ function minFee(sizeStr) {
   };
 }
 
+/* Plutus execution-unit cost — the script part of the ledger minimum
+   fee (the formal ledger specification's minfee adds
+   txscriptfee(prices)(total execution units) on top of the size fee):
+     txscriptfee = ceil(mem x price_mem + steps x price_step)
+   with ONE ceiling over the sum (the ledger definition; ceiling each
+   part separately would overcharge — 1 memory unit + 1 step costs
+   1 lovelace, not 2). Mainnet prices, verified against the Koios
+   epoch_params endpoint for epoch 660 on 2026-10-07:
+   price_mem = 0.0577 lovelace/unit = 577/10000,
+   price_step = 0.0000721 lovelace/unit = 721/10000000.
+   Exact BigInt rational arithmetic on the common denominator 10^7.
+   Per-transaction caps are the protocol maxima from the same endpoint
+   (max_tx_ex_mem = 16,500,000, max_tx_ex_steps = 10,000,000,000): a
+   transaction whose total units exceed them is invalid, so they are
+   rejected rather than priced. This prices the units a script is
+   budgeted or measured at — evaluating a script to FIND its units is
+   node work this offline page does not do. */
+var EXUNIT_PRICE_MEM_NUM = 577000n;   /* per 10^7 lovelace */
+var EXUNIT_PRICE_STEP_NUM = 721n;     /* per 10^7 lovelace */
+var EXUNIT_DEN = 10000000n;
+var MAX_TX_EX_MEM = 16500000n;
+var MAX_TX_EX_STEPS = 10000000000n;
+
+/* exunitCost(memStr, stepsStr) -> { memUnits, stepUnits, exactLovelace,
+   costLovelace } (units and cost as decimal strings; exactLovelace is the
+   un-rounded rational total as an exact decimal string) or null for
+   empty, fractional, non-numeric or over-cap inputs. */
+function exunitCost(memStr, stepsStr) {
+  var m = (memStr || "").trim(), s = (stepsStr || "").trim();
+  if (!/^\d+$/.test(m) || !/^\d+$/.test(s)) return null;
+  var mem = BigInt(m), steps = BigInt(s);
+  if (mem > MAX_TX_EX_MEM || steps > MAX_TX_EX_STEPS) return null;
+  var num = mem * EXUNIT_PRICE_MEM_NUM + steps * EXUNIT_PRICE_STEP_NUM;
+  var cost = (num + EXUNIT_DEN - 1n) / EXUNIT_DEN;
+  var whole = num / EXUNIT_DEN, frac = num % EXUNIT_DEN;
+  var exact = whole.toString();
+  if (frac !== 0n) exact += "." + frac.toString().padStart(7, "0").replace(/0+$/, "");
+  return {
+    memUnits: mem.toString(),
+    stepUnits: steps.toString(),
+    exactLovelace: exact,
+    costLovelace: cost.toString()
+  };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -1489,7 +1534,7 @@ function nowSlotEpoch(nowMs) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, bech32DecodeBytes, convertBits, hexToBytes };
 }
 
 if (typeof document !== "undefined") {
@@ -1620,6 +1665,23 @@ if (typeof document !== "undefined") {
       }
       out.textContent = "Minimum fee for a " + res.sizeBytes + "-byte transaction = " + res.feeLovelace +
         " lovelace (" + lovelaceToAda(res.feeLovelace) + " ADA). Size-based minimum only — Plutus script execution and reference scripts cost extra, and a wallet may pay above the minimum.";
+    });
+
+    /* --- Plutus execution cost (ledger txscriptfee, exact BigInt maths) --- */
+    document.getElementById("exunitcalc").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = exunitCost(
+        document.getElementById("exunit-mem").value,
+        document.getElementById("exunit-steps").value);
+      var out = document.getElementById("exunit-result");
+      if (!res) {
+        out.textContent = "Enter whole execution units — memory from 0 to 16,500,000 and steps from 0 to 10,000,000,000 (the per-transaction protocol maxima).";
+        return;
+      }
+      out.textContent = "Execution cost for " + res.memUnits + " memory units and " + res.stepUnits +
+        " steps = " + res.costLovelace + " lovelace (" + lovelaceToAda(res.costLovelace) +
+        " ADA), the exact " + res.exactLovelace + " lovelace rounded up once, as the ledger rounds it. " +
+        "This is the script part of the fee only — the size-based fee comes on top, and a wallet may pay above the minimum.";
     });
 
     /* --- minimum-UTxO calculator (ledger formula, serialised size) --- */
