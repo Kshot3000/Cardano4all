@@ -3752,6 +3752,69 @@ function parseWitnessSetCbor(raw) {
            plutusData: plutusData, redeemers: redeemers };
 }
 
+/* Redeemers decoder — a standalone REDEEMERS field on its own
+   (witness set key 5): the instructions a transaction gives its
+   Plutus scripts — which script runs, on what, with what data and
+   what execution budget — which until now only ever appeared
+   inside the witness set decoder and the script data hash
+   calculator. Ledger CDDL (Conway): redeemers =
+   [+ redeemer] / {+ redeemer_key => redeemer_value}, with
+   redeemer = [tag, index, data, ex_units] in the legacy array
+   form and redeemer_key = [tag, index], redeemer_value =
+   [data, ex_units] in the Conway map form; redeemer_tag = 0..5
+   (spend, mint, cert, reward, voting, proposing), index is
+   uint .size 4, data is plutus_data and ex_units is
+   [mem, steps] with each 0..max_int64. BOTH forms must name at
+   least one redeemer (the grammar's + in both alternatives).
+   The two forms differ in exactly one semantic, and the shipped
+   copy records it so nobody "aligns" them: the ARRAY form is a
+   list — the same redeemer twice decodes as two entries (the
+   oracle serialises it so) — while the MAP form is keyed by
+   [tag, index], so a repeated key is rejected (one value per
+   key; the oracle's RedeemerMap cannot even hold two). The
+   remaining gates overrule the oracle, in the sibling runs'
+   split (the CDDL governs ranges and cardinality, the oracle
+   only proves byte shapes): an empty field is rejected though
+   pycardano serialises an empty redeemer list with the field
+   present (a10580, probed in the generator); tag 6, an index of
+   2^32 and a negative ex-unit are rejected though pycardano
+   serialises the last two (both probed); a datum must be a
+   real plutus_data (constructor, map, list, integer incl.
+   bignum tags 2/3, or a byte string of at most 64 bytes — a
+   65-byte datum and a text datum are rejected) and is shown
+   rendered plus its datum hash, blake2b-256 of its exact
+   bytes — the hash the script data hash commits to.
+   Validation REUSES the proven witness set decoder via a
+   synthetic one-key witness set — the script data hash
+   calculator's seam — so there is no second redeemer gate to
+   drift: this function cleans the input, wraps it as key 5 and
+   returns that decoder's redeemers. A whole witness set pasted
+   here is refused (its map keys are integers, not [tag, index]
+   pairs) — the witness set decoder above reads those. Entries
+   are shown in the order encoded. Input capped at max_tx_size
+   (16,384) like the transaction tools. Proven against
+   pycardano 0.19.2's TransactionWitnessSet serialisations in
+   scratch (redeemers_py.py / redeemers_vectors.json, each
+   field extracted by span from a whole witness set, re-wrapped
+   and read back by the oracle in the generator): a single
+   redeemer, the two-entry array form, the same redeemer twice
+   in array form, the range extremes (proposing tag, index
+   2^32−1, ex-units at max_int64), the two-entry map form, a
+   bignum datum in map form, and the redeemers of a REAL
+   mainnet transaction (the Plutus transaction the witness
+   tests carry, fetched via Koios) all decode field-for-field.
+   Display only — a redeemer index is only checked for range
+   here; whether it points at a real input, policy or voter
+   needs the body too (the full transaction decoder's
+   cross-check), and nothing is signed or sent. */
+function parseRedeemersCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var w = parseWitnessSetCbor("a105" + bytesToHex(bytes));
+  if (w === null || w.redeemers === null) return null;
+  return { form: w.redeemers.form, entries: w.redeemers.entries, count: w.redeemers.entries.length };
+}
+
 /* Full transaction decoder — a WHOLE transaction on its own:
    the four-element Conway array [body, witness_set, is_valid,
    auxiliary_data / nil] that cardano-cli and wallets emit (CDDL
@@ -4540,7 +4603,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5221,6 +5284,24 @@ if (typeof document !== "undefined") {
       }
       if (total === 0) lines.push("This witness set is empty — it authorises nothing on its own; a transaction carrying it would need its witnesses supplied another way.");
       lines.push("Signatures are shown as carried, not verified — checking one needs the transaction body it signs.");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- redeemers decoder (a standalone redeemers field's CBOR) --- */
+    document.getElementById("redeemersdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseRedeemersCbor(document.getElementById("redeemersdecode-input").value);
+      var out = document.getElementById("redeemersdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one redeemers field (witness set key 5): the legacy array of [tag, index, data, ex-units] entries, or the Conway map from [tag, index] to [data, ex-units] — non-empty either way, tags 0–5, indices within 32 bits, data a real Plutus datum and ex-units within int64. A whole witness set is a different shape — the witness set decoder above reads those.";
+        return;
+      }
+      var lines = [];
+      lines.push("Redeemers (" + (res.form === "map" ? "Conway map form" : "legacy array form") + ") — " + res.count + (res.count === 1 ? " redeemer" : " redeemers") + ":");
+      res.entries.forEach(function (rd) {
+        lines.push("  " + rd.tagName + " #" + rd.index + ": data " + rd.data + " (datum hash " + rd.dataHash + ") — ex-units mem " + rd.exUnits.mem + ", steps " + rd.exUnits.steps);
+      });
+      lines.push("Each index addresses the transaction's canonically ordered inputs, mint policies, certificates, withdrawals, voters or proposals — whether it points at a real one needs the body too (the full transaction decoder checks that).");
       out.textContent = lines.join("\n");
     });
 

@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=41"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=42"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -1198,6 +1198,40 @@ check("cip68: version-4 nested 721 map unpacked per policy and asset", (() => { 
 check("cip68: generic (non-map) metadata shown uninterpreted", (() => { const a = app.parseCip68(CIP68_GENERIC_LIST, ""); const b = app.parseCip68(CIP68_GENERIC_INT, ""); return a !== null && a.form === "generic" && a.version === "2" && b !== null && b.genericRendered === "7"; })());
 check("cip68: rejects two fields, constructor 1, a text or negative version, an integer key and a repeated key", (() => { return [CIP68_BAD_TWO_FIELDS, CIP68_BAD_CONSTR1, CIP68_BAD_VERSION_TEXT, CIP68_BAD_VERSION_NEG, CIP68_BAD_KEY_INT, CIP68_BAD_KEY_DUP].every(function (h) { return app.parseCip68(h, "") === null; }) && app.parseCip68(CIP68_NFT_DIRECT, "xyz") === null && app.parseCip68(CIP68_NFT_DIRECT, "aa".repeat(33)) === null; })());
 check("cip68: REAL mainnet datum - an ADA Handle reference NFT inline datum (Koios ground truth)", (() => { const r = app.parseCip68(CIP68_REAL_HANDLE, "000de14068657074617365616e"); const g = function (k) { const p = r.props.find(function (x) { return x.key === k; }); return p ? p.text : null; }; return r !== null && r.form === "direct" && r.version === "1" && g("name") === "$heptasean" && g("mediaType") === "image/jpeg" && g("rarity") === "basic" && g("length") === "9" && g("handle_type") === "handle" && r.asset.label === 222 && r.asset.checksumOk === true && r.asset.contentText === "heptasean" && r.asset.refNameHex === "000643b068657074617365616e" && r.extraIsUnit === false; })());
+
+/* Redeemers decoder — a standalone REDEEMERS field (witness set
+   key 5): redeemers = [+ redeemer] /
+   {+ [tag, index] => [data, ex_units]} — proven against
+   pycardano 0.19.2 TransactionWitnessSet serialisations in
+   scratch (redeemers_py.py / redeemers_vectors.json; each field
+   extracted by span from a whole witness set, re-wrapped and
+   read back by the oracle in the generator). Validation reuses
+   the witness decoder via a synthetic one-key set. */
+const RED_SINGLE = "8184030007820b0d";
+const RED_LIST_TWO = "82840000182a821903e81907d0840101d8799f182a42abcdff82190bb8190fa0";
+const RED_LIST_DUP = "82840000182a821903e81907d0840000182a821903e81907d0";
+const RED_LIST_RANGES = "8184051affffffffd87a9f9f010203ffff821b7fffffffffffffff00";
+const RED_MAP_TWO = "a2820202820782050682040082d87a9f9f010203ffff820708";
+const RED_MAP_BIGNUM = "a182000382c24940000000000000000082090a";
+const RED_REAL = "83840000d87980821962d91a007cc793840001d87980821a00012dfc1a0166fa60840300d8799f009f1a001e8480ff4100d87a809fd87a80ffff821a00143bbd1a197896b8";
+check("redeemersdecode form present", html.includes('id="redeemersdecode"') && html.includes('id="redeemersdecode-input"') && html.includes('id="redeemersdecode-result"'));
+check("redeemers: single reward redeemer, int datum (pycardano)", (() => { const r = app.parseRedeemersCbor(RED_SINGLE); return r !== null && r.form === "list" && r.count === 1 && r.entries[0].tagName === "reward" && r.entries[0].index === 0 && r.entries[0].data === "7" && r.entries[0].exUnits.mem === "11" && r.entries[0].exUnits.steps === "13"; })());
+check("redeemers: list form, spend int + mint Constr with oracle datum hash (pycardano)", (() => { const r = app.parseRedeemersCbor(RED_LIST_TWO); return r !== null && r.form === "list" && r.count === 2 && r.entries[0].tagName === "spend" && r.entries[0].data === "42" && r.entries[0].exUnits.mem === "1000" && r.entries[1].tagName === "mint" && r.entries[1].dataHash === "d0e694c9b08a78c818a1aba1309781585bc3b857ae4db443f632d10269b7e790"; })());
+check("redeemers: list form keeps a duplicated redeemer (a list, not a map)", (() => { const r = app.parseRedeemersCbor(RED_LIST_DUP); return r !== null && r.count === 2 && r.entries[0].tagName === "spend" && r.entries[1].tagName === "spend" && r.entries[1].exUnits.steps === "2000"; })());
+check("redeemers: range extremes — proposing, index 2^32-1, mem at max_int64, steps 0 (pycardano)", (() => { const r = app.parseRedeemersCbor(RED_LIST_RANGES); return r !== null && r.entries[0].tagName === "proposing" && r.entries[0].index === 4294967295 && r.entries[0].exUnits.mem === "9223372036854775807" && r.entries[0].exUnits.steps === "0" && r.entries[0].dataHash === "f497577750467d207127046aa6772ed879418c48c3007fcaa1b052fb4063a696"; })());
+check("redeemers: map form, cert + voting entries (pycardano)", (() => { const r = app.parseRedeemersCbor(RED_MAP_TWO); return r !== null && r.form === "map" && r.count === 2 && r.entries[0].tagName === "cert" && r.entries[0].index === 2 && r.entries[0].data === "7" && r.entries[1].tagName === "voting" && r.entries[1].exUnits.mem === "7"; })());
+check("redeemers: map form bignum datum 2^70 renders exactly, hash over exact bytes (pycardano + hashlib)", (() => { const r = app.parseRedeemersCbor(RED_MAP_BIGNUM); return r !== null && r.form === "map" && r.entries[0].tagName === "spend" && r.entries[0].index === 3 && r.entries[0].data === "1180591620717411303424" && r.entries[0].dataHash === "343b3131410382547e1196df33bd4ce6382adee1fdaea07431158879a37684c3"; })());
+check("redeemers: REAL mainnet tx — spend#0/#1 + reward#0, oracle budgets and datum hashes (Koios ground truth)", (() => { const r = app.parseRedeemersCbor(RED_REAL); return r !== null && r.form === "list" && r.count === 3 && r.entries[0].tagName === "spend" && r.entries[0].exUnits.mem === "25305" && r.entries[0].exUnits.steps === "8177555" && r.entries[1].index === 1 && r.entries[1].exUnits.mem === "77308" && r.entries[2].tagName === "reward" && r.entries[2].dataHash === "51fc08f01ff3579399700ae5c1647f9e9ba26b50ef485586546eb1b76a9fd2ee"; })());
+check("redeemers: rejects empty array and empty map (grammar [+ ] / {+ }; oracle serialises an empty list)",
+  app.parseRedeemersCbor("80") === null && app.parseRedeemersCbor("a0") === null);
+check("redeemers: rejects tag 6, index 2^32 and negative ex-units (oracle serialises the last two)",
+  app.parseRedeemersCbor("8184060001820102") === null && app.parseRedeemersCbor("818400" + "1b0000000100000000" + "182a820102") === null && app.parseRedeemersCbor("81840000182a82201907d0") === null);
+check("redeemers: rejects ex-units above max_int64, a 65-byte datum and a text datum",
+  app.parseRedeemersCbor("81840000182a82" + "1b8000000000000000" + "00") === null && app.parseRedeemersCbor("81840000" + "5841" + "00".repeat(65) + "820102") === null && app.parseRedeemersCbor("818400006178820102") === null);
+check("redeemers: rejects a duplicate map key, a 3-item redeemer and a 1-item map value",
+  app.parseRedeemersCbor("a2820001820102820001820304") === null && app.parseRedeemersCbor("81830000182a") === null && app.parseRedeemersCbor("a182000181182a") === null);
+check("redeemers: rejects a whole witness set, trailing bytes, empty and garbage",
+  app.parseRedeemersCbor("a105" + RED_LIST_TWO) === null && app.parseRedeemersCbor(RED_LIST_TWO + "00") === null && app.parseRedeemersCbor("") === null && app.parseRedeemersCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

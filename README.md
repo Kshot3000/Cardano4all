@@ -615,6 +615,44 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   set (from the Plutus transaction the inspector tests
   carry, fetched via Koios), whose key hash matches its
   body's required signer.
+- **Redeemers decoder** — a standalone redeemers field on
+  its own (witness set key 5): the instructions a
+  transaction gives its Plutus scripts — which script runs,
+  on what, with what data and what execution budget. Conway
+  CDDL `redeemers = [+ redeemer] /
+  {+ [tag, index] => [data, ex_units]}`, redeemer_tag 0–5
+  (spend, mint, cert, reward, voting, proposing), index
+  `uint .size 4`, data `plutus_data`, ex-units each
+  `0..max_int64`; both forms must name at least one
+  redeemer. The two forms differ in exactly one semantic:
+  the array form is a list, so the same redeemer twice
+  decodes as two entries (the oracle serialises it so),
+  while the map form is keyed by `[tag, index]`, so a
+  repeated key is rejected. The remaining gates overrule
+  the oracle (probed in the generator): pycardano 0.19.2
+  serialises an empty redeemer list with the field present
+  (`a10580`), an index of 2^32 and a negative ex-unit —
+  all rejected here per the CDDL. Each datum is shown
+  rendered plus its datum hash, blake2b-256 of its exact
+  bytes. Validation reuses the proven witness set decoder
+  via a synthetic one-key witness set — the script data
+  hash calculator's seam — so there is no second redeemer
+  gate to drift; a whole witness set pasted here is
+  refused (its map keys are integers, not `[tag, index]`
+  pairs). Whether an index points at a real input, policy
+  or voter needs the body too — that is the full
+  transaction decoder's cross-check below. Proven against
+  pycardano 0.19.2's `TransactionWitnessSet` serialisations
+  (each field extracted by span from a whole witness set,
+  re-wrapped and read back by the oracle in the
+  generator): a single redeemer, the two-entry array form,
+  the same redeemer twice, the range extremes (proposing
+  tag, index 2^32−1, ex-units at max_int64), the two-entry
+  map form, a bignum (2^70) datum in map form, and the
+  redeemers of a real mainnet transaction (the Plutus
+  transaction the witness tests carry, fetched via
+  Koios — spend #0 and #1 plus reward #0, budgets and
+  datum hashes read off the oracle's parse).
 - **Full transaction decoder** — a whole transaction on its
   own: the four-element Conway array `[body, witness_set,
   is_valid, auxiliary_data / nil]` (the three-element form
