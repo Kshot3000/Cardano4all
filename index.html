@@ -347,6 +347,14 @@
         <button type="submit" class="btn primary">Decode proposals</button>
         <p id="proposalsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="auxdecode">
+        <h3>Auxiliary data decoder</h3>
+        <p>One transaction's <strong>auxiliary data</strong> on its own — the metadata and auxiliary scripts the transaction carries <em>beside</em> its body (the body only holds this block's blake2b-256 hash, at key 7, which is shown with the decode so the two can be matched). All <strong>three</strong> serialisations decode: a <strong>bare metadata map</strong> (labels are unsigned 64-bit integers; values nest freely — maps, lists, integers including the bignum forms, byte and text strings of at most <strong>64 bytes</strong> each, the ledger's own caps), the <strong>Shelley-era array</strong> of metadata and native scripts, and the <strong>Alonzo-era map</strong> under CBOR tag 259 carrying metadata, native scripts and Plutus V1, V2 and V3 scripts, every key optional. Native scripts decode recursively — <em>sig</em>, <em>all</em>, <em>any</em>, <em>atLeast</em>, <em>after</em> and <em>before</em> — and every script is shown with its <strong>script hash</strong>, taken over its exact serialised bytes. A whole transaction is decoded by the transaction inspector above.</p>
+        <label for="auxdecode-input">Auxiliary data CBOR (hex)</label>
+        <textarea id="auxdecode-input" rows="3" spellcheck="false" placeholder="e.g. a2… (a bare metadata map) — or d90103… for the tag-259 form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode auxiliary data</button>
+        <p id="auxdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -537,6 +545,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=35"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>

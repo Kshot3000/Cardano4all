@@ -426,6 +426,45 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   over two accounts, a committee update, and a two-proposal
   field in encoded order decode field-for-field, alongside
   the CDDL-built hard-fork and cost-models vectors.
+- **Auxiliary data decoder** — one transaction's auxiliary
+  data block on its own: the metadata and auxiliary scripts
+  carried beside the body (the body commits only to this
+  block's blake2b-256 hash at key 7, and the decode shows
+  that hash so the two can be matched). All three Conway
+  CDDL forms decode: a bare metadata map, the Shelley-era
+  array `[metadata, [* native_script]]`, and the Alonzo-era
+  map under CBOR tag 259 (`? 0` metadata, `? 1` native
+  scripts, `? 2/3/4` Plutus V1/V2/V3 scripts — every key
+  optional, no key repeated, no other key admitted). A
+  metadatum is a map, a list, an integer, or a byte or text
+  string of at most 64 bytes, nested freely — the two size
+  caps are the ledger's, and pycardano 0.19.2 agrees for
+  once (it raises on a 65-byte string of either kind).
+  Labels are `uint .size 8` per the CDDL (the ledger type
+  is Word64) and a repeated label is rejected; two oracle
+  divergences are recorded here so nobody "aligns" them
+  away: pycardano serialises a negative label (`a1 20 01`)
+  and a bignum label the ledger cannot hold, so the CDDL
+  governs labels. Integer values are the ledger's
+  arbitrary-precision Integer, so the bignum forms (CBOR
+  tags 2 and 3) decode to their exact decimal — the
+  oracle emits those too. Native scripts decode
+  recursively (sig / all / any / atLeast — the count is
+  not capped at the list length, the CDDL states no such
+  bound and the oracle serialises 5-of-1 — after /
+  before), and every script, native or Plutus, is shown
+  with its script hash: blake2b-224 of the language tag
+  byte followed by the script's exact serialised bytes,
+  recovered from the parse spans for native scripts,
+  never re-serialised. Proven against pycardano 0.19.2's
+  `AuxiliaryData` serialisation (round-trip asserted in
+  the generator): bare metadata, empty metadata, the
+  Shelley array, the full Alonzo map (metadata, a
+  timelock and all three Plutus versions), a scripts-only
+  Alonzo map and a metadata-only one decode
+  field-for-field, with native script hashes matching
+  pycardano's own and Plutus hashes cross-checked against
+  hashlib's blake2b-224.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via
