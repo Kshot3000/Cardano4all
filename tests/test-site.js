@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=31"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=32"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -850,6 +850,36 @@ check("refinputsdecode rejects duplicate reference (a set; pycardano round-trips
 check("refinputsdecode rejects index 65536 (CDDL .size 2; pycardano emits it)", app.parseRefInputsCbor("81" + "825820" + IN_H1 + "1a00010000") === null);
 check("refinputsdecode rejects a lone reference, short hash, negative index", app.parseRefInputsCbor(IN_ONE) === null && app.parseRefInputsCbor("818241" + "aa".repeat(31) + "00") === null && app.parseRefInputsCbor("81825820" + IN_H1 + "20") === null);
 check("refinputsdecode rejects trailing bytes, other tags, wrong shapes", app.parseRefInputsCbor("81" + IN_ONE + "00") === null && app.parseRefInputsCbor("d81881" + IN_ONE) === null && app.parseRefInputsCbor("a0") === null && app.parseRefInputsCbor("") === null && app.parseRefInputsCbor("zzzz") === null);
+
+/* collateral inputs decoder — a standalone collateral field's CBOR
+   (body key 13). All hex vectors are pycardano 0.19.2 TransactionBody
+   serialisations (scratch collateral_py.py /
+   collateral_vectors.json), self-verified by TransactionBody.from_cbor
+   round-trip in the generator (encoded ORDER asserted, not sorted).
+   The entry shape is the inputs decoder's (transaction_input =
+   [hash32, uint .size 2]) and the field rule is the Conway CDDL's
+   nonempty_set<transaction_input> (#6.258([+ a]) / [+ a]) — hence
+   the empty set is rejected by the GRAMMAR ITSELF, like the signers
+   and reference-inputs fields — plus the gate no sibling field has:
+   at most 3 entries, under the live protocol parameter
+   max_collateral_inputs = 3 (Koios epoch_params, epoch 660,
+   verified 2026-10-08; the ledger's TooManyCollateralInputs rule).
+   A repeated reference, an index of 65,536 and FOUR entries are all
+   rejected even though pycardano serialises every one of them: the
+   CDDL and the live protocol parameters govern cardinality, ranges
+   and set semantics, the oracle only proves byte shapes (the mint
+   run's split). */
+check("collateraldecode form present", html.includes('id="collateraldecode"') && html.includes('id="collateraldecode-input"') && html.includes('id="collateraldecode-result"'));
+check("collateraldecode single entry (pycardano)", (() => { const r = app.parseCollateralCbor("81" + "825820" + IN_H2 + "01"); return r !== null && r.count === 1 && r.entries[0].txHash === IN_H2 && r.entries[0].index === 1 && r.entries[0].ref === IN_H2 + "#1"; })());
+check("collateraldecode three entries at the cap, incl. index max + same tx at two indices (pycardano)", (() => { const r = app.parseCollateralCbor("83" + IN_ONE + "825820" + IN_H2 + "19ffff" + "825820" + IN_H1 + "07"); return r !== null && r.count === 3 && r.entries[0].ref === IN_H1 + "#0" && r.entries[1].index === 65535 && r.entries[2].ref === IN_H1 + "#7"; })());
+check("collateraldecode reversed three keep encoded order (pycardano)", (() => { const r = app.parseCollateralCbor("83825820" + IN_H1 + "07" + "825820" + IN_H2 + "19ffff" + IN_ONE); return r !== null && r.count === 3 && r.entries[0].ref === IN_H1 + "#7" && r.entries[1].ref === IN_H2 + "#65535" && r.entries[2].ref === IN_H1 + "#0"; })());
+check("collateraldecode tag-258 set form decodes the same (CDDL nonempty_set)", (() => { const r = app.parseCollateralCbor("d9010283" + IN_ONE + "825820" + IN_H2 + "19ffff" + "825820" + IN_H1 + "07"); return r !== null && r.count === 3 && r.entries[0].ref === IN_H1 + "#0" && r.entries[2].index === 7; })());
+check("collateraldecode rejects four entries (live pp max_collateral_inputs = 3; pycardano emits four)", app.parseCollateralCbor("84" + IN_ONE + "825820" + IN_H2 + "01" + "825820" + "aa".repeat(32) + "02" + "825820" + IN_H1 + "07") === null);
+check("collateraldecode rejects empty set, plain and tagged (CDDL [+ a]; pycardano emits 80)", app.parseCollateralCbor("80") === null && app.parseCollateralCbor("d9010280") === null);
+check("collateraldecode rejects duplicate reference (a set; pycardano round-trips it twice)", app.parseCollateralCbor("82" + IN_ONE + IN_ONE) === null);
+check("collateraldecode rejects index 65536 (CDDL .size 2; pycardano emits it)", app.parseCollateralCbor("81" + "825820" + IN_H1 + "1a00010000") === null);
+check("collateraldecode rejects a lone entry, short hash, negative index", app.parseCollateralCbor(IN_ONE) === null && app.parseCollateralCbor("818241" + "aa".repeat(31) + "00") === null && app.parseCollateralCbor("81825820" + IN_H1 + "20") === null);
+check("collateraldecode rejects trailing bytes, other tags, wrong shapes", app.parseCollateralCbor("81" + IN_ONE + "00") === null && app.parseCollateralCbor("d81881" + IN_ONE) === null && app.parseCollateralCbor("a0") === null && app.parseCollateralCbor("") === null && app.parseCollateralCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

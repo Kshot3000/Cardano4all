@@ -250,6 +250,36 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   index maximum, the same pair in the other order, the same
   transaction ID at two indices, and the tag-258 set form of the
   pair all decode field-for-field.
+- **Collateral inputs decoder** — one transaction's collateral
+  field CBOR on its own (body key 13): the UTxOs a script
+  transaction puts at risk — untouched if its Plutus scripts pass,
+  taken as the fee if one fails — in the familiar
+  `transaction-ID#index` form, in the order encoded. The entry
+  shape is the inputs decoder's (`transaction_input =
+  [transaction_id, index]`, `transaction_id = hash32`, index a
+  `uint .size 2`), and the field rule is the Conway CDDL's
+  `nonempty_set<transaction_input>` (`#6.258([+ a]) / [+ a]`), so
+  an empty field is rejected by the grammar itself and repeated
+  references are rejected (a set; the same transaction ID at a
+  different index is a different reference). This field carries
+  one gate no sibling field has, recorded here so nobody removes
+  it as an inconsistency: at most **3 entries**, under the live
+  protocol parameter `max_collateral_inputs` (the ledger's
+  TooManyCollateralInputs validity rule), verified via Koios
+  `epoch_params` for epoch 660 — re-verify it there before
+  changing the constant, because governance can move it. All four
+  gates overrule pycardano, which serialises an empty collateral
+  list to `80` with the field present, a duplicated reference
+  twice (reading it back as two entries), an index of 65,536, and
+  even four collateral inputs (reading them back as four): the
+  CDDL and the live protocol parameters govern cardinality,
+  ranges and set semantics, the oracle only proves byte shapes,
+  the same split as the mint decoder. Proven against pycardano
+  0.19.2's `TransactionBody` serialisation: a single entry, three
+  entries at the cap including the index maximum and the same
+  transaction ID at two indices, the same three in the other
+  order, and the tag-258 set form of the three all decode
+  field-for-field.
 - **Minimum-UTxO calculator** — the least ADA a transaction output may
   hold, by the ledger's own rule: (160 + the output's serialised size) ×
   `coins_per_utxo_size` (4,310 lovelace/byte on mainnet, verified live via

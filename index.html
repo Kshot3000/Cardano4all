@@ -315,6 +315,14 @@
         <button type="submit" class="btn primary">Decode reference inputs</button>
         <p id="refinputsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="collateraldecode">
+        <h3>Collateral inputs decoder</h3>
+        <p>One transaction's <strong>collateral field</strong> on its own — body key 13, the UTxOs a script transaction puts at risk: if its Plutus scripts pass, the collateral is <em>not</em> spent; if a script fails, the ledger takes it as the fee — decoded locally: every entry in the familiar <code>transaction-ID#index</code> form, in the order encoded. The entry shape is the inputs field's — <code>transaction_input = [transaction_id, index]</code>, a 32-byte transaction ID and an index that is a <code>uint .size 2</code> (0–65,535) — and the Conway CDDL makes this field a <strong><code>nonempty_set</code></strong>, so an empty field is forbidden by the grammar itself. This field carries one more rule its siblings don't: at most <strong>3 entries</strong>, the current <code>max_collateral_inputs</code> protocol parameter (checked against the live protocol parameters for epoch 660). Serialised as a plain array or under CBOR set tag 258 — both forms decode here — with no reference repeated (the same transaction at a different index is a different reference). The UTxOs a transaction spends are decoded by the inputs decoder above, the ones it only reads by the reference inputs decoder; a whole transaction by the transaction inspector.</p>
+        <label for="collateraldecode-input">Collateral field CBOR (hex)</label>
+        <textarea id="collateraldecode-input" rows="3" spellcheck="false" placeholder="e.g. 81825820… (one transaction ID) 00 (its output index) — or d90102… for the set form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode collateral</button>
+        <p id="collateraldecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="minutxo">
         <h3>Minimum-UTxO calculator</h3>
         <p>Every transaction output must carry a minimum amount of ADA, set by the ledger itself: <strong>(160 + the output's serialised size in bytes) × 4,310 lovelace</strong> at the current mainnet protocol parameter (<code>coins_per_utxo_size</code>, checked against the live protocol parameters for epoch 660). Native assets, datums and reference scripts all make an output bigger, so they raise its minimum. Describe the output below — this builds its exact serialised bytes locally and applies the ledger formula, it does not estimate from counts. A plain output to a base address needs <strong>978,370 lovelace (0.97837 ADA)</strong>.</p>
@@ -505,6 +513,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>
