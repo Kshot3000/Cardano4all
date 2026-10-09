@@ -3815,6 +3815,67 @@ function parseRedeemersCbor(raw) {
   return { form: w.redeemers.form, entries: w.redeemers.entries, count: w.redeemers.entries.length };
 }
 
+/* Plutus data decoder — a standalone PLUTUS DATA field on its
+   own (witness set key 4): the datums a transaction carries in
+   its witness set for its scripts to consume, which until now
+   only ever appeared inside the witness set decoder, the
+   CIP-68 viewer (which interprets ONE datum as token
+   metadata) and the script data hash calculator (which only
+   counts them). Ledger CDDL (Conway): plutus_data (the field)
+   = nonempty_set<plutus_data> — a set (tag 258 or a plain
+   array; pycardano emits the plain form, the chain also
+   carries the tag-258 form, incl. indefinite-length arrays)
+   with at least one entry, where each entry is a plutus_data:
+   a constructor (tags 121–127 for alternatives 0–6, tags
+   1280–1400 for 7–127) over a list of fields, a map, a list,
+   an integer (incl. the bignum tags 2/3), or a byte string of
+   at most 64 bytes — a text string is NOT plutus_data and a
+   65-byte byte string is refused, both overruling the oracle,
+   which serialises both when handed them as raw CBOR (probed
+   in the generator). An empty field is refused though
+   pycardano serialises one (a10480, probed). SET SEMANTICS,
+   recorded so nobody "fixes" it either way: the field is a
+   set, but the wire can carry the same datum twice (pycardano
+   serialises a duplicated datum twice, probed) and this
+   decoder — like the witness set decoder it delegates to —
+   shows entries exactly as encoded, in encoded order; a
+   datum hash lookup does not care which copy it finds.
+   Validation REUSES the proven witness set decoder via a
+   synthetic one-key witness set — the same seam the
+   redeemers decoder and the script data hash calculator use —
+   so there is no second datum gate to drift: this function
+   cleans the input, wraps it as key 4 and returns that
+   decoder's Plutus data, each entry rendered plus its datum
+   hash, blake2b-256 over its EXACT span bytes (the hash an
+   output commits to when it carries a datum by hash). A whole
+   witness set pasted here is refused (its top level is a map,
+   not a set) — the witness set decoder above reads those, and
+   a single bare datum is refused (it is not the field).
+   Input capped at max_tx_size (16,384) like the transaction
+   tools. Proven against pycardano 0.19.2's
+   TransactionWitnessSet serialisations in scratch
+   (datums_py.py / datums_vectors.json, each field extracted
+   by span from a whole witness set, re-wrapped and read back
+   by the oracle in the generator): a plain integer, a bounded
+   byte string, a Constr datum, a five-entry mix (Constr,
+   Constr over an indefinite list, bytes, an indefinite list,
+   a map), both bignum signs (2^70 and −2^70), and the Plutus
+   data of a REAL mainnet transaction fetched via Koios this
+   run (block 14043871, tx e626d875… — a tag-258 set over an
+   indefinite array holding two Constr datums; the stored
+   REAL_TX's witness set carries keys 0/5 only, its outputs
+   use inline datums) all decode hash-for-hash. Display only —
+   which output or redeemer a datum belongs to needs the rest
+   of the transaction (the full transaction decoder's datum
+   availability check), and nothing is signed or sent. */
+function parseDatumsCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var w = parseWitnessSetCbor("a104" + bytesToHex(bytes));
+  if (w === null || w.plutusData.length === 0) return null;
+  return { entries: w.plutusData, count: w.plutusData.length };
+}
+
 /* Full transaction decoder — a WHOLE transaction on its own:
    the four-element Conway array [body, witness_set, is_valid,
    auxiliary_data / nil] that cardano-cli and wallets emit (CDDL
@@ -4603,7 +4664,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5302,6 +5363,24 @@ if (typeof document !== "undefined") {
         lines.push("  " + rd.tagName + " #" + rd.index + ": data " + rd.data + " (datum hash " + rd.dataHash + ") — ex-units mem " + rd.exUnits.mem + ", steps " + rd.exUnits.steps);
       });
       lines.push("Each index addresses the transaction's canonically ordered inputs, mint policies, certificates, withdrawals, voters or proposals — whether it points at a real one needs the body too (the full transaction decoder checks that).");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- Plutus data decoder (a standalone Plutus data field's CBOR) --- */
+    document.getElementById("datumsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseDatumsCbor(document.getElementById("datumsdecode-input").value);
+      var out = document.getElementById("datumsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one Plutus data field (witness set key 4): a non-empty set of Plutus data (tag 258 or a plain array), each entry a constructor, map, list, integer or byte string of at most 64 bytes. A whole witness set is a different shape — the witness set decoder above reads those; a single bare datum is not the field.";
+        return;
+      }
+      var lines = [];
+      lines.push("Plutus data — " + res.count + (res.count === 1 ? " datum" : " datums") + ", in the order encoded:");
+      res.entries.forEach(function (d, i) {
+        lines.push("  #" + i + ": " + d.data + " (datum hash " + d.hash + ")");
+      });
+      lines.push("Each datum hash is blake2b-256 over the datum's exact bytes — the hash an output carries when it references a datum instead of inlining it. Which output or redeemer consumes a datum needs the rest of the transaction (the full transaction decoder checks datum availability).");
       out.textContent = lines.join("\n");
     });
 

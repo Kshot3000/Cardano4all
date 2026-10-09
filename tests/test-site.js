@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=42"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=43"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -1232,6 +1232,39 @@ check("redeemers: rejects a duplicate map key, a 3-item redeemer and a 1-item ma
   app.parseRedeemersCbor("a2820001820102820001820304") === null && app.parseRedeemersCbor("81830000182a") === null && app.parseRedeemersCbor("a182000181182a") === null);
 check("redeemers: rejects a whole witness set, trailing bytes, empty and garbage",
   app.parseRedeemersCbor("a105" + RED_LIST_TWO) === null && app.parseRedeemersCbor(RED_LIST_TWO + "00") === null && app.parseRedeemersCbor("") === null && app.parseRedeemersCbor("zzzz") === null);
+
+/* Plutus data decoder — a standalone PLUTUS DATA field (witness
+   set key 4): plutus_data = nonempty_set<plutus_data> — proven
+   against pycardano 0.19.2 TransactionWitnessSet serialisations
+   in scratch (datums_py.py / datums_vectors.json; each field
+   extracted by span from a whole witness set, re-wrapped and
+   read back by the oracle in the generator) and a REAL mainnet
+   transaction fetched via Koios (block 14043871, tx e626d875…;
+   the stored REAL_TX's witness set carries keys 0/5 only).
+   Validation reuses the witness decoder via a synthetic
+   one-key set. Datum hashes are blake2b-256 over exact bytes. */
+const DAT_INT = "81182a";
+const DAT_BYTES = "8142abcd";
+const DAT_CONSTR = "81d8799f182a42abcdff";
+const DAT_MIXED = "85d8799f182a42abcdffd87a9f9f010203ffff42abcd9f010203ffa10102";
+const DAT_BIGNUM = "81c249400000000000000000";
+const DAT_NEGBIG = "81c3493fffffffffffffffff";
+const DAT_DUP = "82d8799f182a42abcdffd8799f182a42abcdff";
+const DAT_REAL = "d901029fd8799fd8799fd8799f581c6ed83ad3525c05c68c6a5b78efdadaa4c81ed1338edcc7b48f43c317ffd8799fd8799fd8799f581c74b54cbbd83e938af0580c58e56ccadd48fb6d988d694816d5c65708ffffffffd8799fd8799f581c6ed83ad3525c05c68c6a5b78efdadaa4c81ed1338edcc7b48f43c317ffd8799fd8799fd8799f581c74b54cbbd83e938af0580c58e56ccadd48fb6d988d694816d5c65708ffffffffd87a80d8799fd8799f581ca0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c23545484f534b59ff1b0000000365d98c71ff1a001e84801a001e8480ffd8799fd8799f4040ffd8799f581ca0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c23545484f534b59ff1b0000001f077430cc1b0000002643034badd8799fd8799fd8799fd8799f581caafb1196434cb837fd6f21323ca37b302dff6387e8a84b3fa28faf56ffd8799fd8799fd8799f581c52563c5410bff6a0d43ccebb7c37e1f69f5eb260552521adff33b9c2ffffffffd87a80ffffffff";
+check("datumsdecode form present", html.includes('id="datumsdecode"') && html.includes('id="datumsdecode-input"') && html.includes('id="datumsdecode-result"'));
+check("datums: single integer datum renders + hashes (pycardano)", (() => { const r = app.parseDatumsCbor(DAT_INT); return r !== null && r.count === 1 && r.entries[0].data === "42"; })());
+check("datums: bounded byte string datum, hash over exact bytes (pycardano)", (() => { const r = app.parseDatumsCbor(DAT_BYTES); return r !== null && r.count === 1 && r.entries[0].data === "h'abcd'" && r.entries[0].hash === "59b29dbfec63f800da0b13c8e95417f03f2228bd355f4f397a44c52ca8164fb3"; })());
+check("datums: Constr datum (pycardano)", (() => { const r = app.parseDatumsCbor(DAT_CONSTR); return r !== null && r.count === 1 && r.entries[0].data.indexOf("Constr 0") === 0 && r.entries[0].hash === "d0e694c9b08a78c818a1aba1309781585bc3b857ae4db443f632d10269b7e790"; })());
+check("datums: five-entry mix — Constr, Constr over indefinite list, bytes, indefinite list, map; every hash matches the oracle (pycardano)", (() => { const r = app.parseDatumsCbor(DAT_MIXED); const H = ["d0e694c9b08a78c818a1aba1309781585bc3b857ae4db443f632d10269b7e790", "f497577750467d207127046aa6772ed879418c48c3007fcaa1b052fb4063a696", "59b29dbfec63f800da0b13c8e95417f03f2228bd355f4f397a44c52ca8164fb3", "f0a17eb5c0975464fd9bc2c440077c5a6866cec49c6ff50291c23af47e8223f1", "83eeb4193576c3f615697a300067662b2154b6753a3c6596eda5822a2d658dc0"]; return r !== null && r.count === 5 && r.entries.every((e, i) => e.hash === H[i]); })());
+check("datums: bignum 2^70 and -2^70 render exactly (pycardano)", (() => { const a = app.parseDatumsCbor(DAT_BIGNUM); const b = app.parseDatumsCbor(DAT_NEGBIG); return a !== null && a.entries[0].data === "1180591620717411303424" && a.entries[0].hash === "343b3131410382547e1196df33bd4ce6382adee1fdaea07431158879a37684c3" && b !== null && b.entries[0].data === "-1180591620717411303424" && b.entries[0].hash === "f7e382cb0766ef43ec5370028da18ba7624aff10a87b6149dce65d4ddd5d762a"; })());
+check("datums: a duplicated datum decodes as two entries, as encoded (a set on the wire; the oracle serialises it twice)", (() => { const r = app.parseDatumsCbor(DAT_DUP); return r !== null && r.count === 2 && r.entries[0].hash === r.entries[1].hash; })());
+check("datums: REAL mainnet tx — tag-258 indefinite set, two Constr datums, hashes over exact spans (Koios ground truth, block 14043871)", (() => { const r = app.parseDatumsCbor(DAT_REAL); return r !== null && r.count === 2 && r.entries[0].hash === "46d5a9bd6715241f5d81dc8696075e95b43a0940ce4a02a577274e7e3559b0cc" && r.entries[1].hash === "5db8f5faad7497d3b85e18522759be5bc4805937c1bca3133d9a3c1f2b4d6924" && r.entries[0].data.indexOf("Constr 0") === 0; })());
+check("datums: rejects an empty field in both serialisations (grammar nonempty_set; oracle serialises a10480)",
+  app.parseDatumsCbor("80") === null && app.parseDatumsCbor("d9010280") === null);
+check("datums: rejects a 65-byte byte string and a text string (not plutus_data; oracle serialises both as raw CBOR)",
+  app.parseDatumsCbor("815841" + "00".repeat(65)) === null && app.parseDatumsCbor("8163616263") === null);
+check("datums: rejects a bare datum, a whole witness set, trailing bytes, empty and garbage",
+  app.parseDatumsCbor("182a") === null && app.parseDatumsCbor("a104" + DAT_CONSTR) === null && app.parseDatumsCbor(DAT_CONSTR + "00") === null && app.parseDatumsCbor("") === null && app.parseDatumsCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

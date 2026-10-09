@@ -653,6 +653,40 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   transaction the witness tests carry, fetched via
   Koios — spend #0 and #1 plus reward #0, budgets and
   datum hashes read off the oracle's parse).
+- **Plutus data decoder** — a standalone Plutus data field
+  on its own (witness set key 4): the datums a transaction
+  carries in its witness set for its scripts to consume.
+  Conway CDDL: the field is `nonempty_set<plutus_data>` —
+  tag 258 or a plain array (pycardano emits the plain form;
+  the chain also carries tag-258 sets over indefinite
+  arrays), at least one entry, each entry a real
+  `plutus_data`: a constructor, a map, a list, an integer
+  (bignum tags included) or a byte string of at most 64
+  bytes. An empty field, a 65-byte byte string and a text
+  string are all rejected — the last two overrule the
+  oracle, which serialises both when handed them as raw
+  CBOR (probed in the generator), and pycardano serialises
+  an empty field too (`a10480`). One recorded wire fact:
+  the field is a set, but the same datum can appear twice
+  on the wire (the oracle serialises a duplicate twice) and
+  the decoder shows entries exactly as encoded, in encoded
+  order. Each datum is shown rendered plus its datum hash,
+  blake2b-256 over its exact bytes — the hash an output
+  carries when it references a datum instead of inlining
+  it. Validation reuses the proven witness set decoder via
+  a synthetic one-key witness set — the redeemers
+  decoder's seam — so there is no second datum gate to
+  drift; a whole witness set or a single bare datum pasted
+  here is refused. Proven against pycardano 0.19.2's
+  `TransactionWitnessSet` serialisations (each field
+  extracted by span from a whole witness set, re-wrapped
+  and read back by the oracle in the generator): a plain
+  integer, a bounded byte string, a Constr datum, a
+  five-entry mix, both bignum signs, and the Plutus data
+  of a real mainnet transaction (fetched via Koios, block
+  14043871 — a tag-258 indefinite set holding two Constr
+  datums; the stored inspector transaction's witness set
+  carries no datums, its outputs use inline datums).
 - **Full transaction decoder** — a whole transaction on its
   own: the four-element Conway array `[body, witness_set,
   is_valid, auxiliary_data / nil]` (the three-element form

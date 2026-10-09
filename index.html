@@ -389,6 +389,14 @@
         <button type="submit" class="btn primary">Decode redeemers</button>
         <p id="redeemersdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="datumsdecode">
+        <h3>Plutus data decoder</h3>
+        <p>A transaction's <strong>Plutus data</strong> on its own — witness set key 4, the <strong>datums</strong> a transaction carries in its witness set for its scripts to consume. The field is a <strong>non-empty set</strong> (tag 258 or a plain array, indefinite-length arrays included), and every entry must be a real Plutus datum: a <strong>constructor</strong>, a <strong>map</strong>, a <strong>list</strong>, an <strong>integer</strong> (the bignum forms included) or a <strong>byte string of at most 64 bytes</strong> — a text string is not Plutus data and is refused. Each datum is shown rendered, with its <strong>datum hash</strong>: blake2b-256 over its exact bytes, the hash an output carries when it references a datum instead of inlining it. Entries are shown exactly as encoded, in encoded order. Which output or redeemer consumes a datum needs the rest of the transaction — the full transaction decoder below checks datum availability. Decoded locally; nothing is signed or sent.</p>
+        <label for="datumsdecode-input">Plutus data CBOR (hex)</label>
+        <textarea id="datumsdecode-input" rows="3" spellcheck="false" placeholder="e.g. d90102… (a set of Plutus data)" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode Plutus data</button>
+        <p id="datumsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="fulltxdecode">
         <h3>Full transaction decoder</h3>
         <p>A <strong>whole transaction</strong> on its own — the array <code>cardano-cli</code> and wallets actually emit: <strong>[body, witness set, is-valid flag, auxiliary data]</strong> (the older three-element form without the flag decodes too). The body, the witness set and the auxiliary data each pass through the proven decoders above, and then the parts are <strong>checked against each other</strong> — the checks only a whole transaction makes possible: the <strong>auxiliary data's blake2b-256 hash</strong> against the hash the body commits to at key 7; every <strong>required signer</strong> the body names against the key hashes of the witnesses actually present; every output's <strong>datum hash</strong> against the Plutus data supplied in the witness set; and every <strong>redeemer's index</strong> against the number of inputs, mint policies, certificates, withdrawals, voters or proposals it could point at. If any part fails its own decoder's gates the whole transaction is refused, never partially described. Signatures are <strong>not cryptographically verified</strong>, and the script data hash is not recomputed here — the languages a transaction runs are not all visible inside it (reference scripts live in other outputs); the script data hash calculator below does that job from the witness parts. The checks are structural: the parts agree with each other, or they do not. Decoded locally; nothing is signed or sent.</p>
@@ -601,6 +609,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=42"></script>
+<script src="app.js?v=43"></script>
 </body>
 </html>
