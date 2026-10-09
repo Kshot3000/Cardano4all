@@ -3946,6 +3946,58 @@ function parseDatumsCbor(raw) {
   return { entries: w.plutusData, count: w.plutusData.length };
 }
 
+/* Key witnesses decoder — a standalone VKEY WITNESSES field on
+   its own (witness set key 0): the ordinary Shelley key
+   signatures that authorise a transaction's inputs, which until
+   now only ever appeared inside the witness set decoder and the
+   full transaction decoder's signer check. Ledger CDDL
+   (Conway): the field is nonempty_list<vkeywitness> =
+   #6.258([+ vkeywitness]) / [+ vkeywitness] — tag 258 or a
+   plain array, at least one entry either way — and a
+   vkeywitness is [vkey, signature] with the vkey exactly
+   32 bytes and the signature exactly 64. LIST SEMANTICS, the
+   field's one subtlety, recorded so nobody "fixes" it: the
+   grammar is a list, not a set, so the same witness twice
+   decodes as two entries (pycardano serialises a duplicated
+   witness twice and reads it back as two, probed in the
+   generator) — exactly as the witness set decoder treats key 0.
+   The remaining gates overrule the oracle, also probed:
+   pycardano 0.19.2 serialises an empty field (a10080), a
+   63-byte signature and a 31-byte vkey — all three refused
+   here per the CDDL. Each witness is shown with its key hash,
+   blake2b-224 of the vkey — the hash addresses and required
+   signer lists actually name — so a field can be matched
+   against a body's key 14 without decoding the whole set.
+   Validation REUSES the proven witness set decoder via a
+   synthetic one-key witness set (a100 ‖ field) — the seam the
+   redeemers and Plutus data decoders already use — so there
+   is no second witness gate to drift. A whole witness set
+   pasted here is refused (its top level is a map, not a
+   list) — the witness set decoder above reads those — and a
+   single bare witness is refused (it is not the field).
+   Input capped at max_tx_size (16,384) like the transaction
+   tools. Proven against pycardano 0.19.2's
+   TransactionWitnessSet serialisations in scratch
+   (vkeywit_py.py / vkeywit_vectors.json, each field extracted
+   from a whole witness set, re-wrapped as {0: field} and read
+   back by the oracle in the generator): a single witness, a
+   two-witness field, the same witness twice, the tag-258
+   form, and a REAL mainnet field extracted by span from the
+   stored witness set (one witness, tag-258 form, whose key
+   hash 5b7e2322… is its body's required signer) all decode
+   key-for-key and signature-for-signature. Display only —
+   signatures are shown, never cryptographically verified
+   (that needs the body too — the full transaction decoder
+   performs the signer presence check), and nothing is signed
+   or sent. */
+function parseVkeyWitnessesCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var w = parseWitnessSetCbor("a100" + bytesToHex(bytes));
+  if (w === null || w.vkeyWitnesses.length === 0) return null;
+  return { entries: w.vkeyWitnesses, count: w.vkeyWitnesses.length };
+}
+
 /* Full transaction decoder — a WHOLE transaction on its own:
    the four-element Conway array [body, witness_set, is_valid,
    auxiliary_data / nil] that cardano-cli and wallets emit (CDDL
@@ -4734,7 +4786,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5483,6 +5535,26 @@ if (typeof document !== "undefined") {
         lines.push("  #" + i + ": " + d.data + " (datum hash " + d.hash + ")");
       });
       lines.push("Each datum hash is blake2b-256 over the datum's exact bytes — the hash an output carries when it references a datum instead of inlining it. Which output or redeemer consumes a datum needs the rest of the transaction (the full transaction decoder checks datum availability).");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- key witnesses decoder (a standalone vkey witnesses field's CBOR) --- */
+    document.getElementById("vkeywitnessdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseVkeyWitnessesCbor(document.getElementById("vkeywitnessdecode-input").value);
+      var out = document.getElementById("vkeywitnessdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one key witnesses field (witness set key 0): a non-empty list of [vkey, signature] pairs (tag 258 or a plain array), each vkey exactly 32 bytes and each signature exactly 64. A whole witness set is a different shape — the witness set decoder above reads those; a single bare witness is not the field.";
+        return;
+      }
+      var lines = [];
+      lines.push("Key witnesses — " + res.count + (res.count === 1 ? " witness" : " witnesses") + ", in the order encoded:");
+      res.entries.forEach(function (w, i) {
+        lines.push("  #" + i + ": key " + w.vkey);
+        lines.push("     key hash " + w.keyHash);
+        lines.push("     signature " + w.signature);
+      });
+      lines.push("The key hash is blake2b-224 of the key — the hash a body's required signer list (key 14) names. Signatures are shown as carried, not verified — checking one needs the transaction body it signs (the full transaction decoder checks signer presence).");
       out.textContent = lines.join("\n");
     });
 

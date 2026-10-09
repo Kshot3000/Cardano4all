@@ -712,6 +712,38 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   14043871 — a tag-258 indefinite set holding two Constr
   datums; the stored inspector transaction's witness set
   carries no datums, its outputs use inline datums).
+- **Key witnesses decoder** — a standalone key witnesses
+  field on its own (witness set key 0): the ordinary
+  Shelley key signatures that authorise a transaction's
+  inputs. Conway CDDL: the field is
+  `nonempty_list<vkeywitness>` — tag 258 or a plain array,
+  at least one entry — and a vkeywitness is
+  `[vkey, signature]` with the vkey exactly 32 bytes and
+  the signature exactly 64. The field is a LIST, not a
+  set, so the same witness twice decodes as two entries
+  (pycardano serialises a duplicated witness twice and
+  reads it back as two, probed in the generator) — the
+  same treatment the witness set decoder gives key 0. The
+  remaining gates overrule the oracle, also probed:
+  pycardano 0.19.2 serialises an empty field (`a10080`), a
+  63-byte signature and a 31-byte vkey; all three are
+  refused here per the CDDL. Each witness is shown with
+  its key hash, blake2b-224 of the vkey — the hash a
+  body's required signer list (key 14) names. Validation
+  reuses the proven witness set decoder via a synthetic
+  one-key witness set (`a100` ‖ field), the seam the
+  redeemers and Plutus data decoders use, so there is no
+  second witness gate to drift; a whole witness set or a
+  single bare witness pasted here is refused. Proven
+  against pycardano 0.19.2's `TransactionWitnessSet`
+  serialisations (each field extracted from a whole
+  witness set, re-wrapped as `{0: field}` and read back
+  by the oracle in the generator): a single witness, a
+  two-witness field, the same witness twice, the tag-258
+  form, and a real mainnet field extracted by span from
+  the stored witness set — one witness in tag-258 form
+  whose key hash is its body's required signer.
+  Signatures are shown, never cryptographically verified.
 - **Full transaction decoder** — a whole transaction on its
   own: the four-element Conway array `[body, witness_set,
   is_valid, auxiliary_data / nil]` (the three-element form

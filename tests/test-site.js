@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=44"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=45"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -1295,6 +1295,37 @@ check("datums: rejects a 65-byte byte string and a text string (not plutus_data;
   app.parseDatumsCbor("815841" + "00".repeat(65)) === null && app.parseDatumsCbor("8163616263") === null);
 check("datums: rejects a bare datum, a whole witness set, trailing bytes, empty and garbage",
   app.parseDatumsCbor("182a") === null && app.parseDatumsCbor("a104" + DAT_CONSTR) === null && app.parseDatumsCbor(DAT_CONSTR + "00") === null && app.parseDatumsCbor("") === null && app.parseDatumsCbor("zzzz") === null);
+
+/* Key witnesses decoder — a standalone VKEY WITNESSES field
+   (witness set key 0): nonempty_list<vkeywitness>, each entry
+   [vkey .size 32, signature .size 64] — proven against
+   pycardano 0.19.2 TransactionWitnessSet serialisations in
+   scratch (vkeywit_py.py / vkeywit_vectors.json; each field
+   extracted from a whole witness set, re-wrapped as {0: field}
+   and read back by the oracle in the generator) and a REAL
+   mainnet field extracted by span from the stored witness set
+   (tag-258 form; its key hash is the body's required signer).
+   List semantics: a duplicated witness decodes as two entries.
+   Validation reuses the witness decoder via a synthetic
+   one-key set. Key hashes are blake2b-224 of the vkey. */
+const VW_SINGLE = "81825820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f584011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+const VW_TWO = "82825820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f5840111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111118258207777777777777777777777777777777777777777777777777777777777777777584022222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
+const VW_DUP = "82825820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f584011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111825820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f584011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+const VW_REAL = "d9010281825820c5d63d7dc066df52592135b6d3cb4f3470d06f7bdd4b2d2e32eb59ca3782662f58400b4af3e23a0c5687c3f3ecd2157ba8790bb7bed6d3f21e6ce5cbccc96bb5edd5c8b3d3d9a38642897d797534c7728b32d259dea8d1f6ed0d6ec76ce4c880d901";
+check("vkeywitnessdecode form present", html.includes('id="vkeywitnessdecode"') && html.includes('id="vkeywitnessdecode-input"') && html.includes('id="vkeywitnessdecode-result"'));
+check("vkeywitness: single witness — vkey, blake2b-224 key hash, signature (pycardano)", (() => { const r = app.parseVkeyWitnessesCbor(VW_SINGLE); return r !== null && r.count === 1 && r.entries[0].vkey === "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" && r.entries[0].keyHash === "491112dd01155c07dab485f71b572e0cae759e2cd38b1c0e97554297" && r.entries[0].signature === "11".repeat(64); })());
+check("vkeywitness: two witnesses, second key hash + signature (pycardano)", (() => { const r = app.parseVkeyWitnessesCbor(VW_TWO); return r !== null && r.count === 2 && r.entries[1].vkey === "77".repeat(32) && r.entries[1].keyHash === "91487258bd9141c10be7c8a4039b29e78900c9251e8539fa7392f254" && r.entries[1].signature === "22".repeat(64); })());
+check("vkeywitness: the same witness twice decodes as two entries (a list, not a set; oracle serialises it twice)", (() => { const r = app.parseVkeyWitnessesCbor(VW_DUP); return r !== null && r.count === 2 && r.entries[0].keyHash === r.entries[1].keyHash && r.entries[0].signature === r.entries[1].signature; })());
+check("vkeywitness: tag-258 form of the pair decodes (nonempty_list grammar)", (() => { const r = app.parseVkeyWitnessesCbor("d90102" + VW_TWO); return r !== null && r.count === 2 && r.entries[0].keyHash === "491112dd01155c07dab485f71b572e0cae759e2cd38b1c0e97554297"; })());
+check("vkeywitness: REAL mainnet field — tag-258, one witness, key hash is the body's required signer (Koios ground truth)", (() => { const r = app.parseVkeyWitnessesCbor(VW_REAL); return r !== null && r.count === 1 && r.entries[0].vkey === "c5d63d7dc066df52592135b6d3cb4f3470d06f7bdd4b2d2e32eb59ca3782662f" && r.entries[0].keyHash === "5b7e23228dba75595645fc357d0f97ba258cfccfff5d588d4bb9165b" && r.entries[0].signature.length === 128; })());
+check("vkeywitness: rejects an empty field in both serialisations (grammar nonempty_list; oracle serialises a10080)",
+  app.parseVkeyWitnessesCbor("80") === null && app.parseVkeyWitnessesCbor("d9010280") === null);
+check("vkeywitness: rejects a 63-byte signature and a 31-byte vkey (oracle serialises both)",
+  app.parseVkeyWitnessesCbor("81825820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f583f" + "11".repeat(63)) === null && app.parseVkeyWitnessesCbor("8182581f" + "00".repeat(31) + "5840" + "11".repeat(64)) === null);
+check("vkeywitness: rejects a 3-item witness and a bare witness (not the field)",
+  app.parseVkeyWitnessesCbor("81835820" + "00".repeat(32) + "5840" + "11".repeat(64) + "00") === null && app.parseVkeyWitnessesCbor(VW_SINGLE.slice(2)) === null);
+check("vkeywitness: rejects a whole witness set, trailing bytes, empty and garbage",
+  app.parseVkeyWitnessesCbor("a100" + VW_SINGLE) === null && app.parseVkeyWitnessesCbor(VW_SINGLE + "00") === null && app.parseVkeyWitnessesCbor("") === null && app.parseVkeyWitnessesCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
