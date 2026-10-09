@@ -421,6 +421,14 @@
         <button type="submit" class="btn primary">Decode native scripts</button>
         <p id="nativescriptsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="bootstrapdecode">
+        <h3>Bootstrap witnesses decoder</h3>
+        <p>A transaction's <strong>bootstrap witnesses</strong> on their own — witness set key 2, the witnesses that authorise spending from <strong>Byron-era addresses</strong>. The field is a <strong>non-empty list</strong> (tag 258 or a plain array) of <strong>[public key, signature, chain code, attributes]</strong> entries: each public key exactly <strong>32 bytes</strong>, each signature exactly <strong>64</strong>, while the chain code and attributes are byte strings of <strong>any length, including empty</strong> — the ledger grammar gives them no size, and Byron's HD derivation data rides in them. Because the field is a list, not a set, the same witness twice decodes as two entries, exactly as encoded. Each witness is shown with its <strong>key hash</strong> — blake2b-224 of the public key, the hash a body's required signer list (key 14) names. Signatures are shown as carried, <strong>not cryptographically verified</strong> — checking one needs the transaction body it signs; the full transaction decoder below checks signer presence. Decoded locally; nothing is signed or sent.</p>
+        <label for="bootstrapdecode-input">Bootstrap witnesses CBOR (hex)</label>
+        <textarea id="bootstrapdecode-input" rows="3" spellcheck="false" placeholder="e.g. 81… (a list of [public key, signature, chain code, attributes]) — or d90102… for the set-tagged form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode bootstrap witnesses</button>
+        <p id="bootstrapdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="fulltxdecode">
         <h3>Full transaction decoder</h3>
         <p>A <strong>whole transaction</strong> on its own — the array <code>cardano-cli</code> and wallets actually emit: <strong>[body, witness set, is-valid flag, auxiliary data]</strong> (the older three-element form without the flag decodes too). The body, the witness set and the auxiliary data each pass through the proven decoders above, and then the parts are <strong>checked against each other</strong> — the checks only a whole transaction makes possible: the <strong>auxiliary data's blake2b-256 hash</strong> against the hash the body commits to at key 7; every <strong>required signer</strong> the body names against the key hashes of the witnesses actually present; every output's <strong>datum hash</strong> against the Plutus data supplied in the witness set; and every <strong>redeemer's index</strong> against the number of inputs, mint policies, certificates, withdrawals, voters or proposals it could point at. If any part fails its own decoder's gates the whole transaction is refused, never partially described. Signatures are <strong>not cryptographically verified</strong>, and the script data hash is not recomputed here — the languages a transaction runs are not all visible inside it (reference scripts live in other outputs); the script data hash calculator below does that job from the witness parts. The checks are structural: the parts agree with each other, or they do not. Decoded locally; nothing is signed or sent.</p>
@@ -633,6 +641,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=46"></script>
+<script src="app.js?v=47"></script>
 </body>
 </html>

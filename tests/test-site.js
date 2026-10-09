@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=46"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=47"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -1363,6 +1363,43 @@ check("nativescripts: rejects a negative atLeast threshold and a negative timelo
   app.parseNativeScriptsCbor("81830320818200581c" + "aa".repeat(28)) === null && app.parseNativeScriptsCbor("81820420") === null);
 check("nativescripts: rejects a bare script, a whole witness set, trailing bytes, empty and garbage",
   app.parseNativeScriptsCbor(NS_SIG.slice(2)) === null && app.parseNativeScriptsCbor("a101" + NS_SIG) === null && app.parseNativeScriptsCbor(NS_SIG + "00") === null && app.parseNativeScriptsCbor("") === null && app.parseNativeScriptsCbor("zzzz") === null);
+
+/* Bootstrap witnesses decoder — a standalone BOOTSTRAP
+   WITNESSES field (witness set key 2): nonempty_list<
+   bootstrap_witness>, each entry [public_key .size 32,
+   signature .size 64, chain_code bytes, attributes bytes]
+   — the last two UNSIZED in the Conway, Shelley and
+   Babbage CDDL texts. pycardano 0.19.2 has NO bootstrap
+   class (List[Any], TODO), so vectors are CDDL-built with
+   RawCBOR and proven by the oracle's from_cbor round-trip
+   in scratch (bootstrap_py.py / bootstrap_vectors.json;
+   each field extracted by span, re-wrapped as {2: field}
+   and read back). Because the field is untyped, the
+   oracle's passthrough accepts every refused shape too —
+   the size/arity/empty gates rest on the CDDL. The
+   tag-258 form inverts the split: the grammar admits it
+   but the oracle cannot read it back (DeserializeException
+   on the CBORTag). List semantics: a duplicated witness
+   decodes as two entries. Validation reuses the witness
+   decoder via a102. Key hashes are hashlib blake2b-224. */
+const BW_SINGLE = "81845820" + "33".repeat(32) + "5840" + "44".repeat(64) + "5820" + "55".repeat(32) + "44deadbeef";
+const BW_TWO = "82845820" + "33".repeat(32) + "5840" + "44".repeat(64) + "5820" + "55".repeat(32) + "44deadbeef" + "845820" + "77".repeat(32) + "5840" + "88".repeat(64) + "450102030405" + "41a0";
+const BW_EMPTY_CC = "81845820" + "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f" + "5840" + "99".repeat(64) + "4040";
+check("bootstrapdecode form present", html.includes('id="bootstrapdecode"') && html.includes('id="bootstrapdecode-input"') && html.includes('id="bootstrapdecode-result"'));
+check("bootstrap: single witness — public key, blake2b-224 key hash, signature, chain code, attributes (CDDL-built, oracle round-trip)", (() => { const r = app.parseBootstrapWitnessesCbor(BW_SINGLE); return r !== null && r.count === 1 && r.entries[0].publicKey === "33".repeat(32) && r.entries[0].keyHash === "e47bb1c6309ebd06695ae459e69fcf3d585e5f41e3d3d8ce7152b524" && r.entries[0].signature === "44".repeat(64) && r.entries[0].chainCode === "55".repeat(32) && r.entries[0].attributes === "deadbeef"; })());
+check("bootstrap: two witnesses — second carries a 5-byte chain code (no size gate in any era's CDDL)", (() => { const r = app.parseBootstrapWitnessesCbor(BW_TWO); return r !== null && r.count === 2 && r.entries[1].publicKey === "77".repeat(32) && r.entries[1].keyHash === "91487258bd9141c10be7c8a4039b29e78900c9251e8539fa7392f254" && r.entries[1].chainCode === "0102030405" && r.entries[1].attributes === "a0"; })());
+check("bootstrap: the same witness twice decodes as two entries (a list, not a set; oracle reads back two)", (() => { const r = app.parseBootstrapWitnessesCbor("82" + BW_SINGLE.slice(2) + BW_SINGLE.slice(2)); return r !== null && r.count === 2 && r.entries[0].keyHash === r.entries[1].keyHash; })());
+check("bootstrap: empty chain code and empty attributes decode (CDDL types both as plain bytes)", (() => { const r = app.parseBootstrapWitnessesCbor(BW_EMPTY_CC); return r !== null && r.count === 1 && r.entries[0].keyHash === "3d56a149cbd95dffa093ebbf864ceb86113dfe87146812148e0524e7" && r.entries[0].chainCode === "" && r.entries[0].attributes === ""; })());
+check("bootstrap: tag-258 form decodes (nonempty_list grammar; the oracle's untyped field cannot read the tag back)", (() => { const r = app.parseBootstrapWitnessesCbor("d90102" + BW_SINGLE); return r !== null && r.count === 1 && r.entries[0].keyHash === "e47bb1c6309ebd06695ae459e69fcf3d585e5f41e3d3d8ce7152b524"; })());
+check("bootstrap: REAL mainnet field — one witness, chain code and a0 attributes as encoded, hashlib key hash (Koios ground truth, block 14044612)", (() => { const r = app.parseBootstrapWitnessesCbor("818458203a399026d5356873b089878daa09c4a114d237295dfd591c095d3351ce446fb35840b35c9e50a645716ac4be89a9bd9a1439aecb8fb14e89de15c1c68038beea13ea29f6809d30d95c8a5c5900eba091f0e6c63ca6206693e779df9936f4a4caaa0358203a399026d5356873b089878daa09c4a114d237295dfd591c095d3351ce446fb341a0"); return r !== null && r.count === 1 && r.entries[0].publicKey === "3a399026d5356873b089878daa09c4a114d237295dfd591c095d3351ce446fb3" && r.entries[0].keyHash === "7dfad1a7b0afbdc1d901fd069f78593d8a603c14f7b0ae7f001e72d0" && r.entries[0].chainCode === "3a399026d5356873b089878daa09c4a114d237295dfd591c095d3351ce446fb3" && r.entries[0].attributes === "a0"; })());
+check("bootstrap: rejects an empty field in both serialisations (grammar nonempty_list; oracle serialises a10280)",
+  app.parseBootstrapWitnessesCbor("80") === null && app.parseBootstrapWitnessesCbor("d9010280") === null);
+check("bootstrap: rejects a 31-byte public key and a 63-byte signature (CDDL sizes; the oracle's untyped passthrough accepts both)",
+  app.parseBootstrapWitnessesCbor("8184581f" + "33".repeat(31) + "5840" + "44".repeat(64) + "5820" + "55".repeat(32) + "44deadbeef") === null && app.parseBootstrapWitnessesCbor("81845820" + "33".repeat(32) + "583f" + "44".repeat(63) + "5820" + "55".repeat(32) + "44deadbeef") === null);
+check("bootstrap: rejects a 3-item entry and a bare witness (not the field)",
+  app.parseBootstrapWitnessesCbor("81835820" + "33".repeat(32) + "5840" + "44".repeat(64) + "5820" + "55".repeat(32)) === null && app.parseBootstrapWitnessesCbor(BW_SINGLE.slice(2)) === null);
+check("bootstrap: rejects a whole witness set, trailing bytes, empty and garbage",
+  app.parseBootstrapWitnessesCbor("a102" + BW_SINGLE) === null && app.parseBootstrapWitnessesCbor(BW_SINGLE + "00") === null && app.parseBootstrapWitnessesCbor("") === null && app.parseBootstrapWitnessesCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

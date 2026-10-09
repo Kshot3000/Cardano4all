@@ -4086,6 +4086,89 @@ function parseNativeScriptsCbor(raw) {
   return { entries: w.nativeScripts, count: w.nativeScripts.length };
 }
 
+/* Bootstrap witnesses decoder — a standalone BOOTSTRAP
+   WITNESSES field on its own (witness set key 2): the
+   witnesses that authorise spending from BYRON-era
+   (base58, non-HD-checksummed derivation) addresses, which
+   until now only ever appeared inside the witness set
+   decoder and the full transaction decoder's signer check.
+   Ledger CDDL (Conway): the field is
+   nonempty_list<bootstrap_witness> = #6.258([+ w]) /
+   [+ w] — tag 258 or a plain array, at least one entry —
+   and a bootstrap_witness is
+   [public_key, signature, chain_code, attributes] with
+   the public key exactly 32 bytes (vkey) and the signature
+   exactly 64. The chain code and attributes carry NO size
+   in the grammar — plain `bytes` in the Conway, Shelley
+   AND Babbage CDDL texts (verified against all three in
+   the witness set run) — so an entry with an empty chain
+   code and empty attributes DECODES, as does a five-byte
+   chain code: imposing the 32 bytes Byron HD derivation
+   happens to use would invent a gate the ledger does not
+   have. LIST SEMANTICS: the grammar is a list, so the
+   same witness twice decodes as two entries — exactly
+   as the witness set decoder treats key 2. Each witness
+   is shown with its key hash, blake2b-224 of the public
+   key — the hash a body's required signer list (key 14)
+   names for a Byron input too. ORACLE STATE, recorded
+   precisely: pycardano 0.19.2 has NO bootstrap witness
+   class (bootstrap_witness is List[Any] with a TODO in
+   the source), so the vectors are built from the CDDL
+   text with RawCBOR and proven by the oracle's own
+   from_cbor round-trip reading them back (encoder-side
+   proof); because the field is untyped, the oracle's
+   passthrough also ACCEPTS every refused shape probed —
+   an empty field (it serialises one itself, a10280), a
+   31-byte public key, a 63-byte signature and a
+   three-item entry all read back — those gates rest on
+   the CDDL alone. The tag-258 form inverts the usual
+   split: the grammar admits it (nonempty_list) and this
+   decoder accepts it, but the oracle CANNOT read it
+   back (its untyped field raises DeserializeException
+   on the CBORTag) — for this one form the CDDL and the
+   seam's sibling-field precedent are the authorities.
+   Validation REUSES the proven witness set decoder via
+   a synthetic one-key witness set (a102 ‖ field) — the
+   seam the redeemers, Plutus data, key witnesses and
+   native scripts decoders use — so there is no second
+   bootstrap gate to drift. A whole witness set pasted
+   here is refused (its top level is a map, not a list)
+   — the witness set decoder above reads those — and a
+   single bare witness is refused (it is not the field).
+   Input capped at max_tx_size (16,384) like the
+   transaction tools. Proven in scratch (bootstrap_py.py
+   / bootstrap_vectors.json, each field extracted by
+   span from a whole TransactionWitnessSet serialisation,
+   re-wrapped as {2: field} and read back by the oracle
+   in the generator): a single witness, two witnesses
+   (the second carrying a five-byte chain code), the
+   same witness twice, and an entry with empty chain
+   code and empty attributes all decode field-for-field
+   with hashlib key hashes — and two REAL mainnet fields
+   decode field-for-field: this run's Koios hunts
+   span-walked 2,844 recent mainnet witness sets and
+   found exactly two key-2 fields, both in sets carrying
+   key 2 ALONE (Byron-only transactions still occur, in
+   bursts: the two finds sit five blocks apart, blocks
+   14044612 and 14044617, after 2,466 consecutive sets
+   without one). The shipped vector is tx 41aec33c…
+   (block 14044612): one witness whose chain code
+   repeats its public key bytes exactly as encoded and
+   whose attributes are the single byte a0 (an empty
+   map) — shown as carried, not normalised; its key hash
+   7dfad1a7… is hashlib's blake2b-224 of the public key,
+   and the oracle reads the field back as one entry.
+   Display only — signatures are shown,
+   never cryptographically verified, and nothing is
+   signed or sent. */
+function parseBootstrapWitnessesCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var w = parseWitnessSetCbor("a102" + bytesToHex(bytes));
+  if (w === null || w.bootstrapWitnesses.length === 0) return null;
+  return { entries: w.bootstrapWitnesses, count: w.bootstrapWitnesses.length };
+}
+
 /* Full transaction decoder — a WHOLE transaction on its own:
    the four-element Conway array [body, witness_set, is_valid,
    auxiliary_data / nil] that cardano-cli and wallets emit (CDDL
@@ -4874,7 +4957,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5662,6 +5745,28 @@ if (typeof document !== "undefined") {
         lines.push("     script hash " + s.hash);
       });
       lines.push("Each script hash is blake2b-224 over the 0x00 language byte and the script's exact bytes — for a minting script, its policy ID. Whether a script is satisfied (signatures present, slot in range) needs the rest of the transaction; scripts are decoded here, not evaluated.");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- bootstrap witnesses decoder (a standalone bootstrap witnesses field's CBOR) --- */
+    document.getElementById("bootstrapdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseBootstrapWitnessesCbor(document.getElementById("bootstrapdecode-input").value);
+      var out = document.getElementById("bootstrapdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one bootstrap witnesses field (witness set key 2): a non-empty list of [public key, signature, chain code, attributes] entries (tag 258 or a plain array), each public key exactly 32 bytes and each signature exactly 64; the chain code and attributes are byte strings of any length, including empty. A whole witness set is a different shape — the witness set decoder above reads those; a single bare witness is not the field.";
+        return;
+      }
+      var lines = [];
+      lines.push("Bootstrap witnesses — " + res.count + (res.count === 1 ? " witness" : " witnesses") + ", in the order encoded:");
+      res.entries.forEach(function (w, i) {
+        lines.push("  #" + i + ": public key " + w.publicKey);
+        lines.push("     key hash " + w.keyHash);
+        lines.push("     signature " + w.signature);
+        lines.push("     chain code " + (w.chainCode === "" ? "(empty)" : w.chainCode));
+        lines.push("     attributes " + (w.attributes === "" ? "(empty)" : w.attributes));
+      });
+      lines.push("The key hash is blake2b-224 of the public key — the hash a body's required signer list (key 14) names. The chain code and attributes are shown as carried: the ledger grammar gives them no size, and Byron's HD derivation data rides in them. Signatures are shown as carried, not verified — checking one needs the transaction body it signs (the full transaction decoder checks signer presence).");
       out.textContent = lines.join("\n");
     });
 

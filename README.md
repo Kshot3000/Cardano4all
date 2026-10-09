@@ -799,6 +799,62 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   authorises almost entirely with key witnesses and
   Plutus scripts. Scripts are decoded, never evaluated
   — satisfaction needs the transaction around them.
+- **Bootstrap witnesses decoder** — a standalone bootstrap
+  witnesses field on its own (witness set key 2): the
+  witnesses that authorise spending from Byron-era
+  addresses. Conway CDDL: the field is
+  `nonempty_list<bootstrap_witness>` — tag 258 or a plain
+  array, at least one entry — and a bootstrap witness is
+  `[public_key, signature, chain_code, attributes]` with
+  the public key exactly 32 bytes and the signature
+  exactly 64. The chain code and attributes carry NO
+  size in the grammar — plain `bytes` in the Conway,
+  Shelley and Babbage CDDL texts alike — so an entry
+  with an empty chain code and empty attributes decodes,
+  as does a five-byte chain code; the 32 bytes Byron HD
+  derivation happens to use is not a ledger gate. The
+  field is a LIST, so the same witness twice decodes as
+  two entries. Each witness is shown with its key hash,
+  blake2b-224 of the public key — the hash a body's
+  required signer list (key 14) names. Oracle state,
+  recorded precisely: pycardano 0.19.2 has no bootstrap
+  witness class (the field is `List[Any]` with a TODO),
+  so the vectors are built from the CDDL text with
+  `RawCBOR` and proven by the oracle's own `from_cbor`
+  round-trip; because the field is untyped, its
+  passthrough also accepts every refused shape probed
+  (an empty field — it serialises one itself, `a10280` —
+  a 31-byte public key, a 63-byte signature, a
+  three-item entry), so those gates rest on the CDDL
+  alone. The tag-258 form inverts the usual split: the
+  grammar admits it and this decoder accepts it, but the
+  oracle cannot read it back (its untyped field raises
+  on the CBORTag). Validation reuses the proven witness
+  set decoder via a synthetic one-key witness set
+  (`a102` ‖ field), the seam the redeemers, Plutus data,
+  key witnesses and native scripts decoders use; a whole
+  witness set or a single bare witness pasted here is
+  refused. Proven in scratch (`bootstrap_py.py` /
+  `bootstrap_vectors.json`; each field extracted by
+  span from a whole witness set, re-wrapped as
+  `{2: field}` and read back by the oracle in the
+  generator): a single witness, two witnesses (the
+  second with a five-byte chain code), the same witness
+  twice, and an entry with empty chain code and empty
+  attributes — and two real mainnet fields decode
+  field-for-field: this run's Koios hunts span-walked
+  2,844 recent mainnet witness sets and found exactly
+  two key-2 fields, both in sets carrying key 2 alone,
+  five blocks apart (blocks 14044612 and 14044617, after
+  2,466 consecutive sets without one — Byron-only
+  transactions still occur, in bursts). The shipped
+  vector is tx `41aec33c…` (block 14044612): one witness
+  whose chain code repeats its public key bytes exactly
+  as encoded and whose attributes are the single byte
+  `a0`; its key hash `7dfad1a7…` is hashlib's
+  blake2b-224 of the public key, and the oracle reads
+  the field back as one entry. Signatures are shown,
+  never cryptographically verified.
 - **Full transaction decoder** — a whole transaction on its
   own: the four-element Conway array `[body, witness_set,
   is_valid, auxiliary_data / nil]` (the three-element form
