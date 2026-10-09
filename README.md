@@ -744,6 +744,61 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   the stored witness set — one witness in tag-258 form
   whose key hash is its body's required signer.
   Signatures are shown, never cryptographically verified.
+- **Native scripts decoder** — a standalone native scripts
+  field on its own (witness set key 1): the multisig and
+  timelock scripts that authorise script-address inputs
+  and native-script minting policies. Conway CDDL: the
+  field is `nonempty_list<native_script>` — tag 258 or a
+  plain array, at least one entry — and a native script
+  is `[0, addr_keyhash]` (the hash exactly 28 bytes),
+  `[1, [* native_script]]` all, `[2, [* native_script]]`
+  any, `[3, n, [* native_script]]` at least n, or a
+  timelock `[4, slot]` / `[5, slot]` (CDDL
+  script_invalid_before / script_invalid_hereafter, shown
+  as "after" / "before" — the naming the hub's builder
+  and sibling decoders use). Scripts nest freely; every
+  script is shown with its script hash, blake2b-224 over
+  the 0x00 language byte and its exact span bytes — for a
+  minting script, its policy ID. The field is a LIST, so
+  the same script twice decodes as two entries (pycardano
+  serialises a duplicate twice and reads it back as two).
+  Child lists may be empty and atLeast states no
+  n ≤ children bound (5-of-1 decodes) — the grammar's
+  `[* native_script]` states neither. The gates that
+  overrule the oracle, probed in the generator: an empty
+  field is refused though pycardano serialises one
+  (`a10180`), and a negative atLeast threshold or
+  timelock slot is refused though pycardano serialises
+  and reads back both (a threshold is a count, a slot is
+  a slot; both sibling decoders gate the same way). On
+  code 6 and a 27-byte signature hash the authorities
+  agree — both are refused, and the oracle cannot read
+  the first back or construct the second. Validation
+  reuses the proven witness set decoder via a synthetic
+  one-key witness set (`a101` ‖ field), the seam the
+  redeemers, Plutus data and key witnesses decoders use;
+  a whole witness set or a single bare script pasted
+  here is refused. Proven against pycardano 0.19.2's
+  `TransactionWitnessSet` serialisations (each field
+  extracted from a whole witness set, re-wrapped as
+  `{1: field}` and read back by the oracle in the
+  generator): a single signature script, a signature
+  plus an all, a nested script exercising every code
+  with oracle hashes at every level, the same script
+  twice, the tag-258 form, an empty all and a 5-of-1
+  atLeast — and a real mainnet field decodes
+  hash-for-hash (tx `87a7ac8b…`, block 14044379, fetched
+  via Koios: its key-1 field arrives in tag-258 form
+  holding one script, `all(sig 207655f9…, before
+  215122509)`, script hash `06b85d3e…`). The hunt is
+  recorded because it measures the field's rarity: two
+  Koios sweeps span-walked 3,444 recent mainnet witness
+  sets (the walker verified exact against the stored
+  real witness set; 2,584 sets carried key 0 alone) and
+  found exactly one key-1 field — current traffic
+  authorises almost entirely with key witnesses and
+  Plutus scripts. Scripts are decoded, never evaluated
+  — satisfaction needs the transaction around them.
 - **Full transaction decoder** — a whole transaction on its
   own: the four-element Conway array `[body, witness_set,
   is_valid, auxiliary_data / nil]` (the three-element form

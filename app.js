@@ -3998,6 +3998,94 @@ function parseVkeyWitnessesCbor(raw) {
   return { entries: w.vkeyWitnesses, count: w.vkeyWitnesses.length };
 }
 
+/* Native scripts decoder — a standalone NATIVE SCRIPTS field
+   on its own (witness set key 1): the multisig and timelock
+   scripts a transaction carries to authorise script-address
+   inputs and native-script minting policies, which until now
+   only ever appeared inside the witness set decoder and the
+   auxiliary data decoder. Ledger CDDL (Conway): the field is
+   nonempty_list<native_script> = #6.258([+ native_script]) /
+   [+ native_script] — tag 258 or a plain array, at least one
+   entry either way — and a native_script is one of
+   [0, addr_keyhash] a single required signature (the hash
+   exactly 28 bytes), [1, [* native_script]] all of the
+   children, [2, [* native_script]] any of them,
+   [3, n, [* native_script]] at least n of them, and the two
+   timelocks [4, slot] / [5, slot] — CDDL
+   script_invalid_before / script_invalid_hereafter, shown as
+   "after <slot>" / "before <slot>" (the slots from which /
+   until which the script can be satisfied), the naming the
+   hub's native script builder and both sibling decoders use.
+   Scripts nest freely; every script, nested or not, is shown
+   with its script hash — blake2b-224 over the 0x00 language
+   byte followed by the script's EXACT span bytes, never a
+   re-serialisation (the span-tree technique) — which for a
+   top-level script is its policy ID when it mints.
+   LIST SEMANTICS, recorded so nobody "fixes" it: the grammar
+   is a list, not a set, so the same script twice decodes as
+   two entries (pycardano serialises a duplicated script
+   twice and reads it back as two, probed in the generator) —
+   exactly as the witness set decoder treats key 1.
+   The child lists of all/any/atLeast may be EMPTY — the
+   grammar's [* native_script] states no minimum, pycardano
+   emits an all-of-nothing and hashes it, and atLeast states
+   no n <= children bound either (5-of-1 decodes, the
+   auxiliary decoder's precedent). The remaining gates
+   overrule the oracle, probed in the generator: an empty
+   FIELD is refused though pycardano serialises one
+   (a10180); a negative atLeast threshold and a negative
+   timelock slot are refused though pycardano serialises and
+   reads back both (a threshold is a count and a slot is a
+   slot; the CDDL types the threshold int64, but no ledger
+   count is negative, and both sibling decoders gate the
+   same way — the seam below keeps all three identical).
+   On two gates the authorities AGREE: an unknown script
+   code (6) is refused, and pycardano cannot even read one
+   back; a 27-byte signature hash is refused, and
+   pycardano's VerificationKeyHash raises on it too.
+   Validation REUSES the proven witness set decoder via a
+   synthetic one-key witness set (a101 ‖ field) — the seam
+   the redeemers, Plutus data and key witnesses decoders
+   use — so there is no second native script gate to drift.
+   A whole witness set pasted here is refused (its top level
+   is a map, not a list) — the witness set decoder above
+   reads those — and a single bare script is refused (it is
+   not the field). Input capped at max_tx_size (16,384) like
+   the transaction tools. Proven against pycardano 0.19.2's
+   TransactionWitnessSet serialisations in scratch
+   (nativescripts_py.py / nativescripts_vectors.json, each
+   field extracted from a whole witness set, re-wrapped as
+   {1: field} and read back by the oracle in the generator):
+   a single signature script, a signature plus an all, a
+   nested any(all(sig, after), atLeast 2 of (sig, sig,
+   before), sig) exercising every code with oracle hashes at
+   every level, the same script twice, the tag-258 form, an
+   empty all and a 5-of-1 atLeast all decode as the oracle
+   reads them — and a REAL mainnet field decodes
+   hash-for-hash: tx 87a7ac8b… (block 14044379, fetched
+   via Koios this run) carries its key-1 field in tag-258
+   form holding one script, all(sig 207655f9…, before
+   215122509), whose script hash 06b85d3e… is the oracle's
+   own hash of the same bytes. The hunt for it is itself
+   recorded: two Koios sweeps span-walked 3,444 recent
+   mainnet witness sets (the walker verified exact
+   against the stored real witness set; 2,584 of the sets
+   carried key 0 alone) and found exactly ONE key-1
+   field — current mainnet traffic authorises almost
+   entirely with key witnesses and Plutus scripts, and
+   native scripts ride in auxiliary data and reference
+   outputs far more than in witness sets. Display only —
+   whether a script is
+   SATISFIED (signatures present, slot in range) needs the
+   rest of the transaction, and nothing is signed or sent. */
+function parseNativeScriptsCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var w = parseWitnessSetCbor("a101" + bytesToHex(bytes));
+  if (w === null || w.nativeScripts.length === 0) return null;
+  return { entries: w.nativeScripts, count: w.nativeScripts.length };
+}
+
 /* Full transaction decoder — a WHOLE transaction on its own:
    the four-element Conway array [body, witness_set, is_valid,
    auxiliary_data / nil] that cardano-cli and wallets emit (CDDL
@@ -4786,7 +4874,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5555,6 +5643,25 @@ if (typeof document !== "undefined") {
         lines.push("     signature " + w.signature);
       });
       lines.push("The key hash is blake2b-224 of the key — the hash a body's required signer list (key 14) names. Signatures are shown as carried, not verified — checking one needs the transaction body it signs (the full transaction decoder checks signer presence).");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- native scripts decoder (a standalone native scripts field's CBOR) --- */
+    document.getElementById("nativescriptsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseNativeScriptsCbor(document.getElementById("nativescriptsdecode-input").value);
+      var out = document.getElementById("nativescriptsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one native scripts field (witness set key 1): a non-empty list of native scripts (tag 258 or a plain array), each a [0, key hash] signature script, a [1, […]] all, a [2, […]] any, a [3, n, […]] at-least-n, or a [4, slot] / [5, slot] timelock, nesting freely. A whole witness set is a different shape — the witness set decoder above reads those; a single bare script is not the field.";
+        return;
+      }
+      var lines = [];
+      lines.push("Native scripts — " + res.count + (res.count === 1 ? " script" : " scripts") + ", in the order encoded:");
+      res.entries.forEach(function (s, i) {
+        lines.push("  #" + i + ": " + s.text);
+        lines.push("     script hash " + s.hash);
+      });
+      lines.push("Each script hash is blake2b-224 over the 0x00 language byte and the script's exact bytes — for a minting script, its policy ID. Whether a script is satisfied (signatures present, slot in range) needs the rest of the transaction; scripts are decoded here, not evaluated.");
       out.textContent = lines.join("\n");
     });
 

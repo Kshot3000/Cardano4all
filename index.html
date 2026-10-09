@@ -413,6 +413,14 @@
         <button type="submit" class="btn primary">Decode key witnesses</button>
         <p id="vkeywitnessdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="nativescriptsdecode">
+        <h3>Native scripts decoder</h3>
+        <p>A transaction's <strong>native scripts</strong> on their own — witness set key 1, the <strong>multisig and timelock</strong> scripts that authorise script-address inputs and native-script minting policies. The field is a <strong>non-empty list</strong> (tag 258 or a plain array) of scripts, and scripts <strong>nest freely</strong>: a <strong>signature</strong> script naming one 28-byte key hash, <strong>all</strong> or <strong>any</strong> over child scripts, <strong>at least n</strong> of the children, and the two <strong>timelocks</strong> — shown as <strong>after</strong> a slot (the script is invalid before it) and <strong>before</strong> a slot (invalid from it on). Every script, nested or not, is shown with its <strong>script hash</strong> — blake2b-224 over the 0x00 language byte and its exact bytes — which for a minting script is its <strong>policy ID</strong>. Child lists may be empty and an at-least count may exceed the number of children: the grammar states neither bound. Because the field is a list, not a set, the same script twice decodes as two entries, exactly as encoded. Whether a script is actually <strong>satisfied</strong> — signatures present, current slot in range — needs the rest of the transaction; scripts are decoded here, not evaluated. Decoded locally; nothing is signed or sent.</p>
+        <label for="nativescriptsdecode-input">Native scripts CBOR (hex)</label>
+        <textarea id="nativescriptsdecode-input" rows="3" spellcheck="false" placeholder="e.g. 81… (a list of native scripts) — or d90102… for the set-tagged form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode native scripts</button>
+        <p id="nativescriptsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="fulltxdecode">
         <h3>Full transaction decoder</h3>
         <p>A <strong>whole transaction</strong> on its own — the array <code>cardano-cli</code> and wallets actually emit: <strong>[body, witness set, is-valid flag, auxiliary data]</strong> (the older three-element form without the flag decodes too). The body, the witness set and the auxiliary data each pass through the proven decoders above, and then the parts are <strong>checked against each other</strong> — the checks only a whole transaction makes possible: the <strong>auxiliary data's blake2b-256 hash</strong> against the hash the body commits to at key 7; every <strong>required signer</strong> the body names against the key hashes of the witnesses actually present; every output's <strong>datum hash</strong> against the Plutus data supplied in the witness set; and every <strong>redeemer's index</strong> against the number of inputs, mint policies, certificates, withdrawals, voters or proposals it could point at. If any part fails its own decoder's gates the whole transaction is refused, never partially described. Signatures are <strong>not cryptographically verified</strong>, and the script data hash is not recomputed here — the languages a transaction runs are not all visible inside it (reference scripts live in other outputs); the script data hash calculator below does that job from the witness parts. The checks are structural: the parts agree with each other, or they do not. Decoded locally; nothing is signed or sent.</p>
@@ -625,6 +633,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=45"></script>
+<script src="app.js?v=46"></script>
 </body>
 </html>

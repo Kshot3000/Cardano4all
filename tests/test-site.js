@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=45"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=46"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -1326,6 +1326,43 @@ check("vkeywitness: rejects a 3-item witness and a bare witness (not the field)"
   app.parseVkeyWitnessesCbor("81835820" + "00".repeat(32) + "5840" + "11".repeat(64) + "00") === null && app.parseVkeyWitnessesCbor(VW_SINGLE.slice(2)) === null);
 check("vkeywitness: rejects a whole witness set, trailing bytes, empty and garbage",
   app.parseVkeyWitnessesCbor("a100" + VW_SINGLE) === null && app.parseVkeyWitnessesCbor(VW_SINGLE + "00") === null && app.parseVkeyWitnessesCbor("") === null && app.parseVkeyWitnessesCbor("zzzz") === null);
+
+/* Native scripts decoder — a standalone NATIVE SCRIPTS field
+   (witness set key 1): nonempty_list<native_script> — proven
+   against pycardano 0.19.2 TransactionWitnessSet serialisations
+   in scratch (nativescripts_py.py / nativescripts_vectors.json;
+   each field extracted from a whole witness set, re-wrapped as
+   {1: field} and read back by the oracle in the generator).
+   Hashes are the oracle's own .hash() values (blake2b-224 over
+   0x00 ‖ exact script bytes). List semantics: a duplicated
+   script decodes as two entries (the oracle serialises and
+   reads back two). The REAL vector took a hunt: two Koios
+   sweeps span-walked 3,444 recent mainnet witness sets (the
+   walker verified exact against the stored real witness set)
+   and found exactly ONE key-1 field — tx 87a7ac8b…, block
+   14044379. Validation reuses the witness decoder via a101. */
+const NS_SIG = "818200581c" + "aa".repeat(28);
+const NS_TWO = "828200581c" + "aa".repeat(28) + "8201818200581c" + "aa".repeat(28);
+const NS_NESTED = "818202838201828200581c" + "aa".repeat(28) + "8204193039830302838200581c" + "aa".repeat(28) + "8200581c" + "bb".repeat(28) + "82051a0001869f8200581c" + "11".repeat(28);
+const NS_SIG_HASH = "a185cb99a818068805d34633e276287a79cbd985b8cc540d36ad3761";
+const NS_ALL_HASH = "e0fab1ad68eb52ffe22d71ba87758874bef6faea21cd8b0c117c04d8";
+check("nativescriptsdecode form present", html.includes('id="nativescriptsdecode"') && html.includes('id="nativescriptsdecode-input"') && html.includes('id="nativescriptsdecode-result"'));
+check("nativescripts: single sig script — kind, key hash, oracle script hash (pycardano)", (() => { const r = app.parseNativeScriptsCbor(NS_SIG); return r !== null && r.count === 1 && r.entries[0].kind === "sig" && r.entries[0].keyHash === "aa".repeat(28) && r.entries[0].hash === NS_SIG_HASH && r.entries[0].text === "sig " + "aa".repeat(28); })());
+check("nativescripts: two scripts — sig + all(sig), oracle hash at both levels (pycardano)", (() => { const r = app.parseNativeScriptsCbor(NS_TWO); return r !== null && r.count === 2 && r.entries[1].kind === "all" && r.entries[1].hash === NS_ALL_HASH && r.entries[1].scripts[0].hash === NS_SIG_HASH; })());
+check("nativescripts: nested any(all(sig, after 12345), atLeast 2 of (sig, sig, before 99999), sig) — every code, oracle hashes (pycardano)", (() => { const r = app.parseNativeScriptsCbor(NS_NESTED); if (r === null || r.count !== 1) return false; const root = r.entries[0]; const inner = root.scripts[0]; const atl = root.scripts[1]; return root.kind === "any" && root.hash === "53aeb5c828b6774d0c246b38ec2119c2c7d941d847a5c61913cdee8a" && inner.kind === "all" && inner.hash === "453b440d8a41405504757a0b129d41b8184d148d5f4f3f2aa6d93786" && inner.scripts[1].kind === "after" && inner.scripts[1].slot === "12345" && inner.scripts[1].hash === "e5a90a668de8911cd6a5246b1b2bd61f144d8abaa2050487e020ee1e" && atl.kind === "atLeast" && atl.required === "2" && atl.scripts.length === 3 && atl.hash === "07bdf52fc41e85d6aa741a6234c80cdafafa52282c9b9f9edaf1cb79" && atl.scripts[1].keyHash === "bb".repeat(28) && atl.scripts[2].kind === "before" && atl.scripts[2].slot === "99999" && atl.scripts[2].hash === "5efeb7661c3b905f0ed390c049c5accccc83e8cf504e591ee3c3ed88" && root.scripts[2].keyHash === "11".repeat(28); })());
+check("nativescripts: the same script twice decodes as two entries (a list, not a set; oracle serialises and reads back two)", (() => { const r = app.parseNativeScriptsCbor("82" + NS_SIG.slice(2) + NS_SIG.slice(2)); return r !== null && r.count === 2 && r.entries[0].hash === NS_SIG_HASH && r.entries[1].hash === NS_SIG_HASH; })());
+check("nativescripts: tag-258 form decodes (nonempty_list grammar)", (() => { const r = app.parseNativeScriptsCbor("d90102" + NS_TWO); return r !== null && r.count === 2 && r.entries[1].hash === NS_ALL_HASH; })());
+check("nativescripts: an empty all() decodes (CDDL [* native_script] states no minimum; oracle emits and hashes it)", (() => { const r = app.parseNativeScriptsCbor("81820180"); return r !== null && r.count === 1 && r.entries[0].kind === "all" && r.entries[0].scripts.length === 0 && r.entries[0].hash === "d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf"; })());
+check("nativescripts: REAL mainnet field — tag-258 form, one all(sig, before 215122509) script, oracle script hash (Koios ground truth, block 14044379)", (() => { const r = app.parseNativeScriptsCbor("d90102818201828200581c207655f99c5bd77fdcc8c29dbb5dbe4fa94ae568733463477234f0f582051a0cd2824d"); return r !== null && r.count === 1 && r.entries[0].kind === "all" && r.entries[0].hash === "06b85d3ef96291e8d58e63015727bc83dcf4f1e0eaa117d497fffda5" && r.entries[0].scripts[0].keyHash === "207655f99c5bd77fdcc8c29dbb5dbe4fa94ae568733463477234f0f5" && r.entries[0].scripts[1].kind === "before" && r.entries[0].scripts[1].slot === "215122509"; })());
+check("nativescripts: atLeast 5-of-1 decodes (CDDL states no n <= children bound; aux-decoder precedent)", (() => { const r = app.parseNativeScriptsCbor("81830305818200581c" + "aa".repeat(28)); return r !== null && r.entries[0].kind === "atLeast" && r.entries[0].required === "5" && r.entries[0].scripts.length === 1; })());
+check("nativescripts: rejects an empty field in both serialisations (grammar nonempty_list; oracle serialises a10180)",
+  app.parseNativeScriptsCbor("80") === null && app.parseNativeScriptsCbor("d9010280") === null);
+check("nativescripts: rejects script code 6 and a 27-byte sig hash (authorities agree: oracle cannot read code 6 back, its key hash type raises on 27)",
+  app.parseNativeScriptsCbor("818106") === null && app.parseNativeScriptsCbor("818200581b" + "aa".repeat(27)) === null);
+check("nativescripts: rejects a negative atLeast threshold and a negative timelock slot (oracle serialises and reads back both)",
+  app.parseNativeScriptsCbor("81830320818200581c" + "aa".repeat(28)) === null && app.parseNativeScriptsCbor("81820420") === null);
+check("nativescripts: rejects a bare script, a whole witness set, trailing bytes, empty and garbage",
+  app.parseNativeScriptsCbor(NS_SIG.slice(2)) === null && app.parseNativeScriptsCbor("a101" + NS_SIG) === null && app.parseNativeScriptsCbor(NS_SIG + "00") === null && app.parseNativeScriptsCbor("") === null && app.parseNativeScriptsCbor("zzzz") === null);
 
 console.log(failures === 0 ? "\nALL TESTS PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
