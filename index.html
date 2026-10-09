@@ -429,6 +429,20 @@
         <button type="submit" class="btn primary">Decode bootstrap witnesses</button>
         <p id="bootstrapdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="plutusscriptsdecode">
+        <h3>Plutus scripts decoder</h3>
+        <p>A transaction's <strong>Plutus scripts</strong> on their own — witness set key <strong>3 for Plutus V1, 6 for V2, 7 for V3</strong> — the compiled programs a transaction carries for its scripts to run from; with this tool, <strong>every component of the witness set</strong> has a standalone decoder. Each field is a <strong>non-empty set</strong> (tag 258 or a plain array) of scripts, and a script is the flat-encoded program as a <strong>byte string</strong> — the grammar gives it no size, but an empty script is refused: no hash on this hub is ever the hash of nothing. Because the field is a <strong>set</strong>, the same script twice is refused — unlike the list fields around it. <strong>Select the language first</strong>: a field's bytes alone do not say which key they sat under, and the language byte (1, 2 or 3) enters the <strong>script hash</strong> — blake2b-224 over the language byte and the script's exact bytes, the hash a script address or policy ID names. Scripts are shown by size and hash, <strong>never executed</strong>. All three languages still ride in witness sets today: one current mainnet block (14044775) carried a V1 field with two scripts, a V2 field and a V3 field in thirteen transactions. Decoded locally; nothing is signed or sent.</p>
+        <label for="plutusscriptsdecode-lang">Plutus language (the witness set key the field sat under)</label>
+        <select id="plutusscriptsdecode-lang">
+          <option value="plutusv1">Plutus V1 — witness set key 3</option>
+          <option value="plutusv2">Plutus V2 — witness set key 6</option>
+          <option value="plutusv3" selected>Plutus V3 — witness set key 7</option>
+        </select>
+        <label for="plutusscriptsdecode-input">Plutus scripts CBOR (hex)</label>
+        <textarea id="plutusscriptsdecode-input" rows="3" spellcheck="false" placeholder="e.g. 81… (a set of Plutus scripts) — or d90102… for the set-tagged form" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode Plutus scripts</button>
+        <p id="plutusscriptsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="fulltxdecode">
         <h3>Full transaction decoder</h3>
         <p>A <strong>whole transaction</strong> on its own — the array <code>cardano-cli</code> and wallets actually emit: <strong>[body, witness set, is-valid flag, auxiliary data]</strong> (the older three-element form without the flag decodes too). The body, the witness set and the auxiliary data each pass through the proven decoders above, and then the parts are <strong>checked against each other</strong> — the checks only a whole transaction makes possible: the <strong>auxiliary data's blake2b-256 hash</strong> against the hash the body commits to at key 7; every <strong>required signer</strong> the body names against the key hashes of the witnesses actually present; every output's <strong>datum hash</strong> against the Plutus data supplied in the witness set; and every <strong>redeemer's index</strong> against the number of inputs, mint policies, certificates, withdrawals, voters or proposals it could point at. If any part fails its own decoder's gates the whole transaction is refused, never partially described. Signatures are <strong>not cryptographically verified</strong>, and the script data hash is not recomputed here — the languages a transaction runs are not all visible inside it (reference scripts live in other outputs); the script data hash calculator below does that job from the witness parts. The checks are structural: the parts agree with each other, or they do not. Decoded locally; nothing is signed or sent.</p>
@@ -641,6 +655,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=48"></script>
+<script src="app.js?v=49"></script>
 </body>
 </html>

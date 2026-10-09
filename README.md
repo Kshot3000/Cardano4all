@@ -859,6 +859,60 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   blake2b-224 of the public key, and the oracle reads
   the field back as one entry. Signatures are shown,
   never cryptographically verified.
+- **Plutus scripts decoder** — a standalone Plutus scripts
+  field on its own (witness set keys 3 / 6 / 7 for Plutus
+  V1 / V2 / V3), the last witness-set components without
+  one: with this tool every component of the Conway
+  witness set has a standalone decoder. Conway CDDL: each
+  field is `nonempty_set<plutus_vN_script>` — tag 258 or a
+  plain array (indefinite-length arrays decode too), at
+  least one entry — and a script is plain `bytes`, the
+  flat-encoded UPLC program, with no size in the grammar.
+  The three fields differ only in their key and in the
+  language byte (1 / 2 / 3) prefixed to the script bytes
+  when its script hash is taken (blake2b-224 over language
+  byte ‖ exact bytes — the hash script addresses and
+  policy IDs name), so it is one tool with a language
+  selector: the caller names the language, because the
+  field's bytes alone do not say which key they sat
+  under. Each script is shown as a size and its script
+  hash, the hub's convention for Plutus scripts. SET
+  semantics, recorded so nobody "aligns" it with the list
+  fields around it: the same script twice is refused,
+  though pycardano 0.19.2 serialises a duplicated script
+  twice and reads it back as two (probed in the
+  generator). An empty field and a non-bytes entry are
+  likewise refused (the oracle serialises both, the
+  latter handed to it as raw CBOR). One gate is the hub's
+  own, recorded as such: an empty script (a zero-byte
+  entry) is refused, because the shared `scriptHash` gate
+  refuses empty bytes everywhere on this hub — the CDDL's
+  unsized `bytes` and the oracle both accept one (the
+  oracle serialises `8140` and reads it back), so on this
+  point the shipped gate is stricter than the grammar: a
+  zero-length byte string is not a program. Validation
+  reuses the proven witness set decoder via a synthetic
+  one-key witness set (`a103` / `a106` / `a107` ‖ field),
+  the seam every sibling standalone decoder uses; a whole
+  witness set or a single bare script pasted here is
+  refused. Proven in scratch (`plutusscripts_py.py` /
+  `plutusscripts_vectors.json`; each field extracted
+  from a whole witness set, re-wrapped and read back by
+  the oracle in the generator): for each language a
+  single script, two distinct scripts, a 512-byte script,
+  the tag-258 form (hand-wrapped, oracle read-back) and
+  the indefinite form — and three real mainnet fields,
+  one per language, all fetched via Koios from a single
+  block (14044775, thirteen transactions scanned): a V1
+  field holding two scripts (335 and 7,707 bytes, tx
+  `c6a10d77…`), a V2 field holding one 325-byte script
+  (tx `bf667550…`) and a V3 field holding one 739-byte
+  script (tx `54d6a884…`), each decoding hash-for-hash
+  (hashlib blake2b-224 over the language byte). That all
+  three languages appear in one current block is itself
+  the state of the chain: V1 fields still ride in witness
+  sets today. Scripts are shown by size and hash, never
+  executed.
 - **Full transaction decoder** — a whole transaction on its
   own: the four-element Conway array `[body, witness_set,
   is_valid, auxiliary_data / nil]` (the three-element form

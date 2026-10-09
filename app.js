@@ -4172,6 +4172,94 @@ function parseBootstrapWitnessesCbor(raw) {
   return { entries: w.bootstrapWitnesses, count: w.bootstrapWitnesses.length };
 }
 
+/* Plutus scripts decoder — a standalone PLUTUS SCRIPTS field
+   on its own (witness set keys 3 / 6 / 7 for Plutus V1 / V2 /
+   V3): the compiled Plutus programs a transaction carries in
+   its witness set for its scripts to run from, which until
+   now only ever appeared inside the witness set decoder
+   (as sizes and hashes) and the auxiliary data decoder's
+   script references. With this tool EVERY component of the
+   Conway witness set has a standalone decoder. Ledger CDDL:
+   each field is nonempty_set<plutus_vN_script> — tag 258 or
+   a plain array (an indefinite-length array also decodes,
+   parser-normalised), at least one entry — and a
+   plutus_vN_script is plain `bytes`, the flat-encoded UPLC
+   program, with NO size in the grammar. The three fields
+   differ ONLY in their key and in the language byte (1 / 2 /
+   3) that prefixes the script bytes when its script hash is
+   taken (blake2b-224 over language byte ‖ exact script
+   bytes — the hash script addresses and policy IDs name),
+   so this is one tool with a language selector: the caller
+   names the language the field belongs to, because the
+   field's bytes alone do not say which key they sat under.
+   Each script is shown as a size and its script hash (the
+   hub's convention for Plutus scripts everywhere — the
+   programs themselves are shown by hash, not dumped).
+   SET SEMANTICS, the field's one subtlety, recorded so
+   nobody "aligns" it with the list fields around it: the
+   same script twice is REFUSED — the grammar is a set —
+   though pycardano 0.19.2 serialises a duplicated script
+   twice and reads it back as two (probed in the
+   generator); the witness set decoder this delegates to
+   has always gated it that way. The remaining gates split
+   the usual way, also probed: an empty field is refused
+   though pycardano serialises one (a10380 / a10680 /
+   a10780); a non-bytes entry is refused though the oracle
+   serialises one handed to it as raw CBOR. ONE GATE IS THE
+   HUB'S OWN, recorded as such: an EMPTY script (a zero-byte
+   entry) is refused, because the shared scriptHash gate
+   refuses empty bytes everywhere on this hub (the script
+   hash tool does too) — the CDDL's unsized `bytes` and
+   the oracle both accept one (the oracle serialises 8140
+   and reads it back), so on this single point the shipped
+   gate is stricter than the grammar: a zero-length byte
+   string is not a program, and no hash this hub prints is
+   ever the hash of nothing. Validation REUSES the proven
+   witness set decoder via a synthetic one-key witness set
+   (a103 / a106 / a107 ‖ field, by the selected language)
+   — the seam every sibling standalone decoder uses — so
+   there is no second Plutus script gate to drift. A whole
+   witness set pasted here is refused (its top level is a
+   map, not a set) — the witness set decoder above reads
+   those — and a single bare script is refused (it is not
+   the field). Input capped at max_tx_size (16,384) like
+   the transaction tools. Proven against pycardano
+   0.19.2's TransactionWitnessSet serialisations in
+   scratch (plutusscripts_py.py / plutusscripts_vectors
+   .json, each field extracted from a whole witness set,
+   re-wrapped and read back by the oracle in the
+   generator): for EACH language, a single script, two
+   distinct scripts, a 512-byte script, the tag-258 form
+   (hand-wrapped, read back by the oracle) and the
+   indefinite-length form all decode size-for-size and
+   hash-for-hash (hashlib blake2b-224 over the language
+   byte) — and three REAL mainnet fields, one per
+   language, decode hash-for-hash, all fetched via Koios
+   this run from a single block (14044775, thirteen
+   transactions scanned): a V1 field holding two scripts
+   (335 and 7,707 bytes, tx c6a10d77…), a V2 field holding
+   one 325-byte script (tx bf667550…) and a V3 field
+   holding one 739-byte script (tx 54d6a884…). That all
+   three languages appear in ONE current block is itself
+   the state of the chain: V1 fields still ride in
+   witness sets today, they have not moved wholly to
+   reference scripts. Display only — a script is shown
+   by size and hash, never executed, and nothing is
+   signed or sent. */
+var PLUTUS_SCRIPT_KEYS = { plutusv1: "a103", plutusv2: "a106", plutusv3: "a107" };
+function parsePlutusScriptsCbor(raw, lang) {
+  if (!(lang in PLUTUS_SCRIPT_KEYS)) return null;
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var w = parseWitnessSetCbor(PLUTUS_SCRIPT_KEYS[lang] + bytesToHex(bytes));
+  if (w === null) return null;
+  var entries = w.plutusScripts.filter(function (s) { return s.language === lang; });
+  if (entries.length === 0) return null;
+  var total = 0;
+  entries.forEach(function (s) { total += s.size; });
+  return { language: lang, entries: entries, count: entries.length, totalBytes: total };
+}
+
 /* Full transaction decoder — a WHOLE transaction on its own:
    the four-element Conway array [body, witness_set, is_valid,
    auxiliary_data / nil] that cardano-cli and wallets emit (CDDL
@@ -4960,7 +5048,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5770,6 +5858,26 @@ if (typeof document !== "undefined") {
         lines.push("     attributes " + (w.attributes === "" ? "(empty)" : w.attributes));
       });
       lines.push("The key hash is blake2b-224 of the public key — the hash a body's required signer list (key 14) names. The chain code and attributes are shown as carried: the ledger grammar gives them no size, and Byron's HD derivation data rides in them. Signatures are shown as carried, not verified — checking one needs the transaction body it signs (the full transaction decoder checks signer presence).");
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- Plutus scripts decoder (a standalone Plutus scripts field's CBOR) --- */
+    document.getElementById("plutusscriptsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var lang = document.getElementById("plutusscriptsdecode-lang").value;
+      var res = parsePlutusScriptsCbor(document.getElementById("plutusscriptsdecode-input").value, lang);
+      var out = document.getElementById("plutusscriptsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one Plutus scripts field (witness set key 3 for V1, 6 for V2, 7 for V3): a non-empty set of scripts (tag 258 or a plain array), each script a byte string — the same script twice is refused (the field is a set), as is an empty script. Select the language the field belongs to first: the bytes alone do not say which key they sat under, and the language byte enters the script hash. A whole witness set is a different shape — the witness set decoder above reads those; a single bare script is not the field.";
+        return;
+      }
+      var langName = res.language === "plutusv1" ? "Plutus V1" : res.language === "plutusv2" ? "Plutus V2" : "Plutus V3";
+      var lines = [];
+      lines.push(langName + " scripts — " + res.count + (res.count === 1 ? " script" : " scripts") + ", " + res.totalBytes + " bytes in total, in the order encoded:");
+      res.entries.forEach(function (s, i) {
+        lines.push("  #" + i + ": " + s.size + " bytes — script hash " + s.hash);
+      });
+      lines.push("Each script hash is blake2b-224 over the language byte (V1 = 1, V2 = 2, V3 = 3) and the script's exact bytes — the hash a script address or policy ID names. Scripts are shown by size and hash, never executed.");
       out.textContent = lines.join("\n");
     });
 
