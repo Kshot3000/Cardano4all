@@ -829,7 +829,11 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   alone. The tag-258 form inverts the usual split: the
   grammar admits it and this decoder accepts it, but the
   oracle cannot read it back (its untyped field raises
-  on the CBORTag). Validation reuses the proven witness
+  on the CBORTag) — but the chain itself carries the
+  form: a real mainnet field in tag-258 form (tx
+  `137eb8f7…`, block 14044573, two witnesses) is among
+  the shipped vectors and decodes with hashlib key
+  hashes. Validation reuses the proven witness
   set decoder via a synthetic one-key witness set
   (`a102` ‖ field), the seam the redeemers, Plutus data,
   key witnesses and native scripts decoders use; a whole

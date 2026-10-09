@@ -4125,8 +4125,11 @@ function parseNativeScriptsCbor(raw) {
    split: the grammar admits it (nonempty_list) and this
    decoder accepts it, but the oracle CANNOT read it
    back (its untyped field raises DeserializeException
-   on the CBORTag) — for this one form the CDDL and the
-   seam's sibling-field precedent are the authorities.
+   on the CBORTag) — for this one form the authorities
+   are the CDDL and, as it turns out, the chain itself:
+   a real mainnet field in tag-258 form (tx 137eb8f7…,
+   block 14044573, two witnesses) is among the shipped
+   vectors below and decodes with hashlib key hashes.
    Validation REUSES the proven witness set decoder via
    a synthetic one-key witness set (a102 ‖ field) — the
    seam the redeemers, Plutus data, key witnesses and
