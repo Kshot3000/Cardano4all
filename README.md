@@ -155,6 +155,31 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   inline Plutus datum, Plutus V2 and native reference scripts, an
   enterprise-address output, and both Alonzo forms all decode
   field-for-field.
+- **Transaction outputs decoder** — a whole outputs field's CBOR on
+  its own (body key 1): every output a transaction creates, in the
+  order encoded and numbered from 0 (an output's position is the
+  index every later reference to it uses), with the field's exact
+  BigInt lovelace total. The field is a plain list
+  (`[* transaction_output]`), and the decoder follows the list
+  semantics exactly: the same output twice decodes as two outputs
+  (it is not a set like inputs, nor a map like mint), and the
+  empty list decodes — the grammar admits it, the ledger's UTxO
+  rules require non-empty inputs only (there is no outputs
+  counterpart to `InputSetEmptyUTxO`), and pycardano serialises a
+  body carrying `01 80`; value conservation still leaves an empty
+  field no room in a real transaction. Each entry passes the
+  output decoder's gates unchanged through the shared
+  `parseTxOutNode`, and one failing entry refuses the whole field.
+  Proven against pycardano 0.19.2's `TransactionBody`
+  serialisations (fields extracted by span, re-wrapped and read
+  back by the oracle; each output's format read off its emitted
+  bytes — pycardano serialises body outputs in the array form
+  whenever one fits it, the map form only when a Babbage field
+  requires it): a single output, a mixed pair, a rich triple
+  (inline datum, Plutus V2 reference script, enterprise address),
+  a duplicated output, the empty-field probe, and the outputs of
+  a real mainnet transaction (three outputs totalling
+  318,675,542,791 lovelace).
 - **Mint / burn decoder** — one transaction's mint field CBOR on its
   own (body key 9): every created or destroyed asset with policy ID,
   name, exact signed BigInt quantity, CIP-14 fingerprint and a

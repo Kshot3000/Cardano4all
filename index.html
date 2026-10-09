@@ -275,6 +275,14 @@
         <button type="submit" class="btn primary">Decode output</button>
         <p id="txoutdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
+      <form class="tool" id="outputsdecode">
+        <h3>Transaction outputs decoder</h3>
+        <p>A transaction's <strong>outputs field</strong> on its own — body key 1, the whole <strong>array of outputs</strong> a transaction creates, rather than one output at a time. The field is a plain <strong>list</strong>, and that shapes what it may carry: entries are shown <strong>in the order encoded</strong>, numbered from 0 — an output's position is the index every later reference to it uses (<code>txHash#index</code>) — and the <strong>same output twice is two UTxOs</strong>, not a repeated key, because the field is not a set. Even the <strong>empty list decodes</strong>: the grammar (<code>[* transaction_output]</code>) admits it and no ledger rule requires outputs the way the inputs rule requires inputs — though value conservation leaves it no room in a real transaction. Every entry passes the output decoder's gates above (Shelley payment address, positive quantities, no repeated key inside an output), and one bad entry refuses the whole field. The outputs' lovelace is totalled exactly. Decoded locally; nothing is signed or sent.</p>
+        <label for="outputsdecode-input">Outputs field CBOR (hex)</label>
+        <textarea id="outputsdecode-input" rows="3" spellcheck="false" placeholder="e.g. 82… (an array of outputs) — a single output goes in the decoder above" autocomplete="off"></textarea>
+        <button type="submit" class="btn primary">Decode outputs</button>
+        <p id="outputsdecode-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
       <form class="tool" id="mintdecode">
         <h3>Mint / burn decoder</h3>
         <p>One transaction's <strong>mint field</strong> on its own — body key 9, the map a transaction carries when it creates or destroys native assets — decoded locally: every asset with its policy ID, name (as text when the name bytes are readable text), signed quantity and CIP-14 fingerprint, labelled mint or burn. The ledger rule (Conway CDDL) is <code>mint = {+ policy_id =&gt; {+ asset_name =&gt; nonzero_int64}}</code>: at least one policy and one asset per policy, and every quantity a <strong>non-zero</strong> int64 — positive mints, negative burns, zero is not a legal entry. That sign rule is the opposite of an output value's, which is why this is its own decoder. Repeated policy or asset-name keys are rejected — a mint is a map. An output value is decoded by the value decoder above; a whole transaction by the transaction inspector.</p>
@@ -609,6 +617,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=43"></script>
+<script src="app.js?v=44"></script>
 </body>
 </html>

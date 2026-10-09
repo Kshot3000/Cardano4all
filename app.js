@@ -2047,14 +2047,12 @@ function parseValueCbor(raw) {
    in scratch (txout_py.py / txout_vectors.json): Babbage coin-only,
    multi-asset with a datum hash, an inline Plutus datum, Plutus V2
    and native reference scripts, an enterprise-address output, and
-   both Alonzo forms decode field-for-field. Display only — nothing
-   is signed or sent. */
-function parseTxOutCbor(raw) {
-  var bytes = cleanHex(raw, MAX_TX_SIZE);
-  if (bytes === null) return null;
-  var parsed = cborParseItem(bytes, 0, 0);
-  if (!parsed || parsed.next !== bytes.length) return null;
-  var n = parsed.node;
+   both Alonzo forms decode field-for-field. The node-level parser
+   below (parseTxOutNode) is shared with the outputs field decoder
+   that follows it, so a single output and an output inside a field
+   pass exactly the same gates — there is no second output gate to
+   drift. Display only — nothing is signed or sent. */
+function parseTxOutNode(n) {
   function parseValueStrict(vn) {
     if (vn.t === "int") return vn.v < 0n ? null : { lovelace: vn.v.toString(), assets: [] };
     if (vn.t !== "array" || vn.items.length !== 2 || vn.items[0].t !== "int" || vn.items[0].v < 0n) return null;
@@ -2141,6 +2139,78 @@ function parseTxOutCbor(raw) {
     return { format: "alonzo", address: addr2, addressHex: bytesToHex(n.items[0].bytes), lovelace: val2.lovelace, assets: val2.assets, datum: datum2, scriptRef: null };
   }
   return null;
+}
+
+function parseTxOutCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  return parseTxOutNode(parsed.node);
+}
+
+/* Transaction outputs decoder — a standalone OUTPUTS FIELD on its
+   own (body key 1): the array of outputs a transaction creates,
+   which until now could only be read one output at a time with
+   the decoder above or as part of a whole body in the inspector.
+   Ledger CDDL (Conway): 1 : [* transaction_output] — a plain
+   LIST, and that one word carries this field's whole semantics:
+   - ORDER is data: an output's position in the list is the index
+     every later reference to it uses (txHash#index), so entries
+     are shown in encoded order, numbered from 0;
+   - DUPLICATES are legal: two identical outputs are two UTxOs,
+     not a repeated key — the field is not a set (inputs, key 0)
+     and not a map (mint, key 9), so nothing here is deduplicated;
+   - the EMPTY list DECODES: the grammar's [* ] allows it, the
+     ledger's UTxO rules require non-empty INPUTS only (there is
+     no outputs counterpart to InputSetEmptyUTxO), and pycardano
+     serialises a body carrying 01 80 — an empty outputs field is
+     a shape the ledger's grammar admits even though value
+     conservation leaves it no room in a real transaction (its
+     inputs' value would have to equal the fee exactly, with
+     nothing left to carry forward). This is the one compound
+     body field whose empty form is not refused, and it is
+     refused nowhere else by accident: every sibling's emptiness
+     gate names its own authority in its own comment.
+   Each entry passes the output decoder's gates unchanged via
+   parseTxOutNode — Shelley payment address, positive quantities,
+   no repeated key inside any output — and any entry failing
+   refuses the whole field, never a partial list. The result
+   carries the exact BigInt total of the outputs' lovelace.
+   A tag-258 wrapper is refused (the field is not a set), as is
+   a single bare output (the output decoder's shape, not this
+   field's) and a whole body (the inspector's). Input capped at
+   max_tx_size (16,384) like the transaction tools. Proven
+   against pycardano 0.19.2's TransactionBody serialisations in
+   scratch (outputs_py.py / outputs_vectors.json — each field
+   extracted by span from a whole body, re-wrapped as {1: field}
+   and read back by the oracle in the generator; expectations
+   read off the oracle's objects, with each output's format read
+   off its emitted bytes: pycardano serialises body outputs in
+   the array form whenever an output fits it, the map form only
+   when a Babbage field requires it): a single output, a mixed
+   pair (multi-asset with a datum hash, plain coin), a rich
+   triple (inline datum, Plutus V2 reference script, enterprise
+   address), the same output twice, the oracle's empty-body
+   probe, and the outputs of a REAL mainnet transaction (the
+   Minswap transaction the inspector tests carry: three outputs,
+   318,675,542,791 lovelace in total). Display only — nothing
+   is signed or sent. */
+function parseOutputsCbor(raw) {
+  var bytes = cleanHex(raw, MAX_TX_SIZE);
+  if (bytes === null) return null;
+  var parsed = cborParseItem(bytes, 0, 0);
+  if (!parsed || parsed.next !== bytes.length) return null;
+  var n = parsed.node;
+  if (n.t !== "array") return null;
+  var outputs = [], total = 0n;
+  for (var i = 0; i < n.items.length; i++) {
+    var o = parseTxOutNode(n.items[i]);
+    if (o === null) return null;
+    outputs.push(o);
+    total += BigInt(o.lovelace);
+  }
+  return { outputs: outputs, count: outputs.length, totalLovelace: total.toString() };
 }
 
 /* Mint / burn decoder — a standalone transaction MINT field on its
@@ -4664,7 +4734,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -4991,6 +5061,38 @@ if (typeof document !== "undefined") {
       if (res.datum.kind === "hash") lines.push("Datum hash: " + res.datum.hash);
       if (res.datum.kind === "inline") lines.push("Inline datum (CBOR): " + res.datum.hex);
       if (res.scriptRef !== null) lines.push("Reference script: " + ({ native: "native script", plutus1: "Plutus V1 script", plutus2: "Plutus V2 script", plutus3: "Plutus V3 script" })[res.scriptRef]);
+      out.textContent = lines.join("\n");
+    });
+
+    /* --- transaction outputs decoder (a standalone outputs field's CBOR) --- */
+    document.getElementById("outputsdecode").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = parseOutputsCbor(document.getElementById("outputsdecode-input").value);
+      var out = document.getElementById("outputsdecode-result");
+      if (!res) {
+        out.textContent = "Enter the CBOR hex of one outputs field (body key 1): an array of transaction outputs, each in the Babbage map form or the Alonzo array form, each address a Shelley payment address with positive quantities and no repeated key inside any output. A single output alone is the output decoder's shape above; a whole body is the transaction inspector's.";
+        return;
+      }
+      var lines = [];
+      if (res.count === 0) {
+        lines.push("Outputs field — empty: the array carries no outputs. The grammar ([* transaction_output]) admits the empty list and no ledger rule requires outputs the way the inputs rule does — but value conservation leaves it no room in a real transaction, whose inputs' value would have to equal the fee exactly.");
+        out.textContent = lines.join("\n");
+        return;
+      }
+      lines.push("Outputs — " + res.count + (res.count === 1 ? " output" : " outputs") + " totalling " + res.totalLovelace + " lovelace (" + lovelaceToAda(res.totalLovelace) + " ADA), in the order encoded:");
+      res.outputs.forEach(function (o, i) {
+        lines.push("");
+        lines.push("  #" + i + " (" + (o.format === "babbage" ? "Babbage map form" : "Alonzo array form") + "): " + o.address);
+        lines.push("      " + o.lovelace + " lovelace (" + lovelaceToAda(o.lovelace) + " ADA)");
+        o.assets.forEach(function (a) {
+          lines.push("      + " + a.quantity + " \u00d7 policy " + a.policy + ", name " + (a.name === "" ? "(empty)" : a.name) + (a.nameText === null ? "" : " (\"" + a.nameText + "\")") + " — fingerprint " + assetFingerprint(a.policy, a.name));
+        });
+        if (o.datum.kind === "hash") lines.push("      Datum hash: " + o.datum.hash);
+        if (o.datum.kind === "inline") lines.push("      Inline datum (CBOR): " + o.datum.hex);
+        if (o.scriptRef !== null) lines.push("      Reference script: " + ({ native: "native script", plutus1: "Plutus V1 script", plutus2: "Plutus V2 script", plutus3: "Plutus V3 script" })[o.scriptRef]);
+      });
+      lines.push("");
+      lines.push("An output's number is the index every later reference to it uses (transaction ID + #index). The same output twice is two UTxOs — the field is a list, not a set.");
       out.textContent = lines.join("\n");
     });
 
