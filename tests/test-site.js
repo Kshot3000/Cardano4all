@@ -25,9 +25,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=49"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=50"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -252,6 +252,34 @@ check("deposit total is the exact sum of its parts on assorted inputs", [["5", "
   var t = app.depositTotal(c[0], c[1], c[2], c[3]);
   return t && t.totalLovelace === (BigInt(t.stakeLovelace) + BigInt(t.poolLovelace) + BigInt(t.drepLovelace) + BigInt(t.govLovelace)).toString();
 }));
+
+/* payment plan builder — the hub's fee-earning tool (profit mandate,
+   2026-10-11): item amount to the seller in full, plus exactly 1% of
+   the amount floored to whole lovelace to the Cardano4All fee address
+   (Kyle's ADA address). Vectors are hand-derived lovelace arithmetic:
+   100 ADA -> fee 1 ADA; 10 ADA -> 0.1 ADA; 0.009999 ADA = 9,999
+   lovelace -> fee floor(9,999 / 100) = 99 lovelace; 1 lovelace -> 0. */
+check("paylink form present", html.includes('id="paylink"') && html.includes('id="paylink-result"'));
+check("paylink copy discloses the 1% fee in the page", html.includes("disclosed 1% service fee") && html.includes("no hidden cut"));
+const pp1 = app.paymentPlan(ADA, "100", "");
+check("paylink 100 ADA: seller 100, fee 1, total 101 ADA", pp1 && pp1.amountLovelace === "100000000" && pp1.feeLovelace === "1000000" && pp1.totalLovelace === "101000000");
+check("paylink fee routes only to Kyle's ADA address", pp1 && pp1.feeAddress === ADA && pp1.feeBps === 100 && pp1.recipient === ADA);
+const pp2 = app.paymentPlan(ADA, "10", "Invoice 7");
+check("paylink 10 ADA: fee 0.1 ADA, label kept", pp2 && pp2.feeLovelace === "100000" && pp2.totalLovelace === "10100000" && pp2.label === "Invoice 7");
+check("paylink fee floors to whole lovelace (9999 -> 99)", app.paymentPlan(ADA, "0.009999", "").feeLovelace === "99");
+check("paylink dust amount floors the fee to 0", app.paymentPlan(ADA, "0.000001", "").feeLovelace === "0" && app.paymentPlan(ADA, "0.000001", "").totalLovelace === "1");
+check("paylink total = amount + floored 1% on assorted inputs", ["1", "2.5", "0.01", "1234.567891", "0.009999"].every(function (a) {
+  var t = app.paymentPlan(ADA, a, "");
+  return t && BigInt(t.totalLovelace) === BigInt(t.amountLovelace) + BigInt(t.feeLovelace) && BigInt(t.feeLovelace) === BigInt(t.amountLovelace) / 100n;
+}));
+check("paylink rejects stake, testnet, tampered and garbage recipients", app.paymentPlan(syntheticStake, "10", "") === null && app.paymentPlan(syntheticTest, "10", "") === null && app.paymentPlan(ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v"), "10", "") === null && app.paymentPlan("hello", "10", "") === null);
+check("paylink rejects empty, zero, 7-decimal and garbage amounts", app.paymentPlan(ADA, "", "") === null && app.paymentPlan(ADA, "0", "") === null && app.paymentPlan(ADA, "0.0000001", "") === null && app.paymentPlan(ADA, "abc", "") === null);
+check("paylink rejects an over-long or control-char label", app.paymentPlan(ADA, "10", "x".repeat(65)) === null && app.paymentPlan(ADA, "10", "a\nb") === null);
+const ppText = app.paymentPlanText(pp2);
+check("paylink plan text carries both addresses, the fee and the totals", ppText.includes(ADA) && ppText.includes("1%") && ppText.includes("10100000 lovelace") && ppText.includes("Invoice 7"));
+check("paylink plan text is honest: no transaction built or signed", ppText.includes("No transaction was built or signed"));
+check("paylink zero-fee plan text says the fee floors to 0", app.paymentPlanText(app.paymentPlan(ADA, "0.000001", "")).includes("floors to 0"));
+check("paylink sub-1-ADA fee carries the minimum-UTxO warning, 1 ADA fee does not", app.paymentPlanText(pp2).includes("below the minimum") && !app.paymentPlanText(pp1).includes("below the minimum"));
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core
    (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the

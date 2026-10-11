@@ -23,7 +23,7 @@
 {"@context":"https://schema.org","@type":"WebSite","name":"Cardano4All","url":"https://kshot3000.github.io/Cardano4all/","author":{"@type":"Person","name":"Kyle Cox","url":"https://x.com/kshot9000"},"description":"Free Cardano calculators and developer tools — staking rewards, pool reward splits, transaction fees, epoch/slot conversion, address inspection and CBOR decoding. No wallet needed."}
 </script>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"}]}
+{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"},{"@type":"ListItem","position":9,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"}]}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css?v=1">
@@ -258,6 +258,18 @@
         <input id="dep-gov" inputmode="numeric" placeholder="e.g. 0" autocomplete="off">
         <button type="submit" class="btn primary">Calculate total deposits</button>
         <p id="deposit-result" role="status" aria-live="polite"></p>
+      </form>
+      <form class="tool" id="paylink">
+        <h3>Payment plan builder — with a disclosed 1% service fee</h3>
+        <p>Selling something for ADA? Build a payment request a buyer can paste into their wallet: the full item amount to <strong>your</strong> mainnet payment address, plus a <strong>1% service fee</strong> (of the item amount, floored to whole lovelace) to my Cardano4All fee address — the same ADA address in full in the plan below and in Support at the bottom of this page. The fee is the whole business model of this tool and it is printed in the plan itself: no hidden cut, nothing taken from the seller's amount. The buyer pays item + fee, plus the network fee their wallet adds. Amounts under 0.01 ADA floor the fee to 0 lovelace, and the plan says so. This page builds <strong>no transaction and signs nothing</strong> — it writes the two-output plan as text. Double-check both addresses in full before sending.</p>
+        <label for="pay-recipient">Your mainnet payment address (the seller)</label>
+        <textarea id="pay-recipient" rows="2" spellcheck="false" placeholder="addr1… (payment address — a stake or testnet address cannot receive this payment)"></textarea>
+        <label for="pay-amount">Item amount (ADA)</label>
+        <input id="pay-amount" inputmode="decimal" placeholder="e.g. 100" autocomplete="off">
+        <label for="pay-label">Label (optional, for the request text)</label>
+        <input id="pay-label" type="text" spellcheck="false" placeholder="e.g. Invoice 7 — one artwork commission" autocomplete="off">
+        <button type="submit" class="btn primary">Build payment plan</button>
+        <p id="paylink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="txidcalc">
         <h3>Transaction ID calculator</h3>
@@ -671,6 +683,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=49"></script>
+<script src="app.js?v=50"></script>
 </body>
 </html>

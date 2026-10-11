@@ -509,6 +509,80 @@ function depositTotal(stakeStr, poolStr, drepStr, govStr) {
   };
 }
 
+/* Payment plan builder — the hub's first fee-earning tool (profit
+   mandate, 2026-10-11). A seller enters their own mainnet payment
+   address and an item amount; the plan is a TWO-output payment the
+   buyer makes in their own wallet:
+     output 1: the full item amount to the seller's address
+     output 2: a service fee of exactly 1% of the item amount,
+               floored to whole lovelace, to the Cardano4All fee
+               address below (Kyle's ADA address, the same address
+               the hub's Support section carries)
+   The buyer pays item + fee, plus the network transaction fee their
+   wallet adds — that part is the ledger's, not this tool's. The fee
+   is disclosed here, in the page copy and in the plan text itself;
+   there is no hidden cut. Exact BigInt arithmetic throughout:
+   fee = floor(amountLovelace x 100 / 10000), so amounts below
+   0.01 ADA floor the fee to 0 lovelace and the plan says so.
+   Validation: the recipient must be a mainnet PAYMENT address with a
+   verifying bech32 checksum (hrp "addr") — a stake address cannot
+   receive outputs, and a testnet recipient cannot sit in the same
+   transaction as the mainnet fee output, so both are refused rather
+   than planned. The optional label is a plain-text note for the
+   request (at most 64 characters, no control characters); it is
+   never sent anywhere. This page builds NO transaction and signs
+   nothing — the plan is text the buyer pastes into their wallet. */
+var PAYLINK_FEE_ADDRESS = "addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v";
+var PAYLINK_FEE_BPS = 100n; /* 1% = 100 basis points */
+
+/* paymentPlan(recipientRaw, amountStr, labelRaw) ->
+   { recipient, label, amountLovelace, feeLovelace, totalLovelace,
+     feeAddress, feeBps } (amounts as decimal strings, feeBps as a
+   Number) or null for an invalid recipient, amount or label. */
+function paymentPlan(recipientRaw, amountStr, labelRaw) {
+  var recipient = (recipientRaw || "").trim();
+  var check = verifyBech32(recipient);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var amountStrL = adaToLovelace(amountStr);
+  if (amountStrL === null) return null;
+  var amount = BigInt(amountStrL);
+  if (amount <= 0n) return null;
+  var label = (labelRaw || "").trim();
+  if (label.length > 64 || /[\x00-\x1f\x7f]/.test(label)) return null;
+  var fee = (amount * PAYLINK_FEE_BPS) / 10000n;
+  return {
+    recipient: recipient,
+    label: label,
+    amountLovelace: amount.toString(),
+    feeLovelace: fee.toString(),
+    totalLovelace: (amount + fee).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* paymentPlanText(plan) -> the copyable payment-request text. The
+   minimum-UTxO warning appears exactly when the fee output is
+   positive but below 1 ADA: a plain payment output must carry the
+   ledger minimum (the minimum-UTxO calculator on this page prices
+   it precisely), so a sub-1-ADA fee output cannot travel alone. */
+function paymentPlanText(plan) {
+  var lines = [];
+  lines.push("Cardano payment request" + (plan.label ? " — " + plan.label : ""));
+  lines.push("Pay the seller: " + lovelaceToAda(plan.amountLovelace) + " ADA (" + plan.amountLovelace + " lovelace) to " + plan.recipient);
+  if (plan.feeLovelace === "0") {
+    lines.push("Cardano4All service fee (1%, disclosed): 0 lovelace — the 1% of this amount floors to 0, so no fee output is due.");
+  } else {
+    lines.push("Pay the Cardano4All service fee (1% of the item amount, disclosed): " + lovelaceToAda(plan.feeLovelace) + " ADA (" + plan.feeLovelace + " lovelace) to " + plan.feeAddress);
+  }
+  lines.push("Total: " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace), plus the network transaction fee your wallet adds.");
+  if (plan.feeLovelace !== "0" && BigInt(plan.feeLovelace) < 1000000n) {
+    lines.push("Note: the fee output is under 1 ADA, below the minimum a single output must carry — send it together with a larger payment, or add it on top of the seller output in one combined payment to the fee address when the total allows. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a payment plan to paste into your own wallet. Double-check both addresses in full before sending.");
+  return lines.join("\n");
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5048,7 +5122,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5253,6 +5327,21 @@ if (typeof document !== "undefined") {
         " ADA): stake registrations " + res.stakeLovelace + " + new pools " + res.poolLovelace +
         " + DReps " + res.drepLovelace + " + governance actions " + res.govLovelace +
         " lovelace. Deposits are refundable — they come back on deregistration, pool retirement, or when a governance action is enacted or expires; they are not fees. Updating an existing pool charges no new pool deposit.";
+    });
+
+    /* --- payment plan builder (disclosed 1% service fee, offline) --- */
+    document.getElementById("paylink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = paymentPlan(
+        document.getElementById("pay-recipient").value,
+        document.getElementById("pay-amount").value,
+        document.getElementById("pay-label").value);
+      var out = document.getElementById("paylink-result");
+      if (!res) {
+        out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive this payment), an amount above 0 ADA (up to 6 decimals), and an optional label of at most 64 characters.";
+        return;
+      }
+      out.textContent = paymentPlanText(res);
     });
 
     /* --- transaction ID (blake2b-256 of the body CBOR) --- */

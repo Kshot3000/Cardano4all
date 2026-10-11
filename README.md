@@ -104,6 +104,20 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   fees: they return on deregistration, pool retirement, or when a
   governance action is enacted or expires; updating an existing pool
   charges no new pool deposit.
+- **Payment plan builder (disclosed 1% service fee)** — the hub's first
+  fee-earning tool: a seller enters their own mainnet payment address
+  and an item amount, and the tool writes a two-output payment plan as
+  copyable text — the full amount to the seller, plus exactly 1% of the
+  amount (floored to whole lovelace, exact BigInt maths) to the
+  Cardano4All fee address `addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v`.
+  The fee is disclosed in the tool copy and in the plan text itself —
+  no hidden cut. The recipient is gated to a mainnet payment address
+  with a verifying bech32 checksum (stake and testnet addresses are
+  refused: one cannot receive outputs, the other cannot share a
+  transaction with the mainnet fee output), tiny amounts that floor
+  the fee to 0 lovelace say so, and a sub-1-ADA fee output carries the
+  ledger minimum-UTxO warning. The page builds no transaction and
+  signs nothing — the buyer pastes the plan into their own wallet.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
   Paste a body's CBOR hex, or a whole transaction's (the array
