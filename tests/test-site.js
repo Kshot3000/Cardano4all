@@ -33,6 +33,21 @@ check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="ne
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
 check("theme.css references bundled scene.svg (no external art)", fs.readFileSync(path.join(root, "visual-upgrade", "theme.css"), "utf8").includes('url("scene.svg")'));
 
+/* discoverability / sharing (profit mandate, 2026-10-11): canonical, social
+   cards and structured data so the free tools can be found and shared */
+check("canonical URL present", html.includes('<link rel="canonical" href="https://kshot3000.github.io/Cardano4all/">'));
+check("twitter card present with @kshot9000", html.includes('name="twitter:card"') && html.includes('name="twitter:creator" content="@kshot9000"'));
+check("og:image points at the bundled live scene.svg", html.includes('property="og:image" content="https://kshot3000.github.io/Cardano4all/visual-upgrade/scene.svg"'));
+check("title names the search-intent tools", /staking/i.test(html.split("</title>")[0]) && /fee/i.test(html.split("</title>")[0]));
+const ldBlocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
+let ldParsed = [];
+try { ldParsed = ldBlocks.map(b => JSON.parse(b)); } catch (e) { ldParsed = []; }
+check("JSON-LD blocks present and valid JSON", ldBlocks.length === 2 && ldParsed.length === 2);
+check("JSON-LD WebSite names Cardano4All and Kyle's X", ldParsed.some(o => o["@type"] === "WebSite" && o.name === "Cardano4All" && o.author && o.author.url === "https://x.com/kshot9000"));
+const toolList = ldParsed.find(o => o["@type"] === "ItemList");
+check("JSON-LD ItemList anchors match real tool form ids", !!toolList && toolList.itemListElement.every(it => { const a = (it.url || "").split("#")[1]; return a && html.includes(`id="${a}"`); }));
+check("JSON-LD ItemList includes the staking estimator", !!toolList && toolList.itemListElement.some(it => /staking rewards estimator/i.test(it.name || "")));
+
 /* flagship links */
 for (const url of ["https://nightdream.xyz/", "https://kshot3000.github.io/Grok-CIP-113/",
   "https://kshot3000.github.io/PlutusShield/", "https://kshot3000.github.io/Adadrome/",
