@@ -117,7 +117,10 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   transaction with the mainnet fee output), tiny amounts that floor
   the fee to 0 lovelace say so, and a sub-1-ADA fee output carries the
   ledger minimum-UTxO warning. The page builds no transaction and
-  signs nothing — the buyer pastes the plan into their own wallet.
+  signs nothing — the buyer pastes the plan into their own wallet,
+  and a Copy payment plan button copies the exact plan text for
+  sending to a buyer (it copies only the last successfully built
+  plan, never a stale one from a failed build).
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
   Paste a body's CBOR hex, or a whole transaction's (the array

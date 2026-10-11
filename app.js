@@ -5330,6 +5330,7 @@ if (typeof document !== "undefined") {
     });
 
     /* --- payment plan builder (disclosed 1% service fee, offline) --- */
+    var lastPaylinkText = "";
     document.getElementById("paylink").addEventListener("submit", function (ev) {
       ev.preventDefault();
       var res = paymentPlan(
@@ -5337,11 +5338,33 @@ if (typeof document !== "undefined") {
         document.getElementById("pay-amount").value,
         document.getElementById("pay-label").value);
       var out = document.getElementById("paylink-result");
+      document.getElementById("paylink-copy-status").textContent = "";
       if (!res) {
+        lastPaylinkText = "";
         out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive this payment), an amount above 0 ADA (up to 6 decimals), and an optional label of at most 64 characters.";
         return;
       }
-      out.textContent = paymentPlanText(res);
+      lastPaylinkText = paymentPlanText(res);
+      out.textContent = lastPaylinkText;
+    });
+
+    /* --- copy payment plan (mirrors the copy-address pattern below:
+       copies only the last successfully built plan, never a stale
+       plan left over from an earlier or failed build) --- */
+    document.getElementById("copy-paylink").addEventListener("click", function () {
+      var status = document.getElementById("paylink-copy-status");
+      if (!lastPaylinkText) {
+        status.textContent = "Build a payment plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Payment plan copied — paste it to the buyer."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastPaylinkText).then(done, function () {
+          status.textContent = "Copy failed — select the plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the plan text to copy it.";
+      }
     });
 
     /* --- transaction ID (blake2b-256 of the body CBOR) --- */

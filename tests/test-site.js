@@ -6,6 +6,7 @@ const root = path.join(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const app = require(path.join(root, "app.js"));
+const appSrc = fs.readFileSync(path.join(root, "app.js"), "utf8");
 
 const ADA = "addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v";
 let failures = 0;
@@ -27,7 +28,7 @@ check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
 check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=50"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=51"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -260,6 +261,9 @@ check("deposit total is the exact sum of its parts on assorted inputs", [["5", "
    100 ADA -> fee 1 ADA; 10 ADA -> 0.1 ADA; 0.009999 ADA = 9,999
    lovelace -> fee floor(9,999 / 100) = 99 lovelace; 1 lovelace -> 0. */
 check("paylink form present", html.includes('id="paylink"') && html.includes('id="paylink-result"'));
+check("paylink copy button and status present", html.includes('id="copy-paylink"') && html.includes('id="paylink-copy-status"') && html.includes("Copy payment plan"));
+check("paylink copy handler wired to the clipboard with a stale-plan guard", appSrc.includes('getElementById("copy-paylink")') && appSrc.includes("navigator.clipboard.writeText(lastPaylinkText)") && appSrc.includes("Build a payment plan first, then copy it."));
+check("paylink failed build clears the copyable plan", appSrc.includes('lastPaylinkText = "";') && appSrc.includes("Payment plan copied"));
 check("paylink copy discloses the 1% fee in the page", html.includes("disclosed 1% service fee") && html.includes("no hidden cut"));
 const pp1 = app.paymentPlan(ADA, "100", "");
 check("paylink 100 ADA: seller 100, fee 1, total 101 ADA", pp1 && pp1.amountLovelace === "100000000" && pp1.feeLovelace === "1000000" && pp1.totalLovelace === "101000000");
