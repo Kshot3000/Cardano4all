@@ -583,6 +583,65 @@ function paymentPlanText(plan) {
   return lines.join("\n");
 }
 
+/* Shareable payment link — the payment plan above as a link the
+   seller can send (profit mandate, 2026-10-11). The link is this
+   page's own URL with a query string carrying ONLY the seller's
+   address, the item amount (canonical ADA, as lovelaceToAda renders
+   the validated lovelace amount) and the optional label — each
+   percent-encoded. It carries NO fee field and no fee address: the
+   disclosed 1% fee is recomputed by paymentPlan when the page opens,
+   every time, so a link cannot be edited to raise the fee or reroute
+   it — a query that smuggles in an extra field (fee=, or anything
+   unknown), repeats a field, or fails the paymentPlan gates is
+   refused whole. parsePaymentLink is deliberately manual rather
+   than URLSearchParams: "+" is data, never a space, decoding
+   failures refuse the link, and exactly the three known fields are
+   admitted. Nothing is fetched or sent; the query is read locally
+   from the page's own address bar. */
+var PAYLINK_BASE_URL = "https://kshot3000.github.io/Cardano4all/";
+
+/* paymentLink(recipientRaw, amountStr, labelRaw) -> the shareable
+   URL string, or null when paymentPlan refuses the inputs. */
+function paymentLink(recipientRaw, amountStr, labelRaw) {
+  var plan = paymentPlan(recipientRaw, amountStr, labelRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?to=" + encodeURIComponent(plan.recipient) +
+    "&amount=" + encodeURIComponent(lovelaceToAda(plan.amountLovelace));
+  if (plan.label) url += "&label=" + encodeURIComponent(plan.label);
+  return url + "#paylink";
+}
+
+/* parsePaymentLink(searchRaw) -> { recipient, amount, label } with
+   amount as a canonical ADA string ready to refill the form, or
+   null for anything that is not exactly a well-formed, valid
+   payment link (empty, unknown/repeated/missing fields, malformed
+   percent-encoding, or inputs paymentPlan refuses). Accepts the
+   query with or without its leading "?". */
+function parsePaymentLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "to" && key !== "amount" && key !== "label") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.to || !seen.amount) return null;
+  var plan = paymentPlan(values.to, values.amount, seen.label ? values.label : "");
+  if (!plan) return null;
+  return { recipient: plan.recipient, amount: lovelaceToAda(plan.amountLovelace), label: plan.label };
+}
+
 /* Split payment plan builder — the two-seller variant of the payment
    plan builder above (profit mandate, 2026-10-11). Two sellers split
    one sale: the buyer makes a THREE-output payment in their own
@@ -5224,7 +5283,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, splitPaymentPlan, splitPaymentPlanText, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5433,6 +5492,7 @@ if (typeof document !== "undefined") {
 
     /* --- payment plan builder (disclosed 1% service fee, offline) --- */
     var lastPaylinkText = "";
+    var lastPaylinkUrl = "";
     document.getElementById("paylink").addEventListener("submit", function (ev) {
       ev.preventDefault();
       var res = paymentPlan(
@@ -5441,12 +5501,15 @@ if (typeof document !== "undefined") {
         document.getElementById("pay-label").value);
       var out = document.getElementById("paylink-result");
       document.getElementById("paylink-copy-status").textContent = "";
+      document.getElementById("paylink-link-status").textContent = "";
       if (!res) {
         lastPaylinkText = "";
+        lastPaylinkUrl = "";
         out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive this payment), an amount above 0 ADA (up to 6 decimals), and an optional label of at most 64 characters.";
         return;
       }
       lastPaylinkText = paymentPlanText(res);
+      lastPaylinkUrl = paymentLink(res.recipient, lovelaceToAda(res.amountLovelace), res.label);
       out.textContent = lastPaylinkText;
     });
 
@@ -5468,6 +5531,48 @@ if (typeof document !== "undefined") {
         status.textContent = "Select the plan text to copy it.";
       }
     });
+
+    /* --- copy payment link (same stale-plan guard as the plan copy
+       above: only the link for the last successfully built plan can
+       be copied, and a failed build clears it) --- */
+    document.getElementById("copy-paylink-url").addEventListener("click", function () {
+      var status = document.getElementById("paylink-link-status");
+      if (!lastPaylinkUrl) {
+        status.textContent = "Build a payment plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Payment link copied — send it to the buyer; it opens this page with the plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastPaylinkUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?to=, amount= and label= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from a payment link: a ?to=…&amount=… query (see
+       paymentLink) fills the form and builds the plan, so the buyer
+       lands on the exact plan the seller built — with the fee
+       recomputed by this page, never taken from the link. A
+       link-shaped query that does not validate is reported, not
+       silently ignored; an unrelated query string is left alone. --- */
+    var linkSearch = "";
+    try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch)) {
+      var linked = parsePaymentLink(linkSearch);
+      if (!linked) {
+        document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("pay-recipient").value = linked.recipient;
+        document.getElementById("pay-amount").value = linked.amount;
+        document.getElementById("pay-label").value = linked.label;
+        var linkedPlan = paymentPlan(linked.recipient, linked.amount, linked.label);
+        lastPaylinkText = paymentPlanText(linkedPlan);
+        lastPaylinkUrl = paymentLink(linked.recipient, linked.amount, linked.label);
+        document.getElementById("paylink-result").textContent = "Opened from a payment link — double-check the seller address in full before paying.\n\n" + lastPaylinkText;
+      }
+    }
 
     /* --- split payment plan builder (two sellers, disclosed 1%
        service fee on the total, offline — same stale-plan guard as

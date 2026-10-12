@@ -28,7 +28,7 @@ check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
 check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label", "split-recipient-a", "split-recipient-b", "split-amount", "split-share", "split-label"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=52"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=53"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -284,6 +284,28 @@ check("paylink plan text carries both addresses, the fee and the totals", ppText
 check("paylink plan text is honest: no transaction built or signed", ppText.includes("No transaction was built or signed"));
 check("paylink zero-fee plan text says the fee floors to 0", app.paymentPlanText(app.paymentPlan(ADA, "0.000001", "")).includes("floors to 0"));
 check("paylink sub-1-ADA fee carries the minimum-UTxO warning, 1 ADA fee does not", app.paymentPlanText(pp2).includes("below the minimum") && !app.paymentPlanText(pp1).includes("below the minimum"));
+
+/* shareable payment link — the plan as a URL (profit mandate,
+   2026-10-11): the link carries ONLY seller, amount and label; the
+   fee is recomputed by the page on open, so no link can smuggle a
+   bigger fee. The address is plain bech32 (no characters percent-
+   encoding changes), so the 100 ADA link is asserted byte-exact. */
+check("paylink link button and status present", html.includes('id="copy-paylink-url"') && html.includes('id="paylink-link-status"') && html.includes("Copy payment link"));
+check("paylink link handler wired to the clipboard with a stale-plan guard", appSrc.includes('getElementById("copy-paylink-url")') && appSrc.includes("navigator.clipboard.writeText(lastPaylinkUrl)") && appSrc.includes("Build a payment plan first, then copy its link."));
+check("paylink failed build clears the copyable link", appSrc.includes('lastPaylinkUrl = "";') && appSrc.includes("Payment link copied"));
+check("paylink page discloses the link carries no fee field", html.includes("no fee field of its own") && html.includes("cannot be edited to raise the fee"));
+check("paylink open-from-link wiring present", appSrc.includes("parsePaymentLink(linkSearch)") && appSrc.includes("Opened from a payment link") && appSrc.includes("That payment link is not valid"));
+check("paylink link for 100 ADA is the exact canonical URL", app.paymentLink(ADA, "100", "") === "https://kshot3000.github.io/Cardano4all/?to=" + ADA + "&amount=100#paylink");
+check("paylink link encodes the label and canonicalises the amount", app.paymentLink(ADA, "10.500000", "Invoice 7").includes("&amount=10.5") && app.paymentLink(ADA, "10.500000", "Invoice 7").includes("&label=Invoice%207"));
+check("paylink link refuses the same inputs the plan refuses", app.paymentLink(syntheticStake, "10", "") === null && app.paymentLink(ADA, "0", "") === null && app.paymentLink(ADA, "10", "x".repeat(65)) === null);
+const plParsed = app.parsePaymentLink("?to=" + ADA + "&amount=10&label=Invoice%207");
+check("paylink parse returns seller, canonical amount and decoded label", plParsed && plParsed.recipient === ADA && plParsed.amount === "10" && plParsed.label === "Invoice 7");
+check("paylink parse accepts a query without the leading ?", (() => { const p = app.parsePaymentLink("to=" + ADA + "&amount=2.5"); return p && p.recipient === ADA && p.amount === "2.5" && p.label === ""; })());
+check("paylink round trip: a built link parses back to the same plan inputs, fee recomputed locally", (() => { const u = app.paymentLink(ADA, "2.5", "A & B = C"); const p = app.parsePaymentLink(u.slice(u.indexOf("?"), u.indexOf("#"))); const plan = p && app.paymentPlan(p.recipient, p.amount, p.label); return p && p.label === "A & B = C" && plan && plan.feeLovelace === "25000" && plan.feeAddress === ADA; })());
+check("paylink parse refuses a smuggled fee field or any unknown field", app.parsePaymentLink("?to=" + ADA + "&amount=10&fee=999") === null && app.parsePaymentLink("?to=" + ADA + "&amount=10&x=1") === null);
+check("paylink parse refuses repeated, missing and empty fields", app.parsePaymentLink("?to=" + ADA + "&amount=10&amount=20") === null && app.parsePaymentLink("?to=" + ADA) === null && app.parsePaymentLink("?amount=10") === null && app.parsePaymentLink("") === null && app.parsePaymentLink("?") === null);
+check("paylink parse refuses malformed percent-encoding", app.parsePaymentLink("?to=%zz&amount=10") === null && app.parsePaymentLink("?to=" + ADA + "&amount=%E0%A4%A") === null);
+check("paylink parse refuses tampered, stake and testnet sellers and bad amounts via the plan gates", app.parsePaymentLink("?to=" + ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v") + "&amount=10") === null && app.parsePaymentLink("?to=" + syntheticStake + "&amount=10") === null && app.parsePaymentLink("?to=" + syntheticTest + "&amount=10") === null && app.parsePaymentLink("?to=" + ADA + "&amount=0") === null && app.parsePaymentLink("?to=" + ADA + "&amount=abc") === null);
 
 /* split payment plan builder — the two-seller variant (profit mandate,
    2026-10-11): seller 1's share floored to whole lovelace, seller 2

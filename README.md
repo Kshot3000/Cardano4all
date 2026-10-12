@@ -120,7 +120,14 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   signs nothing — the buyer pastes the plan into their own wallet,
   and a Copy payment plan button copies the exact plan text for
   sending to a buyer (it copies only the last successfully built
-  plan, never a stale one from a failed build).
+  plan, never a stale one from a failed build). A Copy payment
+  link button copies a shareable link to the hub that opens with
+  the seller, amount and label filled in and the plan built: the
+  link carries only those three fields — no fee field at all —
+  and the page recomputes the disclosed 1% fee on open, so a link
+  cannot be edited to raise or reroute the fee; a link with an
+  extra or repeated field, malformed encoding, or a tampered,
+  stake or testnet address is refused and reported on the page.
 - **Split payment plan builder (two sellers, disclosed 1% service
   fee)** — the two-seller variant: two sellers split one sale and
   the tool writes a three-output payment plan as copyable text —

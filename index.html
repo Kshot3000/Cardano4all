@@ -261,7 +261,7 @@
       </form>
       <form class="tool" id="paylink">
         <h3>Payment plan builder — with a disclosed 1% service fee</h3>
-        <p>Selling something for ADA? Build a payment request a buyer can paste into their wallet: the full item amount to <strong>your</strong> mainnet payment address, plus a <strong>1% service fee</strong> (of the item amount, floored to whole lovelace) to my Cardano4All fee address — the same ADA address in full in the plan below and in Support at the bottom of this page. The fee is the whole business model of this tool and it is printed in the plan itself: no hidden cut, nothing taken from the seller's amount. The buyer pays item + fee, plus the network fee their wallet adds. Amounts under 0.01 ADA floor the fee to 0 lovelace, and the plan says so. This page builds <strong>no transaction and signs nothing</strong> — it writes the two-output plan as text, and the <strong>Copy payment plan</strong> button copies that exact text so you can send it to a buyer unchanged. Double-check both addresses in full before sending.</p>
+        <p>Selling something for ADA? Build a payment request a buyer can paste into their wallet: the full item amount to <strong>your</strong> mainnet payment address, plus a <strong>1% service fee</strong> (of the item amount, floored to whole lovelace) to my Cardano4All fee address — the same ADA address in full in the plan below and in Support at the bottom of this page. The fee is the whole business model of this tool and it is printed in the plan itself: no hidden cut, nothing taken from the seller's amount. The buyer pays item + fee, plus the network fee their wallet adds. Amounts under 0.01 ADA floor the fee to 0 lovelace, and the plan says so. This page builds <strong>no transaction and signs nothing</strong> — it writes the two-output plan as text, and the <strong>Copy payment plan</strong> button copies that exact text so you can send it to a buyer unchanged. The <strong>Copy payment link</strong> button instead copies a link to this page that opens with your address, the amount and the label already filled in and the plan built — the link carries <strong>no fee field of its own</strong>, so it cannot be edited to raise the fee: the 1% is worked out by this page every time it opens, and a link carrying extra fields or a tampered address is refused and reported. Double-check both addresses in full before sending.</p>
         <label for="pay-recipient">Your mainnet payment address (the seller)</label>
         <textarea id="pay-recipient" rows="2" spellcheck="false" placeholder="addr1… (payment address — a stake or testnet address cannot receive this payment)"></textarea>
         <label for="pay-amount">Item amount (ADA)</label>
@@ -271,6 +271,8 @@
         <button type="submit" class="btn primary">Build payment plan</button>
         <button type="button" id="copy-paylink" class="btn">Copy payment plan</button>
         <p id="paylink-copy-status" role="status" aria-live="polite"></p>
+        <button type="button" id="copy-paylink-url" class="btn">Copy payment link</button>
+        <p id="paylink-link-status" role="status" aria-live="polite"></p>
         <p id="paylink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="splitlink">
@@ -703,6 +705,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=52"></script>
+<script src="app.js?v=53"></script>
 </body>
 </html>
