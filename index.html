@@ -277,7 +277,7 @@
       </form>
       <form class="tool" id="splitlink">
         <h3>Split payment plan builder — two sellers, same disclosed 1% service fee</h3>
-        <p>Splitting a sale with a partner? Build a payment request that pays <strong>both</strong> sellers from one item amount: seller 1 gets the share you enter (a percentage with up to two decimals, floored to whole lovelace) and seller 2 gets the rest, so the two shares always add up to the item amount exactly — no lovelace lost to rounding. On top, the buyer pays the same <strong>disclosed 1% service fee</strong> on the total to my Cardano4All fee address as in the plan above — printed in the plan itself, no hidden cut, nothing taken from either seller's share. Both addresses must be <strong>different</strong> mainnet payment addresses. This page builds <strong>no transaction and signs nothing</strong> — it writes the three-output plan as text, and the <strong>Copy split payment plan</strong> button copies that exact text. Double-check all three addresses in full before sending.</p>
+        <p>Splitting a sale with a partner? Build a payment request that pays <strong>both</strong> sellers from one item amount: seller 1 gets the share you enter (a percentage with up to two decimals, floored to whole lovelace) and seller 2 gets the rest, so the two shares always add up to the item amount exactly — no lovelace lost to rounding. On top, the buyer pays the same <strong>disclosed 1% service fee</strong> on the total to my Cardano4All fee address as in the plan above — printed in the plan itself, no hidden cut, nothing taken from either seller's share. Both addresses must be <strong>different</strong> mainnet payment addresses. This page builds <strong>no transaction and signs nothing</strong> — it writes the three-output plan as text, and the <strong>Copy split payment plan</strong> button copies that exact text. The <strong>Copy split payment link</strong> button instead copies a link to this page that opens with both addresses, the amount, the share and the label already filled in and the plan built — the link carries <strong>no fee field of its own</strong>, so it cannot be edited to raise the fee: the 1% is worked out by this page every time it opens, and a link carrying extra fields, identical sellers or a tampered address is refused and reported. Double-check all three addresses in full before sending.</p>
         <label for="split-recipient-a">Seller 1 — mainnet payment address</label>
         <textarea id="split-recipient-a" rows="2" spellcheck="false" placeholder="addr1… (seller 1 — must differ from seller 2)"></textarea>
         <label for="split-recipient-b">Seller 2 — mainnet payment address</label>
@@ -291,6 +291,8 @@
         <button type="submit" class="btn primary">Build split payment plan</button>
         <button type="button" id="copy-splitlink" class="btn">Copy split payment plan</button>
         <p id="splitlink-copy-status" role="status" aria-live="polite"></p>
+        <button type="button" id="copy-splitlink-url" class="btn">Copy split payment link</button>
+        <p id="splitlink-link-status" role="status" aria-live="polite"></p>
         <p id="splitlink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="txidcalc">
@@ -705,6 +707,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=53"></script>
+<script src="app.js?v=54"></script>
 </body>
 </html>

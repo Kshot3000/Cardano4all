@@ -140,8 +140,16 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   addresses with verifying checksums, a share that floors to
   0 lovelace is refused, sub-1-ADA outputs are named in a
   minimum-UTxO warning, and a Copy split payment plan button
-  copies only the last successfully built split plan. The page
-  builds no transaction and signs nothing.
+  copies only the last successfully built split plan. A Copy
+  split payment link button copies a shareable link to the hub
+  that opens with both sellers, the amount, the share and the
+  label filled in and the plan built: the link carries only
+  those fields — no fee field at all — and the page recomputes
+  the disclosed 1% fee on open, so a link cannot be edited to
+  raise or reroute the fee; a link with an extra or repeated
+  field, malformed encoding, identical sellers, or a tampered,
+  stake or testnet address is refused and reported on the page.
+  The page builds no transaction and signs nothing.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
   Paste a body's CBOR hex, or a whole transaction's (the array

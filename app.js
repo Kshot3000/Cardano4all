@@ -744,6 +744,72 @@ function splitPaymentPlanText(plan) {
   return lines.join("\n");
 }
 
+/* Shareable split payment link — the split plan above as a link,
+   the two-seller counterpart of the single-seller payment link
+   (profit mandate, 2026-10-11). The link carries ONLY the two
+   sellers' addresses, the item amount (canonical ADA), seller 1's
+   share (canonical percentage, as formatShareBps renders the
+   validated basis points) and the optional label — each
+   percent-encoded. Like the single-seller link it carries NO fee
+   field and no fee address: the disclosed 1% fee is recomputed by
+   splitPaymentPlan when the page opens, every time, so a link
+   cannot be edited to raise the fee or reroute it — a query that
+   smuggles in an extra field (fee=, or anything unknown), repeats
+   a field, or fails the splitPaymentPlan gates (identical sellers
+   included) is refused whole. The parser is the same deliberately
+   manual one as parsePaymentLink: "+" is data, never a space,
+   decoding failures refuse the link, and exactly the five known
+   fields are admitted. The field names (toA, toB, share) keep a
+   split link distinct from a single-seller link (to) on sight and
+   in the open-from-link wiring below. Nothing is fetched or sent;
+   the query is read locally from the page's own address bar. */
+
+/* splitPaymentLink(recipientARaw, recipientBRaw, amountStr,
+   shareStr, labelRaw) -> the shareable URL string, or null when
+   splitPaymentPlan refuses the inputs. */
+function splitPaymentLink(recipientARaw, recipientBRaw, amountStr, shareStr, labelRaw) {
+  var plan = splitPaymentPlan(recipientARaw, recipientBRaw, amountStr, shareStr, labelRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?toA=" + encodeURIComponent(plan.recipientA) +
+    "&toB=" + encodeURIComponent(plan.recipientB) +
+    "&amount=" + encodeURIComponent(lovelaceToAda(plan.amountLovelace)) +
+    "&share=" + encodeURIComponent(formatShareBps(BigInt(plan.shareABps)));
+  if (plan.label) url += "&label=" + encodeURIComponent(plan.label);
+  return url + "#splitlink";
+}
+
+/* parseSplitPaymentLink(searchRaw) -> { recipientA, recipientB,
+   amount, share, label } with amount as a canonical ADA string and
+   share as a canonical percentage string ready to refill the form,
+   or null for anything that is not exactly a well-formed, valid
+   split payment link (empty, unknown/repeated/missing fields,
+   malformed percent-encoding, or inputs splitPaymentPlan refuses).
+   Accepts the query with or without its leading "?". */
+function parseSplitPaymentLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "toA" && key !== "toB" && key !== "amount" && key !== "share" && key !== "label") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.toA || !seen.toB || !seen.amount || !seen.share) return null;
+  var plan = splitPaymentPlan(values.toA, values.toB, values.amount, values.share, seen.label ? values.label : "");
+  if (!plan) return null;
+  return { recipientA: plan.recipientA, recipientB: plan.recipientB, amount: lovelaceToAda(plan.amountLovelace), share: formatShareBps(BigInt(plan.shareABps)), label: plan.label };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5283,7 +5349,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5559,7 +5625,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -5579,6 +5645,7 @@ if (typeof document !== "undefined") {
        the single-seller copy button: only the last successfully
        built split plan is copyable) --- */
     var lastSplitlinkText = "";
+    var lastSplitlinkUrl = "";
     document.getElementById("splitlink").addEventListener("submit", function (ev) {
       ev.preventDefault();
       var res = splitPaymentPlan(
@@ -5589,12 +5656,15 @@ if (typeof document !== "undefined") {
         document.getElementById("split-label").value);
       var out = document.getElementById("splitlink-result");
       document.getElementById("splitlink-copy-status").textContent = "";
+      document.getElementById("splitlink-link-status").textContent = "";
       if (!res) {
         lastSplitlinkText = "";
+        lastSplitlinkUrl = "";
         out.textContent = "Enter two DIFFERENT mainnet payment addresses (addr1…, each with a valid checksum — a stake or testnet address cannot receive this payment), an amount above 0 ADA (up to 6 decimals), seller 1's share as a percentage between 0.01 and 99.99 (up to two decimals) that leaves both shares above 0 lovelace, and an optional label of at most 64 characters.";
         return;
       }
       lastSplitlinkText = splitPaymentPlanText(res);
+      lastSplitlinkUrl = splitPaymentLink(res.recipientA, res.recipientB, lovelaceToAda(res.amountLovelace), formatShareBps(BigInt(res.shareABps)), res.label);
       out.textContent = lastSplitlinkText;
     });
     document.getElementById("copy-splitlink").addEventListener("click", function () {
@@ -5612,6 +5682,50 @@ if (typeof document !== "undefined") {
         status.textContent = "Select the plan text to copy it.";
       }
     });
+
+    /* --- copy split payment link (same stale-plan guard as the
+       split plan copy above: only the link for the last
+       successfully built split plan can be copied, and a failed
+       build clears it) --- */
+    document.getElementById("copy-splitlink-url").addEventListener("click", function () {
+      var status = document.getElementById("splitlink-link-status");
+      if (!lastSplitlinkUrl) {
+        status.textContent = "Build a split payment plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Split payment link copied — send it to the buyer; it opens this page with the split plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastSplitlinkUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?toA=, toB=, amount= and share= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from a split payment link: a ?toA=…&toB=…&amount=…
+       &share=… query (see splitPaymentLink) fills the split form
+       and builds the plan, with the fee recomputed by this page,
+       never taken from the link. Split-shaped queries are claimed
+       here, not by the single-seller block above; a split-shaped
+       query that does not validate is reported, not silently
+       ignored, and an unrelated query string is left alone. --- */
+    if (linkSearch && /(^|[?&])(toA|toB|share)=/.test(linkSearch)) {
+      var linkedSplit = parseSplitPaymentLink(linkSearch);
+      if (!linkedSplit) {
+        document.getElementById("splitlink-result").textContent = "That split payment link is not valid — check it with the sellers before paying anything. A valid link names two different mainnet payment addresses with verifying checksums, an amount above 0 ADA and seller 1's share between 0.01 and 99.99%, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("split-recipient-a").value = linkedSplit.recipientA;
+        document.getElementById("split-recipient-b").value = linkedSplit.recipientB;
+        document.getElementById("split-amount").value = linkedSplit.amount;
+        document.getElementById("split-share").value = linkedSplit.share;
+        document.getElementById("split-label").value = linkedSplit.label;
+        var linkedSplitPlan = splitPaymentPlan(linkedSplit.recipientA, linkedSplit.recipientB, linkedSplit.amount, linkedSplit.share, linkedSplit.label);
+        lastSplitlinkText = splitPaymentPlanText(linkedSplitPlan);
+        lastSplitlinkUrl = splitPaymentLink(linkedSplit.recipientA, linkedSplit.recipientB, linkedSplit.amount, linkedSplit.share, linkedSplit.label);
+        document.getElementById("splitlink-result").textContent = "Opened from a split payment link — double-check both seller addresses in full before paying.\n\n" + lastSplitlinkText;
+      }
+    }
 
     /* --- transaction ID (blake2b-256 of the body CBOR) --- */
     document.getElementById("txidcalc").addEventListener("submit", function (ev) {
