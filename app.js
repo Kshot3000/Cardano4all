@@ -1125,6 +1125,182 @@ function parseMarketplaceLink(searchRaw) {
   return { vendor: plan.vendor, amount: lovelaceToAda(plan.amountLovelace), title: plan.title, description: plan.description };
 }
 
+/* Rental deposit payment plan builder — the rent + deposit variant
+   of the payment plan builders above (profit mandate, 2026-10-12).
+   Moving into a rental takes one upfront payment shaped nothing
+   like a sale: the first rent plus a refundable security deposit,
+   both to the landlord. This tool writes that payment as a plan:
+   the full rent and the full deposit to the landlord's mainnet
+   payment address, plus the same disclosed 1% Cardano4All service
+   fee — here on the UPFRONT TOTAL (rent + deposit), floored to
+   whole lovelace, to the same fee address — the tenant pays
+   rent + deposit + fee in total. The fee is paid on top and is
+   never part of the deposit: the plan states that the deposit the
+   landlord must refund is the full deposit amount. Honesty
+   boundary, stated in the plan itself: this is NOT a lease or a
+   rental agreement and it creates no tenancy — this page holds
+   no deposit, nothing is locked on chain, and whether and when
+   the deposit comes back is set by the written lease and local
+   law, not by this plan. A deposit of 0 ADA is allowed (some
+   rentals take none) and the plan says so instead of inventing
+   one. The tenancy terms are a plain-text note (at most 128
+   characters, no control characters); it is never sent anywhere
+   and binds nobody on chain — the plan says to agree the lease
+   in writing. The landlord faces the paymentPlan gates (mainnet
+   payment address, verifying checksum). Same boundary as the
+   plans above: no transaction is built or signed; the plan is
+   text. */
+
+/* rentalPlan(landlordRaw, rentStr, depositStr, termRaw,
+   labelRaw) -> { landlord, label, term, rentLovelace,
+   depositLovelace, upfrontLovelace, feeLovelace, totalLovelace,
+   feeAddress, feeBps } (amounts as decimal strings, feeBps as a
+   Number) or null for an invalid landlord, rent, deposit, term
+   note or label. The rent must be above 0; the deposit may be 0. */
+function rentalPlan(landlordRaw, rentStr, depositStr, termRaw, labelRaw) {
+  var landlord = (landlordRaw || "").trim();
+  var check = verifyBech32(landlord);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var rentStrL = adaToLovelace(rentStr);
+  if (rentStrL === null) return null;
+  var rent = BigInt(rentStrL);
+  if (rent <= 0n) return null;
+  var depositStrL = adaToLovelace(depositStr);
+  if (depositStrL === null) return null;
+  var deposit = BigInt(depositStrL);
+  if (deposit < 0n) return null;
+  var term = (termRaw || "").trim();
+  if (term.length > 128 || /[\x00-\x1f\x7f]/.test(term)) return null;
+  var label = (labelRaw || "").trim();
+  if (label.length > 64 || /[\x00-\x1f\x7f]/.test(label)) return null;
+  var upfront = rent + deposit;
+  var fee = (upfront * PAYLINK_FEE_BPS) / 10000n;
+  return {
+    landlord: landlord,
+    label: label,
+    term: term,
+    rentLovelace: rent.toString(),
+    depositLovelace: deposit.toString(),
+    upfrontLovelace: upfront.toString(),
+    feeLovelace: fee.toString(),
+    totalLovelace: (upfront + fee).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* rentalPlanText(plan) -> the copyable rental plan text. The
+   not-a-lease warning leads, before any payment step, for the
+   same reason the escrow warning leads its plan: a forwarded
+   plan must not be able to trim the warning off the top without
+   the steps visibly following it. The deposit refund line pays
+   the FULL deposit — the fee was charged on top at payment time
+   and is never deducted from the refund. Any output under 1 ADA
+   (the rent, the deposit when positive, or the fee when
+   positive) is named in a minimum-UTxO note, as in the plans
+   above. */
+function rentalPlanText(plan) {
+  var lines = [];
+  lines.push("Cardano rental deposit payment plan" + (plan.label ? " — " + plan.label : ""));
+  lines.push("IMPORTANT: this is NOT a lease or rental agreement and it creates no tenancy. This page holds no deposit and nothing is locked on chain — the deposit is paid to the landlord's own wallet. Whether and when the deposit comes back is set by your written lease and local law, not by this plan. Agree the lease, the deposit-refund conditions and the move-in date in writing before paying.");
+  lines.push("Tenancy terms: " + (plan.term ? plan.term : "not stated — agree the term, the move-in date and the deposit-refund conditions in the written lease before paying."));
+  lines.push("Pay the landlord the rent: " + lovelaceToAda(plan.rentLovelace) + " ADA (" + plan.rentLovelace + " lovelace) to " + plan.landlord);
+  if (plan.depositLovelace === "0") {
+    lines.push("Security deposit: none in this plan — no deposit amount was entered. If your lease names a deposit, do not pay until the plan is rebuilt with it.");
+  } else {
+    lines.push("Pay the landlord the refundable security deposit: " + lovelaceToAda(plan.depositLovelace) + " ADA (" + plan.depositLovelace + " lovelace) to the same address " + plan.landlord);
+  }
+  if (plan.feeLovelace === "0") {
+    lines.push("Cardano4All service fee (1% of the upfront total — rent plus deposit — disclosed): 0 lovelace — the 1% of this amount floors to 0, so no fee output is due.");
+  } else {
+    lines.push("Pay the Cardano4All service fee (1% of the upfront total — rent plus deposit — disclosed): " + lovelaceToAda(plan.feeLovelace) + " ADA (" + plan.feeLovelace + " lovelace) to " + plan.feeAddress);
+  }
+  lines.push("Tenant total: " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace), plus the network transaction fee your wallet adds.");
+  if (plan.depositLovelace !== "0") {
+    lines.push("At the end of the tenancy the landlord refunds the FULL deposit — " + lovelaceToAda(plan.depositLovelace) + " ADA (" + plan.depositLovelace + " lovelace) — subject to the written lease. The service fee above is not part of the deposit and is never deducted from the refund.");
+  }
+  var small = [];
+  if (BigInt(plan.rentLovelace) < 1000000n) small.push("the rent");
+  if (plan.depositLovelace !== "0" && BigInt(plan.depositLovelace) < 1000000n) small.push("the deposit");
+  if (plan.feeLovelace !== "0" && BigInt(plan.feeLovelace) < 1000000n) small.push("the service fee");
+  if (small.length) {
+    lines.push("Note: " + small.join(", ") + " under 1 ADA, below the minimum a single output must carry — send each together with a larger payment in the same transaction where your wallet allows it. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a payment plan to paste into your own wallet. Double-check the landlord address in full before sending.");
+  return lines.join("\n");
+}
+
+/* Shareable rental plan link — the rental plan above as a link
+   the landlord can send a tenant (profit mandate, 2026-10-12).
+   The link carries ONLY the landlord's address, the rent and the
+   deposit (each as a canonical ADA string), the optional tenancy
+   terms and the optional label — each percent-encoded. Like the
+   other links it carries NO fee field and no fee address: the
+   disclosed 1% fee is recomputed by rentalPlan when the page
+   opens, every time, so a link cannot be edited to raise the fee
+   or reroute it — a query that smuggles in an extra field (fee=,
+   or anything unknown), repeats a field, or fails the
+   rentalPlan gates is refused whole. The parser is the same
+   deliberately manual one as parsePaymentLink: "+" is data,
+   never a space, decoding failures refuse the link, and exactly
+   the five known fields are admitted. The field names
+   (landlord, rent, deposit, term) keep a rental link distinct
+   from a single-seller link (to), a split link (toA, toB,
+   share), an escrow link (buyer, seller, arbiter, release) and
+   a listing link (vendor, title, desc) on sight and in the
+   open-from-link wiring below — a rental link carries no
+   amount=, so no earlier block can claim it, and the
+   single-seller block below also excludes rental-shaped queries
+   explicitly, as it does the other formats. Nothing is fetched
+   or sent; the query is read locally from the page's own
+   address bar. */
+
+/* rentalLink(landlordRaw, rentStr, depositStr, termRaw,
+   labelRaw) -> the shareable URL string, or null when
+   rentalPlan refuses the inputs. */
+function rentalLink(landlordRaw, rentStr, depositStr, termRaw, labelRaw) {
+  var plan = rentalPlan(landlordRaw, rentStr, depositStr, termRaw, labelRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?landlord=" + encodeURIComponent(plan.landlord) +
+    "&rent=" + encodeURIComponent(lovelaceToAda(plan.rentLovelace)) +
+    "&deposit=" + encodeURIComponent(lovelaceToAda(plan.depositLovelace));
+  if (plan.term) url += "&term=" + encodeURIComponent(plan.term);
+  if (plan.label) url += "&label=" + encodeURIComponent(plan.label);
+  return url + "#rentlink";
+}
+
+/* parseRentalLink(searchRaw) -> { landlord, rent, deposit,
+   term, label } with rent and deposit as canonical ADA strings
+   ready to refill the form, or null for anything that is not
+   exactly a well-formed, valid rental link (empty,
+   unknown/repeated/missing fields, malformed percent-encoding,
+   or inputs rentalPlan refuses). Accepts the query with or
+   without its leading "?". */
+function parseRentalLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "landlord" && key !== "rent" && key !== "deposit" && key !== "term" && key !== "label") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.landlord || !seen.rent || !seen.deposit) return null;
+  var plan = rentalPlan(values.landlord, values.rent, values.deposit, seen.term ? values.term : "", seen.label ? values.label : "");
+  if (!plan) return null;
+  return { landlord: plan.landlord, rent: lovelaceToAda(plan.rentLovelace), deposit: lovelaceToAda(plan.depositLovelace), term: plan.term, label: plan.label };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5664,7 +5840,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5940,7 +6116,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -6217,6 +6393,95 @@ if (typeof document !== "undefined") {
         lastMarketText = marketplacePlanText(linkedMarketPlan);
         lastMarketUrl = marketplaceLink(linkedMarket.vendor, linkedMarket.amount, linkedMarket.title, linkedMarket.description);
         document.getElementById("marketlink-result").textContent = "Opened from a listing link — this listing was written by the seller and the item has not been verified here. Double-check the seller address in full before paying.\n\n" + lastMarketText;
+      }
+    }
+
+    /* --- rental deposit payment plan builder (rent + refundable
+       deposit with the disclosed 1% service fee on the upfront
+       total, offline — same stale-plan guard as the other plan
+       copy buttons: only the last successfully built rental plan
+       is copyable) --- */
+    var lastRentText = "";
+    var lastRentUrl = "";
+    document.getElementById("rentlink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = rentalPlan(
+        document.getElementById("rent-landlord").value,
+        document.getElementById("rent-rent").value,
+        document.getElementById("rent-deposit").value,
+        document.getElementById("rent-term").value,
+        document.getElementById("rent-label").value);
+      var out = document.getElementById("rentlink-result");
+      document.getElementById("rentlink-copy-status").textContent = "";
+      document.getElementById("rentlink-link-status").textContent = "";
+      if (!res) {
+        lastRentText = "";
+        lastRentUrl = "";
+        out.textContent = "Enter the landlord's mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive these payments), a rent above 0 ADA (up to 6 decimals), a deposit of 0 ADA or more, an optional tenancy-terms note of at most 128 characters and an optional label of at most 64 characters.";
+        return;
+      }
+      lastRentText = rentalPlanText(res);
+      lastRentUrl = rentalLink(res.landlord, lovelaceToAda(res.rentLovelace), lovelaceToAda(res.depositLovelace), res.term, res.label);
+      out.textContent = lastRentText;
+    });
+    document.getElementById("copy-rentlink").addEventListener("click", function () {
+      var status = document.getElementById("rentlink-copy-status");
+      if (!lastRentText) {
+        status.textContent = "Build a rental plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Rental plan copied — send it to the tenant with the written lease."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastRentText).then(done, function () {
+          status.textContent = "Copy failed — select the plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the plan text to copy it.";
+      }
+    });
+
+    /* --- copy rental plan link (same stale-plan guard as the
+       rental plan copy above: only the link for the last
+       successfully built rental plan can be copied, and a failed
+       build clears it) --- */
+    document.getElementById("copy-rentlink-url").addEventListener("click", function () {
+      var status = document.getElementById("rentlink-link-status");
+      if (!lastRentUrl) {
+        status.textContent = "Build a rental plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Rental plan link copied — send it to the tenant; it opens this page with the plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastRentUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?landlord=, rent= and deposit= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from a rental plan link: a ?landlord=…&rent=…
+       &deposit=… query (see rentalLink) fills the rental form
+       and builds the plan, with the fee recomputed by this page,
+       never taken from the link. Rental-shaped queries are
+       claimed here, not by the single-seller block above (which
+       excludes them explicitly); a rental-shaped query that
+       does not validate is reported, not silently ignored, and
+       an unrelated query string is left alone. --- */
+    if (linkSearch && /(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch)) {
+      var linkedRent = parseRentalLink(linkSearch);
+      if (!linkedRent) {
+        document.getElementById("rentlink-result").textContent = "That rental plan link is not valid — check it with the landlord before paying anything. A valid link names a mainnet payment address with a verifying checksum, a rent above 0 ADA and a deposit of 0 ADA or more, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("rent-landlord").value = linkedRent.landlord;
+        document.getElementById("rent-rent").value = linkedRent.rent;
+        document.getElementById("rent-deposit").value = linkedRent.deposit;
+        document.getElementById("rent-term").value = linkedRent.term;
+        document.getElementById("rent-label").value = linkedRent.label;
+        var linkedRentPlan = rentalPlan(linkedRent.landlord, linkedRent.rent, linkedRent.deposit, linkedRent.term, linkedRent.label);
+        lastRentText = rentalPlanText(linkedRentPlan);
+        lastRentUrl = rentalLink(linkedRent.landlord, linkedRent.rent, linkedRent.deposit, linkedRent.term, linkedRent.label);
+        document.getElementById("rentlink-result").textContent = "Opened from a rental plan link — this plan is not a lease; agree the lease in writing before paying, and double-check the landlord address in full.\n\n" + lastRentText;
       }
     }
 

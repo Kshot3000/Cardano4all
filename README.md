@@ -196,8 +196,34 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   title, or a tampered, stake or testnet address is refused and
   reported on the page. The page builds no transaction and signs
   nothing.
+- **Rental deposit payment plan builder (rent + deposit,
+  disclosed 1% service fee)** — the rental variant: the tenant pays
+  the first rent and the refundable security deposit, both in full
+  to the landlord's mainnet payment address, plus the same
+  disclosed 1% service fee — here on the upfront total (rent +
+  deposit), floored to whole lovelace, exact BigInt maths — to the
+  same Cardano4All fee address above. The fee is paid on top and is
+  never part of the deposit: the plan states the landlord refunds
+  the full deposit, subject to the written lease. The plan text
+  leads with the honesty line: this is not a lease or rental
+  agreement and creates no tenancy, the page holds no deposit,
+  nothing is locked on chain, and whether and when the deposit
+  comes back is set by the written lease and local law. The
+  landlord is gated to a mainnet payment address with a verifying
+  checksum, the rent must be above 0 ADA, a deposit of 0 ADA is
+  allowed and is stated as none in the plan, the tenancy terms are
+  a plain-text note of at most 128 characters, sub-1-ADA outputs
+  are named in a minimum-UTxO warning, and Copy buttons copy only
+  the last successfully built plan or its shareable link. The link
+  carries only the landlord address, the rent, the deposit, the
+  tenancy terms and the label — no fee field at all — and the page
+  recomputes the disclosed 1% fee on open, so a link cannot be
+  edited to raise or reroute the fee; a link with an extra or
+  repeated field, malformed encoding, a zero rent, or a tampered,
+  stake or testnet address is refused and reported on the page.
+  The page builds no transaction and signs nothing.
 - **Cardano4All Pay landing page (`pay.html`)** — a standalone,
-  shareable page for the four payment plan builders above: what each
+  shareable page for the five payment plan builders above: what each
   plan is for, how a plan is used, and the disclosed 1% service fee
   explained in full with the fee address printed on the page. It
   carries the same attribution and the same honesty lines (no
