@@ -49,6 +49,34 @@ const toolList = ldParsed.find(o => o["@type"] === "ItemList");
 check("JSON-LD ItemList anchors match real tool form ids", !!toolList && toolList.itemListElement.every(it => { const a = (it.url || "").split("#")[1]; return a && html.includes(`id="${a}"`); }));
 check("JSON-LD ItemList includes the staking estimator", !!toolList && toolList.itemListElement.some(it => /staking rewards estimator/i.test(it.name || "")));
 
+/* Cardano4All Pay landing page (pay.html): standalone shareable page for
+   the three payment plan builders — attribution, fee disclosure and the
+   escrow honesty line must be on the page itself, and every plan link
+   must land on a real builder form on the hub */
+const payHtml = fs.readFileSync(path.join(root, "pay.html"), "utf8");
+check("pay.html linked from the hub hero", html.includes('href="pay.html"'));
+check("pay.html carries the ADA address", payHtml.includes(ADA));
+check("pay.html carries @kshot9000", payHtml.includes("@kshot9000"));
+check("pay.html tags the Cardano team", payHtml.includes("@cardano-foundation") && payHtml.includes("@IntersectMBO"));
+check("pay.html keeps the not-affiliated line", payHtml.includes("Not affiliated with the Cardano Foundation, IOG or Intersect"));
+check("pay.html has exactly one <h1>", (payHtml.match(/<h1[ >]/g) || []).length === 1);
+check("pay.html has <main> landmark", /<main[\s>]/.test(payHtml));
+check("pay.html reuses the hub stylesheets with cache keys", payHtml.includes("styles.css?v=1") && payHtml.includes("visual-upgrade/theme.css?v=20261007"));
+check("pay.html has no scripts of its own (static explainer)", !/<script(?![^>]*application\/ld\+json)/.test(payHtml.replace(/<script type="application\/ld\+json">/g, "")));
+check("pay.html canonical is its own URL", payHtml.includes('<link rel="canonical" href="https://kshot3000.github.io/Cardano4all/pay.html">'));
+check("pay.html title names the disclosed 1% fee", /1% service fee/i.test(payHtml.split("</title>")[0]));
+check("pay.html discloses the 1% fee in the body copy", (payHtml.match(/1% service fee/g) || []).length >= 3);
+check("pay.html states no transaction is built or signed", /no transaction and sign nothing/i.test(payHtml));
+check("pay.html leads the escrow card with the not-an-escrow honesty line", /not a smart-contract escrow/i.test(payHtml) && /cannot hold funds in escrow/i.test(payHtml));
+check("pay.html links into all three payment builders", ["paylink", "splitlink", "escrowlink"].every(a => payHtml.includes(`href="./#${a}"`)));
+check("pay.html builder anchors are real form ids on the hub", ["paylink", "splitlink", "escrowlink"].every(a => html.includes(`id="${a}"`)));
+const payLdBlocks = [...payHtml.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
+let payLd = null;
+try { payLd = JSON.parse(payLdBlocks[0]); } catch (e) { payLd = null; }
+check("pay.html JSON-LD is one valid ItemList of the three plans", payLdBlocks.length === 1 && !!payLd && payLd["@type"] === "ItemList" && payLd.itemListElement.length === 3 && payLd.itemListElement.every(it => ["paylink", "splitlink", "escrowlink"].includes((it.url || "").split("#")[1])));
+check("sitemap lists the hub and pay.html", fs.readFileSync(path.join(root, "sitemap.xml"), "utf8").includes("https://kshot3000.github.io/Cardano4all/pay.html"));
+check("README documents the Pay landing page", readme.includes("pay.html"));
+
 /* flagship links */
 for (const url of ["https://nightdream.xyz/", "https://kshot3000.github.io/Grok-CIP-113/",
   "https://kshot3000.github.io/PlutusShield/", "https://kshot3000.github.io/Adadrome/",

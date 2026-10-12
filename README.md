@@ -175,6 +175,13 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   encoding, two parties sharing an address, or a tampered, stake or
   testnet address is refused and reported on the page. The page
   builds no transaction and signs nothing.
+- **Cardano4All Pay landing page (`pay.html`)** — a standalone,
+  shareable page for the three payment plan builders above: what each
+  plan is for, how a plan is used, and the disclosed 1% service fee
+  explained in full with the fee address printed on the page. It
+  carries the same attribution and the same honesty lines (no
+  transaction built or signed; the escrow-style plan is not a
+  smart-contract escrow) and links straight into each builder.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
   Paste a body's CBOR hex, or a whole transaction's (the array

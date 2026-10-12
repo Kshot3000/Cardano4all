@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cardano4All Pay — ADA Payment Plans with a Disclosed 1% Service Fee</title>
+<meta name="description" content="Get paid in ADA with Cardano4All payment plans: one seller, two sellers splitting a sale, or a trusted-arbiter escrow-style plan. Every plan carries the same disclosed 1% service fee, printed in the plan itself. No wallet needed, no transaction built or signed.">
+<link rel="canonical" href="https://kshot3000.github.io/Cardano4all/pay.html">
+<meta name="theme-color" content="#0033ad">
+<meta property="og:title" content="Cardano4All Pay — ADA payment plans, fee in the open">
+<meta property="og:description" content="Payment plans for selling in ADA: one seller, a two-seller split, or a trusted-arbiter escrow-style plan — each with the same disclosed 1% service fee printed in the plan. By Kyle Cox (@kshot9000).">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://kshot3000.github.io/Cardano4all/pay.html">
+<meta property="og:image" content="https://kshot3000.github.io/Cardano4all/visual-upgrade/scene.svg">
+<meta property="og:image:alt" content="Cardano4All Pay — ADA payment plans by Kyle Cox (@kshot9000)">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@kshot9000">
+<meta name="twitter:creator" content="@kshot9000">
+<meta name="twitter:title" content="Cardano4All Pay — ADA payment plans with a disclosed 1% fee">
+<meta name="twitter:description" content="Sell in ADA: payment plans for one seller, two sellers splitting a sale, or a trusted arbiter — the 1% service fee is printed in every plan. No wallet needed. By @kshot9000.">
+<meta name="twitter:image" content="https://kshot3000.github.io/Cardano4all/visual-upgrade/scene.svg">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All ADA payment plans","itemListElement":[{"@type":"ListItem","position":1,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"},{"@type":"ListItem","position":2,"name":"ADA split payment plan builder for two sellers with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#splitlink"},{"@type":"ListItem","position":3,"name":"ADA escrow-style payment plan builder with trusted arbiter and disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#escrowlink"}]}
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=1">
+<link rel="stylesheet" href="visual-upgrade/theme.css?v=20261007">
+</head>
+<body data-vu-theme="network">
+<a class="skip" href="#main">Skip to main content</a>
+<header class="site-head">
+  <a class="brand" href="./" aria-label="Cardano4All home">
+    <span class="brand-mark" aria-hidden="true">₳</span>
+    <span>Cardano<strong>4All</strong></span>
+  </a>
+  <nav aria-label="Main">
+    <a href="./#paylink">Payment plan</a>
+    <a href="./#splitlink">Split plan</a>
+    <a href="./#escrowlink">Escrow-style plan</a>
+    <a href="./#tools">All tools</a>
+    <a href="https://github.com/Kshot3000/Cardano4all">GitHub</a>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
+  <section class="hero">
+    <p class="eyebrow">Cardano4All Pay · By <a href="https://x.com/kshot9000">@kshot9000</a></p>
+    <h1>Get paid in ADA — with the fee in the open.</h1>
+    <p class="lede">Three payment-plan builders for selling in ADA. Each one writes the payment
+    as plain copyable text — who gets what, in full — and each carries the same
+    <strong>disclosed 1% service fee</strong>: 1% of the item amount, floored to whole lovelace,
+    paid by the buyer on top to my Cardano4All fee address and printed in the plan itself.
+    No hidden cut, nothing taken out of the seller's amount. The pages build
+    <strong>no transaction and sign nothing</strong> — the buyer's own wallet makes the payment.</p>
+    <div class="hero-cta">
+      <a class="btn primary" href="./#paylink">Build a payment plan</a>
+      <a class="btn" href="#plans">Compare the three plans</a>
+    </div>
+    <dl class="stats">
+      <div><dt>Service fee</dt><dd>1%, disclosed</dd></div>
+      <div><dt>Plans</dt><dd>3 — solo, split, arbiter</dd></div>
+      <div><dt>Wallet needed</dt><dd>None to build a plan</dd></div>
+    </dl>
+  </section>
+
+  <section id="plans" aria-labelledby="plans-h">
+    <h2 id="plans-h">The three plans</h2>
+    <p>Pick by how the sale is shaped. All three check every address is a real mainnet
+    payment address with a verifying checksum before a plan is written, and all three can
+    copy a <strong>shareable link</strong> that opens the builder with the details filled in —
+    the link carries <strong>no fee field of its own</strong>, so it cannot be edited to raise
+    or reroute the fee: the 1% is worked out by the page every time it opens.</p>
+    <ul class="cards">
+      <li class="card">
+        <h3>Payment plan — one seller</h3>
+        <p>The straightforward sale. The buyer pays the full item amount to your mainnet
+        payment address, plus the disclosed 1% service fee on top. Amounts under 0.01 ADA
+        floor the fee to 0 lovelace, and the plan says so.</p>
+        <p class="card-links"><a href="./#paylink">Build a payment plan</a></p>
+      </li>
+      <li class="card">
+        <h3>Split payment plan — two sellers</h3>
+        <p>Splitting a sale with a partner: seller 1 gets the percentage share you enter,
+        seller 2 gets the rest, so the two shares always add up to the item amount exactly —
+        no lovelace lost to rounding. The buyer pays the same disclosed 1% fee on the total,
+        on top of both shares. The two sellers must be different addresses.</p>
+        <p class="card-links"><a href="./#splitlink">Build a split payment plan</a></p>
+      </li>
+      <li class="card">
+        <h3>Escrow-style plan — trusted arbiter</h3>
+        <p>For buying from someone you do not know yet. Be clear about what this is: a plain
+        Cardano payment <strong>cannot hold funds in escrow</strong> — that takes a smart
+        contract — so this is <strong>not a smart-contract escrow</strong>, the page holds
+        nothing, and nothing is locked on chain. Instead, buyer, seller and a mutually
+        trusted arbiter agree a release condition in writing; the buyer funds the arbiter
+        with the full item amount plus the disclosed 1% fee, and on release the arbiter pays
+        the seller in full — or refunds the buyer in full. Only use an arbiter all three
+        parties trust.</p>
+        <p class="card-links"><a href="./#escrowlink">Build an escrow-style plan</a></p>
+      </li>
+    </ul>
+  </section>
+
+  <section id="how" aria-labelledby="how-h">
+    <h2 id="how-h">How a plan is used</h2>
+    <ul class="guide-list">
+      <li><strong>1. Build the plan.</strong> Enter the address(es), the item amount and an optional label; the builder checks the addresses and writes the exact outputs as text.</li>
+      <li><strong>2. Send it unchanged.</strong> Copy the plan text, or copy the shareable link and send that — the link refills the builder and rebuilds the same plan, fee included, on the other side.</li>
+      <li><strong>3. The buyer pays in their own wallet.</strong> They paste the outputs into their wallet, double-check every address in full, and pay the item amount, the fee, and the network fee their wallet adds. Nothing on these pages ever touches a wallet or a key.</li>
+    </ul>
+  </section>
+
+  <section id="fee" aria-labelledby="fee-h">
+    <h2 id="fee-h">The fee, in full</h2>
+    <p>The 1% service fee is the whole business model of these tools, and it is printed in
+    every plan next to the address it goes to — my Cardano4All fee address, the same ADA
+    address as in Support below:</p>
+    <p class="donate">
+      <code>addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</code>
+    </p>
+    <p>It is calculated on the item amount only, floored to whole lovelace with exact integer
+    maths, and it is always an extra output the buyer pays — never deducted from what a
+    seller receives. If any output in a plan comes to under 1 ADA, the plan names it in a
+    minimum-UTxO warning, because a wallet may refuse an output that small on its own.</p>
+  </section>
+
+  <section id="support" aria-labelledby="support-h">
+    <h2 id="support-h">Support this work</h2>
+    <p>Cardano4All is free and open source. The payment plans above earn their disclosed 1%
+    fee only when someone sells with them; everything else on the hub is free. Tips in ADA
+    are welcome at the same address:</p>
+    <p class="donate">
+      <code>addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</code>
+    </p>
+    <p>Built by Kyle Cox — <a href="https://x.com/kshot9000">@kshot9000 on X</a> · <a href="https://github.com/Kshot3000">github.com/Kshot3000</a> · <a href="./">All Cardano4All tools and projects</a></p>
+    <p class="team-tag">For the Cardano team — <a href="https://github.com/cardano-foundation">@cardano-foundation</a> and
+    <a href="https://github.com/IntersectMBO">@IntersectMBO</a>: this is an independent community builder hub.
+    Feedback and corrections are welcome in the <a href="https://github.com/Kshot3000/Cardano4all/issues">issues</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
+  <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
+</footer>
+</body>
+</html>
