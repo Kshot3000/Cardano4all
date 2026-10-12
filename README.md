@@ -222,8 +222,33 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   repeated field, malformed encoding, a zero rent, or a tampered,
   stake or testnet address is refused and reported on the page.
   The page builds no transaction and signs nothing.
+- **Invoice payment plan builder (freelance & service work,
+  disclosed 1% service fee)** — the invoice variant: a freelancer or
+  service provider writes the invoice itself (a required invoice
+  number of 1 to 32 characters — letters, digits, hyphens,
+  underscores and slashes, starting with a letter or digit, so it
+  cannot smuggle extra lines into the invoice text — an optional
+  note of the work of at most 128 characters, the amount and their
+  mainnet payment address) and the tool writes it as copyable text
+  — the full invoiced amount to the issuer plus the same disclosed
+  1% service fee (floored to whole lovelace, exact BigInt maths) to
+  the same Cardano4All fee address above. The invoice text leads
+  with the honesty line: this page is not an accounting or tax
+  system, it holds no records, has not verified the work was done
+  or matches the invoice, and reports nothing to any tax authority
+  — the invoice is issuer-written, and both parties keep their own
+  records for tax. Sub-1-ADA fee outputs are named in a
+  minimum-UTxO warning, and Copy buttons copy only the last
+  successfully built invoice or its shareable link. The link
+  carries only the issuer address, the amount, the invoice number
+  and the work note — no fee field at all — and the page
+  recomputes the disclosed 1% fee on open, so a link cannot be
+  edited to raise or reroute the fee; a link with an extra or
+  repeated field, malformed encoding, a bad invoice number, or a
+  tampered, stake or testnet address is refused and reported on
+  the page. The page builds no transaction and signs nothing.
 - **Cardano4All Pay landing page (`pay.html`)** — a standalone,
-  shareable page for the five payment plan builders above: what each
+  shareable page for the six payment plan builders above: what each
   plan is for, how a plan is used, and the disclosed 1% service fee
   explained in full with the fee address printed on the page. It
   carries the same attribution and the same honesty lines (no

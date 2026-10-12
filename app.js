@@ -1301,6 +1301,163 @@ function parseRentalLink(searchRaw) {
   return { landlord: plan.landlord, rent: lovelaceToAda(plan.rentLovelace), deposit: lovelaceToAda(plan.depositLovelace), term: plan.term, label: plan.label };
 }
 
+/* Invoice payment plan builder — the freelance / service-work
+   variant of the payment plan builders above (profit mandate,
+   2026-10-12). A freelancer or service provider invoices a client:
+   an invoice number, a note of the work done, an amount and the
+   issuer's mainnet payment address. This tool writes that invoice
+   as a copyable payment plan: the full invoiced amount to the
+   issuer, plus the same disclosed 1% Cardano4All service fee —
+   on the invoiced amount, floored to whole lovelace, to the same
+   fee address — the client pays amount + fee in total. Honesty
+   boundary, stated in the plan itself: this page is NOT an
+   accounting or tax system — it holds no records, it has not
+   verified that the work was done or that it matches the invoice,
+   and it does not report anything to any tax authority; the
+   invoice is issuer-written and both parties keep their own
+   records for tax. The invoice number is an identifier, not free
+   text: 1 to 32 characters, letters, digits, hyphens, underscores
+   and slashes, starting with a letter or digit (INV-2026-001 is
+   the shape) — spaces and other punctuation refuse, so a number
+   cannot smuggle a second line into the forwarded plan text. The
+   work note is plain text (at most 128 characters, no control
+   characters). The issuer faces the paymentPlan gates (mainnet
+   payment address, verifying checksum). Same boundary as the
+   plans above: no transaction is built or signed; the plan is
+   text. */
+
+/* invoicePlan(issuerRaw, amountStr, invoiceRaw, workRaw) ->
+   { issuer, invoice, work, amountLovelace, feeLovelace,
+   totalLovelace, feeAddress, feeBps } (amounts as decimal
+   strings, feeBps as a Number) or null for an invalid issuer,
+   amount, invoice number or work note. The invoice number is
+   required; the work note is optional. */
+function invoicePlan(issuerRaw, amountStr, invoiceRaw, workRaw) {
+  var issuer = (issuerRaw || "").trim();
+  var check = verifyBech32(issuer);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var amountStrL = adaToLovelace(amountStr);
+  if (amountStrL === null) return null;
+  var amount = BigInt(amountStrL);
+  if (amount <= 0n) return null;
+  var invoice = (invoiceRaw || "").trim();
+  if (!invoice || invoice.length > 32 || !/^[A-Za-z0-9][A-Za-z0-9\-_\/]*$/.test(invoice)) return null;
+  var work = (workRaw || "").trim();
+  if (work.length > 128 || /[\x00-\x1f\x7f]/.test(work)) return null;
+  var fee = (amount * PAYLINK_FEE_BPS) / 10000n;
+  return {
+    issuer: issuer,
+    invoice: invoice,
+    work: work,
+    amountLovelace: amount.toString(),
+    feeLovelace: fee.toString(),
+    totalLovelace: (amount + fee).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* invoicePlanText(plan) -> the copyable invoice text. The
+   not-an-accounting-system warning leads, before the amount or
+   any payment step, for the same reason the escrow warning leads
+   its plan: a forwarded invoice must not be able to trim the
+   warning off the top without the steps visibly following it.
+   A sub-1-ADA fee output is named in a minimum-UTxO note, as in
+   the plans above. */
+function invoicePlanText(plan) {
+  var lines = [];
+  lines.push("Cardano invoice " + plan.invoice + " — payment plan");
+  lines.push("IMPORTANT: this invoice was written by the issuer. This page is not an accounting or tax system — it holds no records, has not verified that the work was done or that it matches this invoice, and does not report anything to any tax authority. Agree the work, the amount and the payment terms in writing before paying, and keep your own records for tax.");
+  lines.push("Invoice: " + plan.invoice);
+  if (plan.work) {
+    lines.push("Work: " + plan.work);
+  } else {
+    lines.push("Work: not stated — agree what this invoice covers with the issuer in writing before paying.");
+  }
+  lines.push("Pay the issuer: " + lovelaceToAda(plan.amountLovelace) + " ADA (" + plan.amountLovelace + " lovelace) to " + plan.issuer);
+  if (plan.feeLovelace === "0") {
+    lines.push("Cardano4All service fee (1% of the invoiced amount, disclosed): 0 lovelace — the 1% of this amount floors to 0, so no fee output is due.");
+  } else {
+    lines.push("Pay the Cardano4All service fee (1% of the invoiced amount, disclosed): " + lovelaceToAda(plan.feeLovelace) + " ADA (" + plan.feeLovelace + " lovelace) to " + plan.feeAddress);
+  }
+  lines.push("Client total: " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace), plus the network transaction fee your wallet adds.");
+  if (plan.feeLovelace !== "0" && BigInt(plan.feeLovelace) < 1000000n) {
+    lines.push("Note: the fee output is under 1 ADA, below the minimum a single output must carry — send it together with a larger payment, or add it on top of the issuer output in one combined payment to the fee address when the total allows. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is an invoice and payment plan to paste into your own wallet. Double-check the issuer address in full before sending.");
+  return lines.join("\n");
+}
+
+/* Shareable invoice link — the invoice above as a link the issuer
+   can send a client (profit mandate, 2026-10-12). The link
+   carries ONLY the issuer's address, the invoiced amount (as a
+   canonical ADA string), the invoice number and the optional
+   work note — each percent-encoded. Like the other links it
+   carries NO fee field and no fee address: the disclosed 1% fee
+   is recomputed by invoicePlan when the page opens, every time,
+   so a link cannot be edited to raise the fee or reroute it — a
+   query that smuggles in an extra field (fee=, or anything
+   unknown), repeats a field, or fails the invoicePlan gates is
+   refused whole. The parser is the same deliberately manual one
+   as parsePaymentLink: "+" is data, never a space, decoding
+   failures refuse the link, and exactly the four known fields are
+   admitted. The field names (issuer, invoice, work) keep an
+   invoice link distinct from a single-seller link (to), a split
+   link (toA, toB, share), an escrow link (buyer, seller, arbiter,
+   release), a listing link (vendor, title, desc) and a rental
+   link (landlord, rent, deposit, term) on sight and in the
+   open-from-link wiring below — work was chosen over desc
+   precisely so a listing link's desc= can never be mistaken for
+   an invoice's note, and vice versa. An invoice link also carries
+   amount=, so the single-seller block below explicitly excludes
+   invoice-shaped queries. Nothing is fetched or sent; the query
+   is read locally from the page's own address bar. */
+
+/* invoiceLink(issuerRaw, amountStr, invoiceRaw, workRaw) -> the
+   shareable URL string, or null when invoicePlan refuses the
+   inputs. */
+function invoiceLink(issuerRaw, amountStr, invoiceRaw, workRaw) {
+  var plan = invoicePlan(issuerRaw, amountStr, invoiceRaw, workRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?issuer=" + encodeURIComponent(plan.issuer) +
+    "&amount=" + encodeURIComponent(lovelaceToAda(plan.amountLovelace)) +
+    "&invoice=" + encodeURIComponent(plan.invoice);
+  if (plan.work) url += "&work=" + encodeURIComponent(plan.work);
+  return url + "#invoicelink";
+}
+
+/* parseInvoiceLink(searchRaw) -> { issuer, amount, invoice,
+   work } with amount as a canonical ADA string ready to refill
+   the form, or null for anything that is not exactly a
+   well-formed, valid invoice link (empty, unknown/repeated/
+   missing fields, malformed percent-encoding, or inputs
+   invoicePlan refuses). Accepts the query with or without its
+   leading "?". */
+function parseInvoiceLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "issuer" && key !== "amount" && key !== "invoice" && key !== "work") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.issuer || !seen.amount || !seen.invoice) return null;
+  var plan = invoicePlan(values.issuer, values.amount, values.invoice, seen.work ? values.work : "");
+  if (!plan) return null;
+  return { issuer: plan.issuer, amount: lovelaceToAda(plan.amountLovelace), invoice: plan.invoice, work: plan.work };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5840,7 +5997,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -6116,7 +6273,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -6482,6 +6639,92 @@ if (typeof document !== "undefined") {
         lastRentText = rentalPlanText(linkedRentPlan);
         lastRentUrl = rentalLink(linkedRent.landlord, linkedRent.rent, linkedRent.deposit, linkedRent.term, linkedRent.label);
         document.getElementById("rentlink-result").textContent = "Opened from a rental plan link — this plan is not a lease; agree the lease in writing before paying, and double-check the landlord address in full.\n\n" + lastRentText;
+      }
+    }
+
+    /* --- invoice payment plan builder (freelance / service work
+       with the disclosed 1% service fee, offline — same stale-plan
+       guard as the other plan copy buttons: only the last
+       successfully built invoice is copyable) --- */
+    var lastInvoiceText = "";
+    var lastInvoiceUrl = "";
+    document.getElementById("invoicelink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = invoicePlan(
+        document.getElementById("inv-issuer").value,
+        document.getElementById("inv-amount").value,
+        document.getElementById("inv-invoice").value,
+        document.getElementById("inv-work").value);
+      var out = document.getElementById("invoicelink-result");
+      document.getElementById("invoicelink-copy-status").textContent = "";
+      document.getElementById("invoicelink-link-status").textContent = "";
+      if (!res) {
+        lastInvoiceText = "";
+        lastInvoiceUrl = "";
+        out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive this payment), an amount above 0 ADA (up to 6 decimals), an invoice number of 1 to 32 characters (letters, digits, hyphens, underscores and slashes, starting with a letter or digit — e.g. INV-2026-001) and an optional note of the work of at most 128 characters.";
+        return;
+      }
+      lastInvoiceText = invoicePlanText(res);
+      lastInvoiceUrl = invoiceLink(res.issuer, lovelaceToAda(res.amountLovelace), res.invoice, res.work);
+      out.textContent = lastInvoiceText;
+    });
+    document.getElementById("copy-invoicelink").addEventListener("click", function () {
+      var status = document.getElementById("invoicelink-copy-status");
+      if (!lastInvoiceText) {
+        status.textContent = "Build an invoice first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Invoice copied — send it to the client."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastInvoiceText).then(done, function () {
+          status.textContent = "Copy failed — select the invoice text manually.";
+        });
+      } else {
+        status.textContent = "Select the invoice text to copy it.";
+      }
+    });
+
+    /* --- copy invoice link (same stale-plan guard as the invoice
+       copy above: only the link for the last successfully built
+       invoice can be copied, and a failed build clears it) --- */
+    document.getElementById("copy-invoicelink-url").addEventListener("click", function () {
+      var status = document.getElementById("invoicelink-link-status");
+      if (!lastInvoiceUrl) {
+        status.textContent = "Build an invoice first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Invoice link copied — send it to the client; it opens this page with the invoice filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastInvoiceUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?issuer=, amount= and invoice= from your built invoice; copy the invoice text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the invoice text instead.";
+      }
+    });
+
+    /* --- open from an invoice link: a ?issuer=…&amount=…
+       &invoice=… query (see invoiceLink) fills the invoice form
+       and builds the plan, with the fee recomputed by this page,
+       never taken from the link. Invoice-shaped queries are
+       claimed here, not by the single-seller block above (which
+       excludes them, since an invoice link also carries amount=);
+       an invoice-shaped query that does not validate is reported,
+       not silently ignored, and an unrelated query string is left
+       alone. --- */
+    if (linkSearch && /(^|[?&])(issuer|invoice|work)=/.test(linkSearch)) {
+      var linkedInvoice = parseInvoiceLink(linkSearch);
+      if (!linkedInvoice) {
+        document.getElementById("invoicelink-result").textContent = "That invoice link is not valid — check it with the issuer before paying anything. A valid link names a mainnet payment address with a verifying checksum, an amount above 0 ADA and an invoice number, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("inv-issuer").value = linkedInvoice.issuer;
+        document.getElementById("inv-amount").value = linkedInvoice.amount;
+        document.getElementById("inv-invoice").value = linkedInvoice.invoice;
+        document.getElementById("inv-work").value = linkedInvoice.work;
+        var linkedInvoicePlan = invoicePlan(linkedInvoice.issuer, linkedInvoice.amount, linkedInvoice.invoice, linkedInvoice.work);
+        lastInvoiceText = invoicePlanText(linkedInvoicePlan);
+        lastInvoiceUrl = invoiceLink(linkedInvoice.issuer, linkedInvoice.amount, linkedInvoice.invoice, linkedInvoice.work);
+        document.getElementById("invoicelink-result").textContent = "Opened from an invoice link — this invoice was written by the issuer and the work has not been verified here. Double-check the issuer address in full before paying.\n\n" + lastInvoiceText;
       }
     }
 
