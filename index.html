@@ -23,7 +23,7 @@
 {"@context":"https://schema.org","@type":"WebSite","name":"Cardano4All","url":"https://kshot3000.github.io/Cardano4all/","author":{"@type":"Person","name":"Kyle Cox","url":"https://x.com/kshot9000"},"description":"Free Cardano calculators and developer tools — staking rewards, pool reward splits, transaction fees, epoch/slot conversion, address inspection and CBOR decoding. No wallet needed."}
 </script>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"},{"@type":"ListItem","position":9,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"}]}
+{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"},{"@type":"ListItem","position":9,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"},{"@type":"ListItem","position":10,"name":"ADA split payment plan builder for two sellers with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#splitlink"}]}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css?v=1">
@@ -272,6 +272,24 @@
         <button type="button" id="copy-paylink" class="btn">Copy payment plan</button>
         <p id="paylink-copy-status" role="status" aria-live="polite"></p>
         <p id="paylink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
+      <form class="tool" id="splitlink">
+        <h3>Split payment plan builder — two sellers, same disclosed 1% service fee</h3>
+        <p>Splitting a sale with a partner? Build a payment request that pays <strong>both</strong> sellers from one item amount: seller 1 gets the share you enter (a percentage with up to two decimals, floored to whole lovelace) and seller 2 gets the rest, so the two shares always add up to the item amount exactly — no lovelace lost to rounding. On top, the buyer pays the same <strong>disclosed 1% service fee</strong> on the total to my Cardano4All fee address as in the plan above — printed in the plan itself, no hidden cut, nothing taken from either seller's share. Both addresses must be <strong>different</strong> mainnet payment addresses. This page builds <strong>no transaction and signs nothing</strong> — it writes the three-output plan as text, and the <strong>Copy split payment plan</strong> button copies that exact text. Double-check all three addresses in full before sending.</p>
+        <label for="split-recipient-a">Seller 1 — mainnet payment address</label>
+        <textarea id="split-recipient-a" rows="2" spellcheck="false" placeholder="addr1… (seller 1 — must differ from seller 2)"></textarea>
+        <label for="split-recipient-b">Seller 2 — mainnet payment address</label>
+        <textarea id="split-recipient-b" rows="2" spellcheck="false" placeholder="addr1… (seller 2)"></textarea>
+        <label for="split-amount">Item amount (ADA)</label>
+        <input id="split-amount" inputmode="decimal" placeholder="e.g. 100" autocomplete="off">
+        <label for="split-share">Seller 1's share (%)</label>
+        <input id="split-share" inputmode="decimal" placeholder="e.g. 60 or 60.5" autocomplete="off">
+        <label for="split-label">Label (optional, for the request text)</label>
+        <input id="split-label" type="text" spellcheck="false" placeholder="e.g. Joint commission — one artwork, two artists" autocomplete="off">
+        <button type="submit" class="btn primary">Build split payment plan</button>
+        <button type="button" id="copy-splitlink" class="btn">Copy split payment plan</button>
+        <p id="splitlink-copy-status" role="status" aria-live="polite"></p>
+        <p id="splitlink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="txidcalc">
         <h3>Transaction ID calculator</h3>
@@ -685,6 +703,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=51"></script>
+<script src="app.js?v=52"></script>
 </body>
 </html>

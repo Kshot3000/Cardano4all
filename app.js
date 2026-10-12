@@ -583,6 +583,108 @@ function paymentPlanText(plan) {
   return lines.join("\n");
 }
 
+/* Split payment plan builder — the two-seller variant of the payment
+   plan builder above (profit mandate, 2026-10-11). Two sellers split
+   one sale: the buyer makes a THREE-output payment in their own
+   wallet:
+     output 1: seller 1's share of the item amount
+     output 2: seller 2's share — the remainder, so the two shares
+               sum to the item amount EXACTLY (seller 1's share is
+               floored to whole lovelace and seller 2 takes what is
+               left; no lovelace is created or lost to rounding)
+     output 3: the same disclosed 1% Cardano4All service fee as the
+               single-seller plan, on the TOTAL amount, floored to
+               whole lovelace, to the same fee address.
+   The share is entered as a percentage with at most two decimals
+   for seller 1 (parsed exactly into basis points — "60", "60.5" and
+   "60.55" are exact, never floats); seller 2's percentage is the
+   rest. Both recipients face the paymentPlan gates (mainnet payment
+   address, verifying checksum) and must be DIFFERENT addresses —
+   two outputs to one address are one payment, not a split. A share
+   that floors to 0 lovelace is refused rather than planned, since a
+   zero output is not a payment. Same honesty boundary as the plan
+   above: no transaction is built or signed; the plan is text. */
+function splitShareBps(shareStr) {
+  var s = (shareStr || "").trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  var parts = s.split(".");
+  var bps = BigInt(parts[0]) * 100n + (parts.length > 1 ? BigInt(parts[1].padEnd(2, "0")) : 0n);
+  if (bps < 1n || bps > 9999n) return null;
+  return bps;
+}
+function formatShareBps(bps) {
+  var whole = bps / 100n, frac = bps % 100n;
+  if (frac === 0n) return whole.toString();
+  return whole.toString() + "." + frac.toString().padStart(2, "0").replace(/0$/, "");
+}
+
+/* splitPaymentPlan(recipientARaw, recipientBRaw, amountStr,
+   shareStr, labelRaw) -> { recipientA, recipientB, label,
+   amountLovelace, shareABps, shareALovelace, shareBLovelace,
+   feeLovelace, totalLovelace, feeAddress, feeBps } (amounts as
+   decimal strings, shareABps and feeBps as Numbers) or null. */
+function splitPaymentPlan(recipientARaw, recipientBRaw, amountStr, shareStr, labelRaw) {
+  var recipientA = (recipientARaw || "").trim();
+  var recipientB = (recipientBRaw || "").trim();
+  var checkA = verifyBech32(recipientA);
+  var checkB = verifyBech32(recipientB);
+  if (!checkA.valid || checkA.hrp !== "addr") return null;
+  if (!checkB.valid || checkB.hrp !== "addr") return null;
+  if (recipientA === recipientB) return null;
+  var amountStrL = adaToLovelace(amountStr);
+  if (amountStrL === null) return null;
+  var amount = BigInt(amountStrL);
+  if (amount <= 0n) return null;
+  var bps = splitShareBps(shareStr);
+  if (bps === null) return null;
+  var label = (labelRaw || "").trim();
+  if (label.length > 64 || /[\x00-\x1f\x7f]/.test(label)) return null;
+  var shareA = (amount * bps) / 10000n;
+  var shareB = amount - shareA;
+  if (shareA <= 0n || shareB <= 0n) return null;
+  var fee = (amount * PAYLINK_FEE_BPS) / 10000n;
+  return {
+    recipientA: recipientA,
+    recipientB: recipientB,
+    label: label,
+    amountLovelace: amount.toString(),
+    shareABps: Number(bps),
+    shareALovelace: shareA.toString(),
+    shareBLovelace: shareB.toString(),
+    feeLovelace: fee.toString(),
+    totalLovelace: (amount + fee).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* splitPaymentPlanText(plan) -> the copyable split payment-request
+   text. Any output under 1 ADA (a share, or the fee when positive)
+   is named in a minimum-UTxO note, for the same reason as the
+   single-seller plan: a sub-minimum output cannot travel alone. */
+function splitPaymentPlanText(plan) {
+  var bpsA = BigInt(plan.shareABps);
+  var lines = [];
+  lines.push("Cardano split payment request" + (plan.label ? " — " + plan.label : ""));
+  lines.push("Pay seller 1 (" + formatShareBps(bpsA) + "% share): " + lovelaceToAda(plan.shareALovelace) + " ADA (" + plan.shareALovelace + " lovelace) to " + plan.recipientA);
+  lines.push("Pay seller 2 (" + formatShareBps(10000n - bpsA) + "% share): " + lovelaceToAda(plan.shareBLovelace) + " ADA (" + plan.shareBLovelace + " lovelace) to " + plan.recipientB);
+  if (plan.feeLovelace === "0") {
+    lines.push("Cardano4All service fee (1%, disclosed): 0 lovelace — the 1% of this amount floors to 0, so no fee output is due.");
+  } else {
+    lines.push("Pay the Cardano4All service fee (1% of the item amount, disclosed): " + lovelaceToAda(plan.feeLovelace) + " ADA (" + plan.feeLovelace + " lovelace) to " + plan.feeAddress);
+  }
+  lines.push("Total: " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace), plus the network transaction fee your wallet adds.");
+  var small = [];
+  if (BigInt(plan.shareALovelace) < 1000000n) small.push("seller 1's share");
+  if (BigInt(plan.shareBLovelace) < 1000000n) small.push("seller 2's share");
+  if (plan.feeLovelace !== "0" && BigInt(plan.feeLovelace) < 1000000n) small.push("the service fee");
+  if (small.length) {
+    lines.push("Note: " + small.join(", ") + " under 1 ADA, below the minimum a single output must carry — send each together with a larger payment in the same transaction where your wallet allows it. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a payment plan to paste into your own wallet. Double-check all three addresses in full before sending.");
+  return lines.join("\n");
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5122,7 +5224,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, splitPaymentPlan, splitPaymentPlanText, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5360,6 +5462,45 @@ if (typeof document !== "undefined") {
       var done = function () { status.textContent = "Payment plan copied — paste it to the buyer."; };
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(lastPaylinkText).then(done, function () {
+          status.textContent = "Copy failed — select the plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the plan text to copy it.";
+      }
+    });
+
+    /* --- split payment plan builder (two sellers, disclosed 1%
+       service fee on the total, offline — same stale-plan guard as
+       the single-seller copy button: only the last successfully
+       built split plan is copyable) --- */
+    var lastSplitlinkText = "";
+    document.getElementById("splitlink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = splitPaymentPlan(
+        document.getElementById("split-recipient-a").value,
+        document.getElementById("split-recipient-b").value,
+        document.getElementById("split-amount").value,
+        document.getElementById("split-share").value,
+        document.getElementById("split-label").value);
+      var out = document.getElementById("splitlink-result");
+      document.getElementById("splitlink-copy-status").textContent = "";
+      if (!res) {
+        lastSplitlinkText = "";
+        out.textContent = "Enter two DIFFERENT mainnet payment addresses (addr1…, each with a valid checksum — a stake or testnet address cannot receive this payment), an amount above 0 ADA (up to 6 decimals), seller 1's share as a percentage between 0.01 and 99.99 (up to two decimals) that leaves both shares above 0 lovelace, and an optional label of at most 64 characters.";
+        return;
+      }
+      lastSplitlinkText = splitPaymentPlanText(res);
+      out.textContent = lastSplitlinkText;
+    });
+    document.getElementById("copy-splitlink").addEventListener("click", function () {
+      var status = document.getElementById("splitlink-copy-status");
+      if (!lastSplitlinkText) {
+        status.textContent = "Build a split payment plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Split payment plan copied — paste it to the buyer."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastSplitlinkText).then(done, function () {
           status.textContent = "Copy failed — select the plan text manually.";
         });
       } else {

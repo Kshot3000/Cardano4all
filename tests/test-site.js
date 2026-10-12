@@ -26,9 +26,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label", "split-recipient-a", "split-recipient-b", "split-amount", "split-share", "split-label"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=51"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=52"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -284,6 +284,40 @@ check("paylink plan text carries both addresses, the fee and the totals", ppText
 check("paylink plan text is honest: no transaction built or signed", ppText.includes("No transaction was built or signed"));
 check("paylink zero-fee plan text says the fee floors to 0", app.paymentPlanText(app.paymentPlan(ADA, "0.000001", "")).includes("floors to 0"));
 check("paylink sub-1-ADA fee carries the minimum-UTxO warning, 1 ADA fee does not", app.paymentPlanText(pp2).includes("below the minimum") && !app.paymentPlanText(pp1).includes("below the minimum"));
+
+/* split payment plan builder — the two-seller variant (profit mandate,
+   2026-10-11): seller 1's share floored to whole lovelace, seller 2
+   takes the remainder so shares sum to the amount EXACTLY, plus the
+   same disclosed 1% fee on the total. Hand-derived vectors:
+   100 ADA at 60% -> 60 / 40, fee 1, total 101;
+   10 ADA at 33.33% -> 3,333,000 / 6,667,000, fee 100,000;
+   9,999 lovelace at 50% -> 4,999 / 5,000 (the remainder rule). */
+const syntheticPayB = app.bech32Encode("addr", Array.from({ length: 50 }, (_, i) => (i * 11) % 32));
+check("splitlink form present", html.includes('id="splitlink"') && html.includes('id="splitlink-result"'));
+check("splitlink copy button and status present", html.includes('id="copy-splitlink"') && html.includes('id="splitlink-copy-status"') && html.includes("Copy split payment plan"));
+check("splitlink copy handler wired with a stale-plan guard", appSrc.includes('getElementById("copy-splitlink")') && appSrc.includes("navigator.clipboard.writeText(lastSplitlinkText)") && appSrc.includes("Build a split payment plan first, then copy it."));
+check("splitlink failed build clears the copyable plan", appSrc.includes('lastSplitlinkText = "";') && appSrc.includes("Split payment plan copied"));
+check("splitlink page discloses the 1% fee and the exact-split rule", html.includes("Split payment plan builder") && html.includes("add up to the item amount exactly"));
+const sp1 = app.splitPaymentPlan(ADA, syntheticPayB, "100", "60", "");
+check("splitlink 100 ADA at 60%: 60 / 40, fee 1, total 101 ADA", sp1 && sp1.shareALovelace === "60000000" && sp1.shareBLovelace === "40000000" && sp1.feeLovelace === "1000000" && sp1.totalLovelace === "101000000" && sp1.shareABps === 6000);
+check("splitlink fee routes only to Kyle's ADA address at 1%", sp1 && sp1.feeAddress === ADA && sp1.feeBps === 100 && sp1.recipientA === ADA && sp1.recipientB === syntheticPayB);
+const sp2 = app.splitPaymentPlan(ADA, syntheticPayB, "10", "33.33", "Joint sale");
+check("splitlink 10 ADA at 33.33%: floored share, remainder, label kept", sp2 && sp2.shareALovelace === "3333000" && sp2.shareBLovelace === "6667000" && sp2.feeLovelace === "100000" && sp2.totalLovelace === "10100000" && sp2.label === "Joint sale");
+check("splitlink remainder rule: 9999 lovelace at 50% splits 4999 / 5000", (() => { const s = app.splitPaymentPlan(ADA, syntheticPayB, "0.009999", "50", ""); return s && s.shareALovelace === "4999" && s.shareBLovelace === "5000"; })());
+check("splitlink shares always sum to the amount and total adds the floored 1% fee", [["1", "50"], ["2.5", "60.5"], ["0.01", "99.99"], ["1234.567891", "0.01"], ["7", "33.33"]].every(function (pair) {
+  var t = app.splitPaymentPlan(ADA, syntheticPayB, pair[0], pair[1], "");
+  return t && BigInt(t.shareALovelace) + BigInt(t.shareBLovelace) === BigInt(t.amountLovelace) && BigInt(t.totalLovelace) === BigInt(t.amountLovelace) + BigInt(t.feeLovelace) && BigInt(t.feeLovelace) === BigInt(t.amountLovelace) / 100n;
+}));
+check("splitlink rejects the same address for both sellers", app.splitPaymentPlan(ADA, ADA, "10", "50", "") === null);
+check("splitlink rejects stake, testnet, tampered and garbage sellers in either slot", app.splitPaymentPlan(syntheticStake, syntheticPayB, "10", "50", "") === null && app.splitPaymentPlan(ADA, syntheticTest, "10", "50", "") === null && app.splitPaymentPlan(ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v"), syntheticPayB, "10", "50", "") === null && app.splitPaymentPlan(ADA, "hello", "10", "50", "") === null);
+check("splitlink rejects shares of 0, 100, three decimals, garbage and empty", app.splitPaymentPlan(ADA, syntheticPayB, "10", "0", "") === null && app.splitPaymentPlan(ADA, syntheticPayB, "10", "100", "") === null && app.splitPaymentPlan(ADA, syntheticPayB, "10", "60.005", "") === null && app.splitPaymentPlan(ADA, syntheticPayB, "10", "abc", "") === null && app.splitPaymentPlan(ADA, syntheticPayB, "10", "", "") === null);
+check("splitlink rejects a share that floors a seller to 0 lovelace", app.splitPaymentPlan(ADA, syntheticPayB, "0.000001", "50", "") === null);
+check("splitlink rejects bad amounts and labels like the single-seller plan", app.splitPaymentPlan(ADA, syntheticPayB, "0", "50", "") === null && app.splitPaymentPlan(ADA, syntheticPayB, "abc", "50", "") === null && app.splitPaymentPlan(ADA, syntheticPayB, "10", "50", "x".repeat(65)) === null && app.splitPaymentPlan(ADA, syntheticPayB, "10", "50", "a\nb") === null);
+const spText = app.splitPaymentPlanText(sp2);
+check("splitlink plan text carries both sellers, both shares, the fee and the total", spText.includes(ADA) && spText.includes(syntheticPayB) && spText.includes("33.33%") && spText.includes("66.67%") && spText.includes("1%") && spText.includes("10100000 lovelace") && spText.includes("Joint sale"));
+check("splitlink plan text is honest: no transaction built or signed", spText.includes("No transaction was built or signed"));
+check("splitlink zero-fee plan text says the fee floors to 0", app.splitPaymentPlanText(app.splitPaymentPlan(ADA, syntheticPayB, "0.000002", "50", "")).includes("floors to 0"));
+check("splitlink sub-1-ADA outputs are named in the warning; a clean 100 ADA split has none", spText.includes("the service fee") && spText.includes("below the minimum") && !app.splitPaymentPlanText(sp1).includes("below the minimum"));
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core
    (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the

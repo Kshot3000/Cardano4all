@@ -121,6 +121,20 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   and a Copy payment plan button copies the exact plan text for
   sending to a buyer (it copies only the last successfully built
   plan, never a stale one from a failed build).
+- **Split payment plan builder (two sellers, disclosed 1% service
+  fee)** — the two-seller variant: two sellers split one sale and
+  the tool writes a three-output payment plan as copyable text —
+  seller 1's share of the item amount (a percentage with up to two
+  decimals, parsed exactly into basis points and floored to whole
+  lovelace) and seller 2's share as the remainder, so the shares
+  sum to the item amount exactly, plus the same disclosed 1%
+  service fee on the total to the same Cardano4All fee address
+  above. Both sellers are gated to different mainnet payment
+  addresses with verifying checksums, a share that floors to
+  0 lovelace is refused, sub-1-ADA outputs are named in a
+  minimum-UTxO warning, and a Copy split payment plan button
+  copies only the last successfully built split plan. The page
+  builds no transaction and signs nothing.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
   Paste a body's CBOR hex, or a whole transaction's (the array
