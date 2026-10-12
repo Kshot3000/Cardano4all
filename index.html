@@ -23,7 +23,7 @@
 {"@context":"https://schema.org","@type":"WebSite","name":"Cardano4All","url":"https://kshot3000.github.io/Cardano4all/","author":{"@type":"Person","name":"Kyle Cox","url":"https://x.com/kshot9000"},"description":"Free Cardano calculators and developer tools — staking rewards, pool reward splits, transaction fees, epoch/slot conversion, address inspection and CBOR decoding. No wallet needed."}
 </script>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"},{"@type":"ListItem","position":9,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"},{"@type":"ListItem","position":10,"name":"ADA split payment plan builder for two sellers with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#splitlink"}]}
+{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"},{"@type":"ListItem","position":9,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"},{"@type":"ListItem","position":10,"name":"ADA split payment plan builder for two sellers with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#splitlink"},{"@type":"ListItem","position":11,"name":"ADA escrow-style payment plan builder with trusted arbiter and disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#escrowlink"}]}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css?v=1">
@@ -294,6 +294,28 @@
         <button type="button" id="copy-splitlink-url" class="btn">Copy split payment link</button>
         <p id="splitlink-link-status" role="status" aria-live="polite"></p>
         <p id="splitlink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
+      <form class="tool" id="escrowlink">
+        <h3>Escrow-style payment plan builder — trusted arbiter, same disclosed 1% service fee</h3>
+        <p>Buying from someone you do not know yet? Plan the trusted-arbiter arrangement in writing before any ADA moves. Be clear about what this is: a plain Cardano payment <strong>cannot hold funds in escrow</strong> — that takes a smart contract — so this is <strong>not a smart-contract escrow</strong>, this page holds nothing, and nothing is locked on chain. Instead the three of you agree a <strong>release condition</strong> in writing, and the buyer pays the item amount to a mutually trusted <strong>arbiter's</strong> own wallet, plus the same <strong>disclosed 1% service fee</strong> on the item amount to my Cardano4All fee address as in the plans above — printed in the plan itself, no hidden cut. When the release condition is met the arbiter pays the seller the <strong>full</strong> item amount; when it is not met the arbiter refunds the buyer the full amount — the fee is earned at funding and is never deducted from either payment. All three addresses must be <strong>different</strong> mainnet payment addresses: an arbiter who is also the buyer or the seller holds nothing for anyone. Only use an arbiter all three parties trust. This page builds <strong>no transaction and signs nothing</strong> — it writes the two-step plan as text, and the <strong>Copy escrow plan</strong> button copies that exact text. The <strong>Copy escrow plan link</strong> button instead copies a link to this page that opens with all three addresses, the amount, the release condition and the label already filled in and the plan built — the link carries <strong>no fee field of its own</strong>, so it cannot be edited to raise the fee: the 1% is worked out by this page every time it opens, and a link carrying extra fields, two parties sharing an address, or a tampered address is refused and reported. Double-check all three addresses in full before sending.</p>
+        <label for="esc-buyer">Buyer — mainnet payment address (funds step 1, receives any refund)</label>
+        <textarea id="esc-buyer" rows="2" spellcheck="false" placeholder="addr1… (the buyer — must differ from the seller and the arbiter)"></textarea>
+        <label for="esc-seller">Seller — mainnet payment address (paid in full on release)</label>
+        <textarea id="esc-seller" rows="2" spellcheck="false" placeholder="addr1… (the seller)"></textarea>
+        <label for="esc-arbiter">Arbiter — mainnet payment address (holds the payment until release)</label>
+        <textarea id="esc-arbiter" rows="2" spellcheck="false" placeholder="addr1… (the trusted arbiter)"></textarea>
+        <label for="esc-amount">Item amount (ADA)</label>
+        <input id="esc-amount" inputmode="decimal" placeholder="e.g. 250" autocomplete="off">
+        <label for="esc-release">Release condition (optional, agreed in writing — e.g. "arbiter releases when the buyer confirms the parcel arrived undamaged")</label>
+        <input id="esc-release" type="text" spellcheck="false" placeholder="e.g. Release when the buyer confirms delivery" autocomplete="off">
+        <label for="esc-label">Label (optional, for the plan text)</label>
+        <input id="esc-label" type="text" spellcheck="false" placeholder="e.g. Camera sale via the forum" autocomplete="off">
+        <button type="submit" class="btn primary">Build escrow plan</button>
+        <button type="button" id="copy-escrowlink" class="btn">Copy escrow plan</button>
+        <p id="escrowlink-copy-status" role="status" aria-live="polite"></p>
+        <button type="button" id="copy-escrowlink-url" class="btn">Copy escrow plan link</button>
+        <p id="escrowlink-link-status" role="status" aria-live="polite"></p>
+        <p id="escrowlink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="txidcalc">
         <h3>Transaction ID calculator</h3>
@@ -707,6 +729,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=54"></script>
+<script src="app.js?v=55"></script>
 </body>
 </html>

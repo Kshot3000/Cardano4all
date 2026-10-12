@@ -150,6 +150,31 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   field, malformed encoding, identical sellers, or a tampered,
   stake or testnet address is refused and reported on the page.
   The page builds no transaction and signs nothing.
+- **Escrow-style payment plan builder (trusted arbiter, disclosed
+  1% service fee)** — the trusted-arbiter variant, labelled honestly:
+  a plain Cardano payment cannot hold funds in escrow (that takes a
+  Plutus script), so this is not a smart-contract escrow, the page
+  holds nothing, and nothing is locked on chain. Three parties agree
+  a release condition in writing; the buyer funds the arbiter with
+  the full item amount plus the same disclosed 1% service fee on the
+  item amount (floored to whole lovelace, exact BigInt maths) to the
+  same Cardano4All fee address above, and on release the arbiter
+  pays the seller the full amount — or refunds the buyer in full if
+  the condition is not met; the fee is earned at funding and is
+  never deducted from either second-step payment. All three parties
+  are gated to different mainnet payment addresses with verifying
+  checksums (an arbiter who is also the buyer or the seller holds
+  nothing for anyone), the release condition is a plain-text note of
+  at most 128 characters, sub-1-ADA outputs are named in a
+  minimum-UTxO warning, and Copy buttons copy only the last
+  successfully built plan or its shareable link. The link carries
+  only the three addresses, the amount, the release condition and
+  the label — no fee field at all — and the page recomputes the
+  disclosed 1% fee on open, so a link cannot be edited to raise or
+  reroute the fee; a link with an extra or repeated field, malformed
+  encoding, two parties sharing an address, or a tampered, stake or
+  testnet address is refused and reported on the page. The page
+  builds no transaction and signs nothing.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
   Paste a body's CBOR hex, or a whole transaction's (the array

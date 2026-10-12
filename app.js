@@ -810,6 +810,172 @@ function parseSplitPaymentLink(searchRaw) {
   return { recipientA: plan.recipientA, recipientB: plan.recipientB, amount: lovelaceToAda(plan.amountLovelace), share: formatShareBps(BigInt(plan.shareABps)), label: plan.label };
 }
 
+/* Escrow-style payment plan builder — the trusted-arbiter variant
+   of the payment plan builders above (profit mandate, 2026-10-12).
+   A plain Cardano payment cannot hold funds in escrow — that takes
+   a Plutus script — so this tool plans the arrangement people
+   actually use off-chain, and says so in the plan itself: it is NOT
+   a smart-contract escrow, this page holds no funds, and nothing is
+   locked on chain. The buyer, the seller and a mutually trusted
+   arbiter agree a written release condition, then:
+     step 1 (funding): the buyer pays the item amount to the
+               ARBITER's own wallet address, plus the same disclosed
+               1% Cardano4All service fee as the plans above, on the
+               item amount, floored to whole lovelace, to the same
+               fee address — the buyer pays amount + fee in total.
+     step 2 (release): when the release condition is met, the
+               arbiter pays the seller the FULL item amount from
+               their own wallet (the arbiter's wallet adds that
+               step's network fee); when it is not met, the arbiter
+               refunds the buyer the FULL item amount instead. The
+               fee is earned at funding and is not part of either
+               step-2 payment — the plan states this, so nobody can
+               mistake the arbiter's forwarding for amount-minus-fee.
+   All three parties face the paymentPlan gates (mainnet payment
+   address, verifying checksum) and must be THREE DIFFERENT
+   addresses — an arbiter who is also the buyer or the seller holds
+   nothing for anyone. The release condition is a plain-text note
+   (at most 128 characters, no control characters); it is never
+   sent anywhere and binds nobody on chain — the plan says to agree
+   it in writing. Same honesty boundary as the plans above: no
+   transaction is built or signed; the plan is text. */
+
+/* escrowPlan(buyerRaw, sellerRaw, arbiterRaw, amountStr,
+   releaseRaw, labelRaw) -> { buyer, seller, arbiter, label,
+   release, amountLovelace, feeLovelace, fundingTotalLovelace,
+   feeAddress, feeBps } (amounts as decimal strings, feeBps as a
+   Number) or null for an invalid party, amount, release note or
+   label. */
+function escrowPlan(buyerRaw, sellerRaw, arbiterRaw, amountStr, releaseRaw, labelRaw) {
+  var buyer = (buyerRaw || "").trim();
+  var seller = (sellerRaw || "").trim();
+  var arbiter = (arbiterRaw || "").trim();
+  var parties = [buyer, seller, arbiter];
+  for (var i = 0; i < parties.length; i++) {
+    var check = verifyBech32(parties[i]);
+    if (!check.valid || check.hrp !== "addr") return null;
+  }
+  if (buyer === seller || buyer === arbiter || seller === arbiter) return null;
+  var amountStrL = adaToLovelace(amountStr);
+  if (amountStrL === null) return null;
+  var amount = BigInt(amountStrL);
+  if (amount <= 0n) return null;
+  var release = (releaseRaw || "").trim();
+  if (release.length > 128 || /[\x00-\x1f\x7f]/.test(release)) return null;
+  var label = (labelRaw || "").trim();
+  if (label.length > 64 || /[\x00-\x1f\x7f]/.test(label)) return null;
+  var fee = (amount * PAYLINK_FEE_BPS) / 10000n;
+  return {
+    buyer: buyer,
+    seller: seller,
+    arbiter: arbiter,
+    label: label,
+    release: release,
+    amountLovelace: amount.toString(),
+    feeLovelace: fee.toString(),
+    fundingTotalLovelace: (amount + fee).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* escrowPlanText(plan) -> the copyable escrow-style plan text. The
+   not-an-escrow warning leads, before any payment step, so the
+   plan cannot be forwarded with the warning trimmed off the top
+   without the steps visibly following it. Any output under 1 ADA
+   (the amount itself, or the fee when positive) is named in a
+   minimum-UTxO note, for the same reason as the plans above. */
+function escrowPlanText(plan) {
+  var lines = [];
+  lines.push("Cardano escrow-style payment plan" + (plan.label ? " — " + plan.label : ""));
+  lines.push("IMPORTANT: this is NOT a smart-contract escrow. No funds are locked on chain and this page holds nothing. It is a written plan for a trusted-arbiter arrangement: the arbiter holds the payment in their own wallet until the release condition below is met. Only use an arbiter all three parties trust, and agree the release condition in writing before funding.");
+  lines.push("Release condition: " + (plan.release ? plan.release : "not stated — agree one in writing before funding; without one there is nothing to release against."));
+  lines.push("Step 1 — the buyer funds the arbiter: pay " + lovelaceToAda(plan.amountLovelace) + " ADA (" + plan.amountLovelace + " lovelace) to the arbiter " + plan.arbiter);
+  if (plan.feeLovelace === "0") {
+    lines.push("Cardano4All service fee (1%, disclosed): 0 lovelace — the 1% of this amount floors to 0, so no fee output is due.");
+  } else {
+    lines.push("Step 1 — also pay the Cardano4All service fee (1% of the item amount, disclosed): " + lovelaceToAda(plan.feeLovelace) + " ADA (" + plan.feeLovelace + " lovelace) to " + plan.feeAddress);
+  }
+  lines.push("Buyer total in step 1: " + lovelaceToAda(plan.fundingTotalLovelace) + " ADA (" + plan.fundingTotalLovelace + " lovelace), plus the network transaction fee the buyer's wallet adds.");
+  lines.push("Step 2 — when the release condition is met, the arbiter pays the seller the full item amount: " + lovelaceToAda(plan.amountLovelace) + " ADA (" + plan.amountLovelace + " lovelace) to the seller " + plan.seller);
+  lines.push("Step 2 — if the release condition is not met, the arbiter instead refunds the buyer the full item amount: " + lovelaceToAda(plan.amountLovelace) + " ADA (" + plan.amountLovelace + " lovelace) to the buyer " + plan.buyer);
+  lines.push("The service fee is earned at funding and is not deducted from either step-2 payment — both pay the full item amount. The arbiter's wallet adds the network fee for step 2; agree in writing beforehand who covers it.");
+  var small = [];
+  if (BigInt(plan.amountLovelace) < 1000000n) small.push("the item amount in each step");
+  if (plan.feeLovelace !== "0" && BigInt(plan.feeLovelace) < 1000000n) small.push("the service fee");
+  if (small.length) {
+    lines.push("Note: " + small.join(", ") + " under 1 ADA, below the minimum a single output must carry — send each together with a larger payment in the same transaction where your wallet allows it. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a payment plan to paste into your own wallet. Double-check all three addresses in full before sending.");
+  return lines.join("\n");
+}
+
+/* Shareable escrow plan link — the escrow plan above as a link,
+   the trusted-arbiter counterpart of the payment and split links
+   (profit mandate, 2026-10-12). The link carries ONLY the three
+   parties' addresses, the item amount (canonical ADA), the
+   optional release condition and the optional label — each
+   percent-encoded. Like the other links it carries NO fee field
+   and no fee address: the disclosed 1% fee is recomputed by
+   escrowPlan when the page opens, every time, so a link cannot be
+   edited to raise the fee or reroute it — a query that smuggles
+   in an extra field (fee=, or anything unknown), repeats a field,
+   or fails the escrowPlan gates (two parties sharing an address
+   included) is refused whole. The parser is the same deliberately
+   manual one as parsePaymentLink: "+" is data, never a space,
+   decoding failures refuse the link, and exactly the six known
+   fields are admitted. The field names (buyer, seller, arbiter,
+   release) keep an escrow link distinct from a single-seller link
+   (to) and a split link (toA, toB, share) on sight and in the
+   open-from-link wiring below. Nothing is fetched or sent; the
+   query is read locally from the page's own address bar. */
+
+/* escrowLink(buyerRaw, sellerRaw, arbiterRaw, amountStr,
+   releaseRaw, labelRaw) -> the shareable URL string, or null when
+   escrowPlan refuses the inputs. */
+function escrowLink(buyerRaw, sellerRaw, arbiterRaw, amountStr, releaseRaw, labelRaw) {
+  var plan = escrowPlan(buyerRaw, sellerRaw, arbiterRaw, amountStr, releaseRaw, labelRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?buyer=" + encodeURIComponent(plan.buyer) +
+    "&seller=" + encodeURIComponent(plan.seller) +
+    "&arbiter=" + encodeURIComponent(plan.arbiter) +
+    "&amount=" + encodeURIComponent(lovelaceToAda(plan.amountLovelace));
+  if (plan.release) url += "&release=" + encodeURIComponent(plan.release);
+  if (plan.label) url += "&label=" + encodeURIComponent(plan.label);
+  return url + "#escrowlink";
+}
+
+/* parseEscrowLink(searchRaw) -> { buyer, seller, arbiter, amount,
+   release, label } with amount as a canonical ADA string ready to
+   refill the form, or null for anything that is not exactly a
+   well-formed, valid escrow link (empty, unknown/repeated/missing
+   fields, malformed percent-encoding, or inputs escrowPlan
+   refuses). Accepts the query with or without its leading "?". */
+function parseEscrowLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "buyer" && key !== "seller" && key !== "arbiter" && key !== "amount" && key !== "release" && key !== "label") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.buyer || !seen.seller || !seen.arbiter || !seen.amount) return null;
+  var plan = escrowPlan(values.buyer, values.seller, values.arbiter, values.amount, seen.release ? values.release : "", seen.label ? values.label : "");
+  if (!plan) return null;
+  return { buyer: plan.buyer, seller: plan.seller, arbiter: plan.arbiter, amount: lovelaceToAda(plan.amountLovelace), release: plan.release, label: plan.label };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5349,7 +5515,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5625,7 +5791,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -5724,6 +5890,97 @@ if (typeof document !== "undefined") {
         lastSplitlinkText = splitPaymentPlanText(linkedSplitPlan);
         lastSplitlinkUrl = splitPaymentLink(linkedSplit.recipientA, linkedSplit.recipientB, linkedSplit.amount, linkedSplit.share, linkedSplit.label);
         document.getElementById("splitlink-result").textContent = "Opened from a split payment link — double-check both seller addresses in full before paying.\n\n" + lastSplitlinkText;
+      }
+    }
+
+    /* --- escrow-style payment plan builder (trusted arbiter,
+       disclosed 1% service fee at funding, offline — same
+       stale-plan guard as the other plan copy buttons: only the
+       last successfully built escrow plan is copyable) --- */
+    var lastEscrowText = "";
+    var lastEscrowUrl = "";
+    document.getElementById("escrowlink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = escrowPlan(
+        document.getElementById("esc-buyer").value,
+        document.getElementById("esc-seller").value,
+        document.getElementById("esc-arbiter").value,
+        document.getElementById("esc-amount").value,
+        document.getElementById("esc-release").value,
+        document.getElementById("esc-label").value);
+      var out = document.getElementById("escrowlink-result");
+      document.getElementById("escrowlink-copy-status").textContent = "";
+      document.getElementById("escrowlink-link-status").textContent = "";
+      if (!res) {
+        lastEscrowText = "";
+        lastEscrowUrl = "";
+        out.textContent = "Enter three DIFFERENT mainnet payment addresses (addr1…, each with a valid checksum — a stake or testnet address cannot receive these payments) for the buyer, the seller and the arbiter, an amount above 0 ADA (up to 6 decimals), an optional release condition of at most 128 characters and an optional label of at most 64 characters.";
+        return;
+      }
+      lastEscrowText = escrowPlanText(res);
+      lastEscrowUrl = escrowLink(res.buyer, res.seller, res.arbiter, lovelaceToAda(res.amountLovelace), res.release, res.label);
+      out.textContent = lastEscrowText;
+    });
+    document.getElementById("copy-escrowlink").addEventListener("click", function () {
+      var status = document.getElementById("escrowlink-copy-status");
+      if (!lastEscrowText) {
+        status.textContent = "Build an escrow plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Escrow plan copied — paste it to the buyer, the seller and the arbiter."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastEscrowText).then(done, function () {
+          status.textContent = "Copy failed — select the plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the plan text to copy it.";
+      }
+    });
+
+    /* --- copy escrow plan link (same stale-plan guard as the
+       escrow plan copy above: only the link for the last
+       successfully built escrow plan can be copied, and a failed
+       build clears it) --- */
+    document.getElementById("copy-escrowlink-url").addEventListener("click", function () {
+      var status = document.getElementById("escrowlink-link-status");
+      if (!lastEscrowUrl) {
+        status.textContent = "Build an escrow plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Escrow plan link copied — send it to the buyer, the seller and the arbiter; it opens this page with the plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastEscrowUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?buyer=, seller=, arbiter= and amount= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from an escrow plan link: a ?buyer=…&seller=…
+       &arbiter=…&amount=… query (see escrowLink) fills the escrow
+       form and builds the plan, with the fee recomputed by this
+       page, never taken from the link. Escrow-shaped queries are
+       claimed here, not by the single-seller block above (which
+       excludes them, since an escrow link also carries amount=);
+       an escrow-shaped query that does not validate is reported,
+       not silently ignored, and an unrelated query string is left
+       alone. --- */
+    if (linkSearch && /(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch)) {
+      var linkedEscrow = parseEscrowLink(linkSearch);
+      if (!linkedEscrow) {
+        document.getElementById("escrowlink-result").textContent = "That escrow plan link is not valid — check it with the other parties before paying anything. A valid link names three different mainnet payment addresses with verifying checksums and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("esc-buyer").value = linkedEscrow.buyer;
+        document.getElementById("esc-seller").value = linkedEscrow.seller;
+        document.getElementById("esc-arbiter").value = linkedEscrow.arbiter;
+        document.getElementById("esc-amount").value = linkedEscrow.amount;
+        document.getElementById("esc-release").value = linkedEscrow.release;
+        document.getElementById("esc-label").value = linkedEscrow.label;
+        var linkedEscrowPlan = escrowPlan(linkedEscrow.buyer, linkedEscrow.seller, linkedEscrow.arbiter, linkedEscrow.amount, linkedEscrow.release, linkedEscrow.label);
+        lastEscrowText = escrowPlanText(linkedEscrowPlan);
+        lastEscrowUrl = escrowLink(linkedEscrow.buyer, linkedEscrow.seller, linkedEscrow.arbiter, linkedEscrow.amount, linkedEscrow.release, linkedEscrow.label);
+        document.getElementById("escrowlink-result").textContent = "Opened from an escrow plan link — double-check all three addresses in full before paying.\n\n" + lastEscrowText;
       }
     }
 
