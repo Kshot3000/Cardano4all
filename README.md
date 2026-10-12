@@ -175,8 +175,29 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   encoding, two parties sharing an address, or a tampered, stake or
   testnet address is refused and reported on the page. The page
   builds no transaction and signs nothing.
+- **Marketplace listing builder (for sale, disclosed 1% service
+  fee)** — the listing variant: a seller writes the listing itself
+  (a required item title of at most 64 characters, an optional
+  description and delivery-terms note of at most 128 characters,
+  the asking price and their mainnet payment address) and the tool
+  writes it as copyable text — the full asking price to the seller
+  plus the same disclosed 1% service fee (floored to whole
+  lovelace, exact BigInt maths) to the same Cardano4All fee address
+  above. The listing text leads with the honesty line: this page
+  is not a marketplace, it holds no listings, takes no custody and
+  has not seen or verified the item — the listing is seller-written.
+  Sub-1-ADA fee outputs are named in a minimum-UTxO warning, and
+  Copy buttons copy only the last successfully built listing or
+  its shareable link. The link carries only the seller address,
+  the amount, the title and the description — no fee field at
+  all — and the page recomputes the disclosed 1% fee on open, so
+  a link cannot be edited to raise or reroute the fee; a link with
+  an extra or repeated field, malformed encoding, a missing
+  title, or a tampered, stake or testnet address is refused and
+  reported on the page. The page builds no transaction and signs
+  nothing.
 - **Cardano4All Pay landing page (`pay.html`)** — a standalone,
-  shareable page for the three payment plan builders above: what each
+  shareable page for the four payment plan builders above: what each
   plan is for, how a plan is used, and the disclosed 1% service fee
   explained in full with the fee address printed on the page. It
   carries the same attribution and the same honesty lines (no

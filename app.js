@@ -976,6 +976,155 @@ function parseEscrowLink(searchRaw) {
   return { buyer: plan.buyer, seller: plan.seller, arbiter: plan.arbiter, amount: lovelaceToAda(plan.amountLovelace), release: plan.release, label: plan.label };
 }
 
+/* Marketplace listing plan builder — the for-sale listing variant
+   of the payment plan builders above (profit mandate, 2026-10-12).
+   A seller writes a LISTING, not just a payment request: a required
+   item title (at most 64 characters), an optional description and
+   delivery-terms note (at most 128 characters), the asking price
+   and the seller's own mainnet payment address. The tool writes
+   the listing as copyable text a seller can post anywhere, and the
+   payment part is the same two-output plan as the single-seller
+   builder: the full asking price to the seller plus the same
+   disclosed 1% Cardano4All service fee, floored to whole lovelace,
+   to the same fee address — the buyer pays price + fee in total.
+   Honesty boundary, stated in the listing text itself: this page
+   is NOT a marketplace — it holds no listings, takes no custody,
+   and has not seen or verified the item; the listing was written
+   by the seller, and a buyer should agree delivery in writing
+   before paying (or use the escrow-style plan above). The seller
+   faces the paymentPlan gates (mainnet payment address, verifying
+   checksum). Same boundary as the plans above: no transaction is
+   built or signed; the listing is text. */
+
+/* marketplacePlan(vendorRaw, amountStr, titleRaw, descRaw) ->
+   { vendor, title, description, amountLovelace, feeLovelace,
+     totalLovelace, feeAddress, feeBps } (amounts as decimal
+   strings, feeBps as a Number) or null for an invalid seller,
+   amount, title or description. The title is REQUIRED — a
+   listing without an item is not a listing. */
+function marketplacePlan(vendorRaw, amountStr, titleRaw, descRaw) {
+  var vendor = (vendorRaw || "").trim();
+  var check = verifyBech32(vendor);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var amountStrL = adaToLovelace(amountStr);
+  if (amountStrL === null) return null;
+  var amount = BigInt(amountStrL);
+  if (amount <= 0n) return null;
+  var title = (titleRaw || "").trim();
+  if (!title || title.length > 64 || /[\x00-\x1f\x7f]/.test(title)) return null;
+  var description = (descRaw || "").trim();
+  if (description.length > 128 || /[\x00-\x1f\x7f]/.test(description)) return null;
+  var fee = (amount * PAYLINK_FEE_BPS) / 10000n;
+  return {
+    vendor: vendor,
+    title: title,
+    description: description,
+    amountLovelace: amount.toString(),
+    feeLovelace: fee.toString(),
+    totalLovelace: (amount + fee).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* marketplacePlanText(plan) -> the copyable listing text. The
+   not-a-marketplace / item-not-verified warning leads, before the
+   price or any payment step, for the same reason the escrow
+   warning leads its plan: a forwarded listing must not be able to
+   trim the warning off the top without the steps visibly
+   following it. A sub-1-ADA fee output is named in a
+   minimum-UTxO note, as in the plans above. */
+function marketplacePlanText(plan) {
+  var lines = [];
+  lines.push("Cardano marketplace listing — " + plan.title);
+  lines.push("IMPORTANT: this listing was written by the seller. This page is not a marketplace — it holds no listings, takes no custody, and has not seen or verified the item. Agree delivery in writing before paying, or use the escrow-style plan on this page with a trusted arbiter.");
+  lines.push("For sale: " + plan.title);
+  if (plan.description) {
+    lines.push("Item and delivery terms: " + plan.description);
+  } else {
+    lines.push("Item and delivery terms: not stated — agree them with the seller in writing before paying.");
+  }
+  lines.push("Asking price — pay the seller: " + lovelaceToAda(plan.amountLovelace) + " ADA (" + plan.amountLovelace + " lovelace) to " + plan.vendor);
+  if (plan.feeLovelace === "0") {
+    lines.push("Cardano4All service fee (1%, disclosed): 0 lovelace — the 1% of this amount floors to 0, so no fee output is due.");
+  } else {
+    lines.push("Pay the Cardano4All service fee (1% of the asking price, disclosed): " + lovelaceToAda(plan.feeLovelace) + " ADA (" + plan.feeLovelace + " lovelace) to " + plan.feeAddress);
+  }
+  lines.push("Total: " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace), plus the network transaction fee your wallet adds.");
+  if (plan.feeLovelace !== "0" && BigInt(plan.feeLovelace) < 1000000n) {
+    lines.push("Note: the fee output is under 1 ADA, below the minimum a single output must carry — send it together with a larger payment, or add it on top of the seller output in one combined payment to the fee address when the total allows. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a listing and payment plan to paste into your own wallet. Double-check the seller address in full before sending.");
+  return lines.join("\n");
+}
+
+/* Shareable marketplace listing link — the listing above as a
+   link the seller can post wherever they sell (profit mandate,
+   2026-10-12). The link carries ONLY the seller's address, the
+   asking price (canonical ADA), the item title and the optional
+   description — each percent-encoded. Like the other links it
+   carries NO fee field and no fee address: the disclosed 1% fee
+   is recomputed by marketplacePlan when the page opens, every
+   time, so a link cannot be edited to raise the fee or reroute
+   it — a query that smuggles in an extra field (fee=, or anything
+   unknown), repeats a field, or fails the marketplacePlan gates
+   is refused whole. The parser is the same deliberately manual
+   one as parsePaymentLink: "+" is data, never a space, decoding
+   failures refuse the link, and exactly the four known fields are
+   admitted. The field names (vendor, title, desc) keep a listing
+   link distinct from a single-seller link (to), a split link
+   (toA, toB, share) and an escrow link (buyer, seller, arbiter,
+   release) on sight and in the open-from-link wiring below —
+   a listing link also carries amount=, so the single-seller
+   block below explicitly excludes listing-shaped queries.
+   Nothing is fetched or sent; the query is read locally from
+   the page's own address bar. */
+
+/* marketplaceLink(vendorRaw, amountStr, titleRaw, descRaw) ->
+   the shareable URL string, or null when marketplacePlan
+   refuses the inputs. */
+function marketplaceLink(vendorRaw, amountStr, titleRaw, descRaw) {
+  var plan = marketplacePlan(vendorRaw, amountStr, titleRaw, descRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?vendor=" + encodeURIComponent(plan.vendor) +
+    "&amount=" + encodeURIComponent(lovelaceToAda(plan.amountLovelace)) +
+    "&title=" + encodeURIComponent(plan.title);
+  if (plan.description) url += "&desc=" + encodeURIComponent(plan.description);
+  return url + "#marketlink";
+}
+
+/* parseMarketplaceLink(searchRaw) -> { vendor, amount, title,
+   description } with amount as a canonical ADA string ready to
+   refill the form, or null for anything that is not exactly a
+   well-formed, valid listing link (empty, unknown/repeated/
+   missing fields, malformed percent-encoding, or inputs
+   marketplacePlan refuses). Accepts the query with or without
+   its leading "?". */
+function parseMarketplaceLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "vendor" && key !== "amount" && key !== "title" && key !== "desc") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.vendor || !seen.amount || !seen.title) return null;
+  var plan = marketplacePlan(values.vendor, values.amount, values.title, seen.desc ? values.desc : "");
+  if (!plan) return null;
+  return { vendor: plan.vendor, amount: lovelaceToAda(plan.amountLovelace), title: plan.title, description: plan.description };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5515,7 +5664,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -5791,7 +5940,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -5981,6 +6130,93 @@ if (typeof document !== "undefined") {
         lastEscrowText = escrowPlanText(linkedEscrowPlan);
         lastEscrowUrl = escrowLink(linkedEscrow.buyer, linkedEscrow.seller, linkedEscrow.arbiter, linkedEscrow.amount, linkedEscrow.release, linkedEscrow.label);
         document.getElementById("escrowlink-result").textContent = "Opened from an escrow plan link — double-check all three addresses in full before paying.\n\n" + lastEscrowText;
+      }
+    }
+
+    /* --- marketplace listing plan builder (seller listing with
+       the disclosed 1% service fee, offline — same stale-plan
+       guard as the other plan copy buttons: only the last
+       successfully built listing is copyable) --- */
+    var lastMarketText = "";
+    var lastMarketUrl = "";
+    document.getElementById("marketlink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = marketplacePlan(
+        document.getElementById("mkt-vendor").value,
+        document.getElementById("mkt-amount").value,
+        document.getElementById("mkt-title").value,
+        document.getElementById("mkt-desc").value);
+      var out = document.getElementById("marketlink-result");
+      document.getElementById("marketlink-copy-status").textContent = "";
+      document.getElementById("marketlink-link-status").textContent = "";
+      if (!res) {
+        lastMarketText = "";
+        lastMarketUrl = "";
+        out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive this payment), an asking price above 0 ADA (up to 6 decimals), an item title of 1 to 64 characters and an optional description of at most 128 characters.";
+        return;
+      }
+      lastMarketText = marketplacePlanText(res);
+      lastMarketUrl = marketplaceLink(res.vendor, lovelaceToAda(res.amountLovelace), res.title, res.description);
+      out.textContent = lastMarketText;
+    });
+    document.getElementById("copy-marketlink").addEventListener("click", function () {
+      var status = document.getElementById("marketlink-copy-status");
+      if (!lastMarketText) {
+        status.textContent = "Build a listing first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Listing copied — post it wherever you sell."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastMarketText).then(done, function () {
+          status.textContent = "Copy failed — select the listing text manually.";
+        });
+      } else {
+        status.textContent = "Select the listing text to copy it.";
+      }
+    });
+
+    /* --- copy marketplace listing link (same stale-plan guard
+       as the listing copy above: only the link for the last
+       successfully built listing can be copied, and a failed
+       build clears it) --- */
+    document.getElementById("copy-marketlink-url").addEventListener("click", function () {
+      var status = document.getElementById("marketlink-link-status");
+      if (!lastMarketUrl) {
+        status.textContent = "Build a listing first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Listing link copied — post it wherever you sell; it opens this page with the listing filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastMarketUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?vendor=, amount= and title= from your built listing; copy the listing text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the listing text instead.";
+      }
+    });
+
+    /* --- open from a marketplace listing link: a ?vendor=…
+       &amount=…&title=… query (see marketplaceLink) fills the
+       listing form and builds the listing, with the fee
+       recomputed by this page, never taken from the link.
+       Listing-shaped queries are claimed here, not by the
+       single-seller block above (which excludes them, since a
+       listing link also carries amount=); a listing-shaped query
+       that does not validate is reported, not silently ignored,
+       and an unrelated query string is left alone. --- */
+    if (linkSearch && /(^|[?&])(vendor|title|desc)=/.test(linkSearch)) {
+      var linkedMarket = parseMarketplaceLink(linkSearch);
+      if (!linkedMarket) {
+        document.getElementById("marketlink-result").textContent = "That listing link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum, an asking price above 0 ADA and an item title, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("mkt-vendor").value = linkedMarket.vendor;
+        document.getElementById("mkt-amount").value = linkedMarket.amount;
+        document.getElementById("mkt-title").value = linkedMarket.title;
+        document.getElementById("mkt-desc").value = linkedMarket.description;
+        var linkedMarketPlan = marketplacePlan(linkedMarket.vendor, linkedMarket.amount, linkedMarket.title, linkedMarket.description);
+        lastMarketText = marketplacePlanText(linkedMarketPlan);
+        lastMarketUrl = marketplaceLink(linkedMarket.vendor, linkedMarket.amount, linkedMarket.title, linkedMarket.description);
+        document.getElementById("marketlink-result").textContent = "Opened from a listing link — this listing was written by the seller and the item has not been verified here. Double-check the seller address in full before paying.\n\n" + lastMarketText;
       }
     }
 

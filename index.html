@@ -23,7 +23,7 @@
 {"@context":"https://schema.org","@type":"WebSite","name":"Cardano4All","url":"https://kshot3000.github.io/Cardano4all/","author":{"@type":"Person","name":"Kyle Cox","url":"https://x.com/kshot9000"},"description":"Free Cardano calculators and developer tools — staking rewards, pool reward splits, transaction fees, epoch/slot conversion, address inspection and CBOR decoding. No wallet needed."}
 </script>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"},{"@type":"ListItem","position":9,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"},{"@type":"ListItem","position":10,"name":"ADA split payment plan builder for two sellers with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#splitlink"},{"@type":"ListItem","position":11,"name":"ADA escrow-style payment plan builder with trusted arbiter and disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#escrowlink"}]}
+{"@context":"https://schema.org","@type":"ItemList","name":"Cardano4All free Cardano tools","itemListElement":[{"@type":"ListItem","position":1,"name":"Cardano address inspector","url":"https://kshot3000.github.io/Cardano4all/#inspector"},{"@type":"ListItem","position":2,"name":"ADA to lovelace converter","url":"https://kshot3000.github.io/Cardano4all/#converter"},{"@type":"ListItem","position":3,"name":"Cardano epoch and slot calculator","url":"https://kshot3000.github.io/Cardano4all/#epochcalc"},{"@type":"ListItem","position":4,"name":"ADA staking rewards estimator","url":"https://kshot3000.github.io/Cardano4all/#stakingcalc"},{"@type":"ListItem","position":5,"name":"Stake pool reward split calculator","url":"https://kshot3000.github.io/Cardano4all/#poolsplit"},{"@type":"ListItem","position":6,"name":"Cardano transaction fee calculator","url":"https://kshot3000.github.io/Cardano4all/#feecalc"},{"@type":"ListItem","position":7,"name":"Plutus execution cost calculator","url":"https://kshot3000.github.io/Cardano4all/#exunitcalc"},{"@type":"ListItem","position":8,"name":"Cardano transaction inspector and CBOR decoders","url":"https://kshot3000.github.io/Cardano4all/#txinspect"},{"@type":"ListItem","position":9,"name":"ADA payment plan builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#paylink"},{"@type":"ListItem","position":10,"name":"ADA split payment plan builder for two sellers with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#splitlink"},{"@type":"ListItem","position":11,"name":"ADA escrow-style payment plan builder with trusted arbiter and disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#escrowlink"},{"@type":"ListItem","position":12,"name":"ADA marketplace listing builder with disclosed 1% service fee","url":"https://kshot3000.github.io/Cardano4all/#marketlink"}]}
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css?v=1">
@@ -317,6 +317,24 @@
         <button type="button" id="copy-escrowlink-url" class="btn">Copy escrow plan link</button>
         <p id="escrowlink-link-status" role="status" aria-live="polite"></p>
         <p id="escrowlink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
+      </form>
+      <form class="tool" id="marketlink">
+        <h3>Marketplace listing builder — for sale, with the same disclosed 1% service fee</h3>
+        <p>Selling an item for ADA? Write the <strong>listing itself</strong>, not just a payment request: an item title, your asking price, your mainnet payment address, and an optional description with delivery terms. The tool writes a copyable listing a buyer can act on — the full asking price to you, plus the same <strong>disclosed 1% service fee</strong> on the asking price to my Cardano4All fee address as in the plans above, printed in the listing itself, no hidden cut. Be clear about the boundary: this page is <strong>not a marketplace</strong> — it holds no listings, takes no custody, and has <strong>not seen or verified your item</strong>; the listing text says exactly that, so a buyer knows the listing is seller-written and should agree delivery in writing before paying (or use the escrow-style plan above). The <strong>Copy listing</strong> button copies the listing text to post wherever you sell. The <strong>Copy listing link</strong> button instead copies a link to this page that opens with your address, price, title and description already filled in and the listing built — the link carries <strong>no fee field of its own</strong>, so it cannot be edited to raise the fee: the 1% is worked out by this page every time it opens, and a link carrying extra fields, a missing title or a tampered address is refused and reported. This page builds <strong>no transaction and signs nothing</strong>. Double-check your address in full before posting.</p>
+        <label for="mkt-vendor">Your mainnet payment address (the seller)</label>
+        <textarea id="mkt-vendor" rows="2" spellcheck="false" placeholder="addr1… (payment address — a stake or testnet address cannot receive this payment)"></textarea>
+        <label for="mkt-amount">Asking price (ADA)</label>
+        <input id="mkt-amount" inputmode="decimal" placeholder="e.g. 250" autocomplete="off">
+        <label for="mkt-title">Item title (required)</label>
+        <input id="mkt-title" type="text" spellcheck="false" placeholder="e.g. Vintage film camera, serviced" autocomplete="off">
+        <label for="mkt-desc">Description and delivery terms (optional)</label>
+        <input id="mkt-desc" type="text" spellcheck="false" placeholder="e.g. Ships tracked within 2 days; buyer confirms on arrival" autocomplete="off">
+        <button type="submit" class="btn primary">Build listing</button>
+        <button type="button" id="copy-marketlink" class="btn">Copy listing</button>
+        <p id="marketlink-copy-status" role="status" aria-live="polite"></p>
+        <button type="button" id="copy-marketlink-url" class="btn">Copy listing link</button>
+        <p id="marketlink-link-status" role="status" aria-live="polite"></p>
+        <p id="marketlink-result" role="status" aria-live="polite" style="white-space: pre-line"></p>
       </form>
       <form class="tool" id="txidcalc">
         <h3>Transaction ID calculator</h3>
@@ -730,6 +748,6 @@
   <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
   <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
 </footer>
-<script src="app.js?v=55"></script>
+<script src="app.js?v=56"></script>
 </body>
 </html>
