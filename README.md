@@ -275,14 +275,44 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   repeated field, malformed encoding, a bad month count, or a
   tampered, stake or testnet address is refused and reported on
   the page. The page builds no transaction and signs nothing.
+- **Milestone payment plan builder (staged project payments,
+  disclosed 1% service fee)** — the staged variant: a seller
+  writes the plan itself (their mainnet payment address, the
+  total project amount, 2 to 5 stage percentages that add up to
+  exactly 100, optional stage names of at most 32 characters
+  each, and an optional note of the project of at most 128
+  characters) and the tool writes it as copyable text the client
+  pays from stage by stage — each stage's full amount to the
+  seller plus the same disclosed 1% service fee, charged on each
+  stage payment (floored to whole lovelace per stage, exact
+  BigInt maths), to the same Cardano4All fee address above.
+  Stage amounts are exact: every stage but the last is floored
+  and the last stage takes the remainder, so the stages always
+  add up to the total — and a stage that is never paid was never
+  charged a fee. The plan text leads with the honesty line: this
+  is not a contract and the page does not enforce the stages — it
+  holds no funds, cannot check the work and cannot release,
+  withhold or refund a payment; each stage is paid manually when
+  the client judges it complete, and the stages and project
+  terms are whatever both parties agree in writing. Sub-1-ADA
+  outputs are named in a minimum-UTxO warning, and Copy buttons
+  copy only the last successfully built plan or its shareable
+  link. The link carries only the seller address, the total, the
+  stage percentages, the stage names and the project note — no
+  fee field at all — and the page recomputes the disclosed 1%
+  fee on open, so a link cannot be edited to raise or reroute
+  the fee; a link with an extra or repeated field, malformed
+  encoding, stage percentages that do not add up to 100, or a
+  tampered, stake or testnet address is refused and reported on
+  the page. The page builds no transaction and signs nothing.
 - **Cardano4All Pay landing page (`pay.html`)** — a standalone,
-  shareable page for the seven payment plan builders above: what each
+  shareable page for the eight payment plan builders above: what each
   plan is for, how a plan is used, and the disclosed 1% service fee
   explained in full with the fee address printed on the page. It
   carries the same attribution and the same honesty lines (no
   transaction built or signed; the escrow-style plan is not a
   smart-contract escrow) and links straight into each builder.
-- **Per-tool Pay share pages** — each of the seven builders also has
+- **Per-tool Pay share pages** — each of the eight builders also has
   its own share page with its own canonical, Open Graph and Twitter
   card naming that one plan, the full 1% fee disclosure with the fee
   address, and that tool's own honesty line, deep-linking into the
@@ -290,8 +320,9 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   sellers), `pay-escrow.html` (trusted arbiter), `pay-marketplace.html`
   (for-sale listing), `pay-rental.html` (rent + deposit),
   `pay-invoice.html` (freelance/service invoice) and
-  `pay-retainer.html` (recurring monthly retainer). Sharing the hub
-  alone would render one generic card for all seven plans; sharing a
+  `pay-retainer.html` (recurring monthly retainer) and
+  `pay-milestone.html` (staged project payments). Sharing the hub
+  alone would render one generic card for all eight plans; sharing a
   plan's own page renders that plan.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.

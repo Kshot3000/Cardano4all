@@ -1624,6 +1624,251 @@ function parseRetainerLink(searchRaw) {
   return { provider: plan.provider, monthly: lovelaceToAda(plan.monthlyLovelace), months: plan.months, service: plan.service };
 }
 
+/* Milestone payment plan builder — the staged variant of the
+   payment plan builders (profit mandate, 2026-10-12). The payment
+   shape is genuinely different from the seven plans above: one
+   seller, one total project price, paid in 2 to 5 stages as the
+   work completes — the freelance and build-work shape (a deposit,
+   a draft stage, final delivery). Each stage's amount is the
+   stage's percentage of the total: percentages are parsed exactly
+   into basis points (never through a float, the splitShareBps
+   parser above), the stages must add up to exactly 100%, every
+   stage but the last is floored to whole lovelace, and the LAST
+   stage takes the remainder, so the stage amounts always add up
+   to the total exactly — no lovelace is lost to rounding, in
+   either direction. Each stage payment is the full stage amount
+   to the seller plus exactly 1% of THAT STAGE's amount, floored to
+   whole lovelace in exact BigInt maths, to the same Cardano4All
+   fee address as the plans above (PAYLINK_FEE_ADDRESS), paid by
+   the client on top and printed in the plan itself. The fee is
+   charged PER STAGE PAYMENT, not once on the total, for the same
+   reason as the retainer's per-payment fee: each stage payment is
+   a separate payment the client actually makes, possibly weeks
+   apart, and a stage that is never paid was never charged a fee —
+   the plan states that plainly, with each stage's fee and the
+   full totals all written out. A stage that would floor to 0
+   lovelace is refused rather than planned, since a zero stage is
+   not a payment. The seller faces the paymentPlan gates (mainnet
+   payment address, verifying checksum). Stage names are optional
+   — one per stage, separated by semicolons, at most 32 characters
+   each — and the project note is plain text (at most 128
+   characters, no control characters). Same boundary as the plans
+   above: no transaction is built or signed; the plan is text. The
+   honesty lead is the one this shape needs most: this is NOT a
+   contract and the page does not enforce the stages — it holds
+   nothing, cannot check the work and cannot release or withhold
+   a payment. */
+
+/* milestoneStageBps(stagesRaw) -> an array of 2 to 5 BigInt
+   basis-point values adding up to exactly 10000 (100%), or null.
+   The percentages are comma-separated text ("30, 40, 30"); each
+   one goes through splitShareBps, so a stage is a percentage with
+   at most 2 decimals, above 0 and below 100. */
+function milestoneStageBps(stagesRaw) {
+  var s = (stagesRaw || "").trim();
+  if (!s) return null;
+  var parts = s.split(",");
+  if (parts.length < 2 || parts.length > 5) return null;
+  var out = [];
+  var sum = 0n;
+  for (var i = 0; i < parts.length; i++) {
+    var bps = splitShareBps(parts[i].trim());
+    if (bps === null) return null;
+    out.push(bps);
+    sum += bps;
+  }
+  if (sum !== 10000n) return null;
+  return out;
+}
+
+/* milestonePlan(sellerRaw, totalStr, stagesRaw, labelsRaw,
+   projectRaw) -> { seller, project, labelsGiven, stageBps,
+   stageLabels, stagesCanonical, stageLovelace,
+   stageFeeLovelace, stageTotalLovelace, totalLovelace,
+   feesTotalLovelace, grandTotalLovelace, feeAddress, feeBps }
+   (amounts as decimal strings, stageBps as an array of Numbers,
+   feeBps as a Number) or null for an invalid seller, total,
+   stage list, stage names or project note. Stage names are
+   optional; when none are given the stages are named "Stage 1",
+   "Stage 2", ... in the plan. */
+function milestonePlan(sellerRaw, totalStr, stagesRaw, labelsRaw, projectRaw) {
+  var seller = (sellerRaw || "").trim();
+  var check = verifyBech32(seller);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var totalStrL = adaToLovelace(totalStr);
+  if (totalStrL === null) return null;
+  var total = BigInt(totalStrL);
+  if (total <= 0n) return null;
+  var bpsList = milestoneStageBps(stagesRaw);
+  if (bpsList === null) return null;
+  var labelsGiven = (labelsRaw || "").trim();
+  var labels = [];
+  if (labelsGiven) {
+    var rawLabels = labelsGiven.split(";");
+    if (rawLabels.length !== bpsList.length) return null;
+    for (var j = 0; j < rawLabels.length; j++) {
+      var lab = rawLabels[j].trim();
+      if (!lab || lab.length > 32 || /[\x00-\x1f\x7f]/.test(lab)) return null;
+      labels.push(lab);
+    }
+  } else {
+    for (var k = 0; k < bpsList.length; k++) labels.push("Stage " + (k + 1));
+  }
+  var project = (projectRaw || "").trim();
+  if (project.length > 128 || /[\x00-\x1f\x7f]/.test(project)) return null;
+  var amounts = [], fees = [], stageTotals = [];
+  var paid = 0n, feesTotal = 0n;
+  for (var i2 = 0; i2 < bpsList.length; i2++) {
+    var amt;
+    if (i2 === bpsList.length - 1) {
+      amt = total - paid;
+    } else {
+      amt = (total * bpsList[i2]) / 10000n;
+      paid += amt;
+    }
+    if (amt <= 0n) return null;
+    var fee = (amt * PAYLINK_FEE_BPS) / 10000n;
+    amounts.push(amt);
+    fees.push(fee);
+    stageTotals.push(amt + fee);
+    feesTotal += fee;
+  }
+  return {
+    seller: seller,
+    project: project,
+    labelsGiven: !!labelsGiven,
+    stageBps: bpsList.map(function (b) { return Number(b); }),
+    stageLabels: labels,
+    stagesCanonical: bpsList.map(function (b) { return formatShareBps(b); }).join(","),
+    stageLovelace: amounts.map(function (a) { return a.toString(); }),
+    stageFeeLovelace: fees.map(function (f) { return f.toString(); }),
+    stageTotalLovelace: stageTotals.map(function (t) { return t.toString(); }),
+    totalLovelace: total.toString(),
+    feesTotalLovelace: feesTotal.toString(),
+    grandTotalLovelace: (total + feesTotal).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* milestonePlanText(plan) -> the copyable milestone plan text.
+   The not-a-contract warning leads, before any payment step, for
+   the same reason the escrow warning leads its plan: a forwarded
+   plan must not be able to trim the warning off the top without
+   the steps visibly following it. Each stage is written out in
+   full — amount, seller address, that stage's fee and that
+   stage's total — because the stages are paid separately, weeks
+   apart, and a later stage must still be payable from this text
+   alone. A sub-1-ADA output (a stage amount, or a positive fee)
+   is named in a minimum-UTxO note, as in the plans above. */
+function milestonePlanText(plan) {
+  var lines = [];
+  var n = plan.stageLabels.length;
+  lines.push("Cardano milestone plan — a project paid in " + n + " stages");
+  lines.push("IMPORTANT: this is NOT a contract and this page does not enforce the stages. The page holds no funds, cannot check that a stage's work was done and cannot release, withhold or refund a payment — each stage is a separate manual payment the client makes in their own wallet when they judge that stage complete. Agree the stages, what counts as each stage being complete, and the project terms in writing before the first payment; if a stage is never paid, that is a dispute between the client and the seller, not something this page can settle.");
+  if (plan.project) {
+    lines.push("Project: " + plan.project);
+  } else {
+    lines.push("Project: not stated — agree the project in writing with the seller before the first payment.");
+  }
+  lines.push("Total project price: " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace), paid to the seller in " + n + " stages:");
+  var smallOutput = false;
+  for (var i = 0; i < n; i++) {
+    if (BigInt(plan.stageLovelace[i]) < 1000000n) smallOutput = true;
+    if (plan.stageFeeLovelace[i] !== "0" && BigInt(plan.stageFeeLovelace[i]) < 1000000n) smallOutput = true;
+    lines.push("Stage " + (i + 1) + " — " + plan.stageLabels[i] + " (" + formatShareBps(BigInt(plan.stageBps[i])) + "%): pay the seller " + lovelaceToAda(plan.stageLovelace[i]) + " ADA (" + plan.stageLovelace[i] + " lovelace) to " + plan.seller);
+    if (plan.stageFeeLovelace[i] === "0") {
+      lines.push("Cardano4All service fee for stage " + (i + 1) + " (1% of this stage's amount, disclosed): 0 lovelace — the 1% of this stage amount floors to 0, so no fee output is due for this stage.");
+    } else {
+      lines.push("Pay the Cardano4All service fee for stage " + (i + 1) + " (1% of this stage's amount, disclosed): " + lovelaceToAda(plan.stageFeeLovelace[i]) + " ADA (" + plan.stageFeeLovelace[i] + " lovelace) to " + plan.feeAddress);
+    }
+    lines.push("Stage " + (i + 1) + " totals: " + lovelaceToAda(plan.stageTotalLovelace[i]) + " ADA (" + plan.stageTotalLovelace[i] + " lovelace), plus the network transaction fee your wallet adds.");
+  }
+  lines.push("Across all " + n + " stages: the seller receives " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace) in total, the service fees total " + lovelaceToAda(plan.feesTotalLovelace) + " ADA (" + plan.feesTotalLovelace + " lovelace) — 1% of each stage, charged per stage payment, never deducted from a stage — and the client pays " + lovelaceToAda(plan.grandTotalLovelace) + " ADA (" + plan.grandTotalLovelace + " lovelace) in total, plus one network fee per stage payment.");
+  if (smallOutput) {
+    lines.push("Note: an output in this plan is under 1 ADA, below the minimum a single output must carry — send a small fee together with that stage's seller payment in one transaction with both outputs, and never try to send a stage amount that small on its own. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a milestone payment plan to paste into your own wallet, one stage at a time. Double-check the seller address in full before sending each stage.");
+  return lines.join("\n");
+}
+
+/* Shareable milestone link — the milestone plan above as a link
+   the seller can send a client (profit mandate, 2026-10-12). The
+   link carries ONLY the seller's address, the total project
+   amount (as a canonical ADA string), the stage percentages (in
+   their canonical form, comma-separated), the stage names when
+   the seller gave them (semicolon-separated, as in the form) and
+   the optional project note — each percent-encoded. Like the
+   other links it carries NO fee field and no fee address: the
+   disclosed 1% fee is recomputed by milestonePlan when the page
+   opens, every time, so a link cannot be edited to raise the fee
+   or reroute it — a query that smuggles in an extra field (fee=,
+   or anything unknown), repeats a field, or fails the
+   milestonePlan gates is refused whole. The parser is the same
+   deliberately manual one as parsePaymentLink: "+" is data,
+   never a space, decoding failures refuse the link, and exactly
+   the five known fields are admitted. The field names (payee,
+   total, stages, labels, project) keep a milestone link distinct
+   from a single-seller link (to, amount), a split link (toA, toB,
+   share), an escrow link (buyer, seller, arbiter, release), a
+   listing link (vendor, title, desc), a rental link (landlord,
+   rent, deposit, term), an invoice link (issuer, invoice, work)
+   and a retainer link (provider, monthly, months, service) on
+   sight and in the open-from-link wiring below. A milestone link
+   carries no amount=, so no earlier block can claim it; the
+   single-seller block below still excludes milestone-shaped
+   queries explicitly, in the same shape as the other seven
+   exclusions. Nothing is fetched or sent; the query is read
+   locally from the page's own address bar. */
+
+/* milestoneLink(sellerRaw, totalStr, stagesRaw, labelsRaw,
+   projectRaw) -> the shareable URL string, or null when
+   milestonePlan refuses the inputs. */
+function milestoneLink(sellerRaw, totalStr, stagesRaw, labelsRaw, projectRaw) {
+  var plan = milestonePlan(sellerRaw, totalStr, stagesRaw, labelsRaw, projectRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?payee=" + encodeURIComponent(plan.seller) +
+    "&total=" + encodeURIComponent(lovelaceToAda(plan.totalLovelace)) +
+    "&stages=" + encodeURIComponent(plan.stagesCanonical);
+  if (plan.labelsGiven) url += "&labels=" + encodeURIComponent(plan.stageLabels.join(";"));
+  if (plan.project) url += "&project=" + encodeURIComponent(plan.project);
+  return url + "#milestonelink";
+}
+
+/* parseMilestoneLink(searchRaw) -> { seller, total, stages,
+   labels, project } with total as a canonical ADA string, stages
+   as the canonical comma-separated percentages and labels as the
+   semicolon-separated stage names ("" when the link names none),
+   ready to refill the form, or null for anything that is not
+   exactly a well-formed, valid milestone link (empty,
+   unknown/repeated/missing fields, malformed percent-encoding,
+   or inputs milestonePlan refuses). Accepts the query with or
+   without its leading "?". */
+function parseMilestoneLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "payee" && key !== "total" && key !== "stages" && key !== "labels" && key !== "project") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.payee || !seen.total || !seen.stages) return null;
+  var plan = milestonePlan(values.payee, values.total, values.stages, seen.labels ? values.labels : "", seen.project ? values.project : "");
+  if (!plan) return null;
+  return { seller: plan.seller, total: lovelaceToAda(plan.totalLovelace), stages: plan.stagesCanonical, labels: plan.labelsGiven ? plan.stageLabels.join(";") : "", project: plan.project };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -6163,7 +6408,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -6439,7 +6684,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch) && !/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch) && !/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch) && !/(^|[?&])(payee|total|stages|labels)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -6978,6 +7223,95 @@ if (typeof document !== "undefined") {
         lastRetainerText = retainerPlanText(linkedRetainerPlan);
         lastRetainerUrl = retainerLink(linkedRetainer.provider, linkedRetainer.monthly, linkedRetainer.months, linkedRetainer.service);
         document.getElementById("retainerlink-result").textContent = "Opened from a retainer plan link — this plan is not a subscription and nothing charges automatically; agree the retainer terms in writing before the first payment, and double-check the provider address in full.\n\n" + lastRetainerText;
+      }
+    }
+
+    /* --- milestone payment plan builder (staged project
+       payments with the disclosed 1% service fee, offline — same
+       stale-plan guard as the other plan copy buttons: only the
+       last successfully built milestone plan is copyable) --- */
+    var lastMilestoneText = "";
+    var lastMilestoneUrl = "";
+    document.getElementById("milestonelink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = milestonePlan(
+        document.getElementById("mil-payee").value,
+        document.getElementById("mil-total").value,
+        document.getElementById("mil-stages").value,
+        document.getElementById("mil-labels").value,
+        document.getElementById("mil-project").value);
+      var out = document.getElementById("milestonelink-result");
+      document.getElementById("milestonelink-copy-status").textContent = "";
+      document.getElementById("milestonelink-link-status").textContent = "";
+      if (!res) {
+        lastMilestoneText = "";
+        lastMilestoneUrl = "";
+        out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive these payments), a total project amount above 0 ADA (up to 6 decimals), 2 to 5 stage percentages separated by commas that add up to exactly 100 (e.g. 30, 40, 30 — every stage must come to at least 1 lovelace of the total), optional stage names separated by semicolons — one per stage, at most 32 characters each — and an optional note of the project of at most 128 characters.";
+        return;
+      }
+      lastMilestoneText = milestonePlanText(res);
+      lastMilestoneUrl = milestoneLink(res.seller, lovelaceToAda(res.totalLovelace), res.stagesCanonical, res.labelsGiven ? res.stageLabels.join(";") : "", res.project);
+      out.textContent = lastMilestoneText;
+    });
+    document.getElementById("copy-milestonelink").addEventListener("click", function () {
+      var status = document.getElementById("milestonelink-copy-status");
+      if (!lastMilestoneText) {
+        status.textContent = "Build a milestone plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Milestone plan copied — send it to the client."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastMilestoneText).then(done, function () {
+          status.textContent = "Copy failed — select the milestone plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the milestone plan text to copy it.";
+      }
+    });
+
+    /* --- copy milestone plan link (same stale-plan guard as the
+       milestone plan copy above: only the link for the last
+       successfully built milestone plan can be copied, and a
+       failed build clears it) --- */
+    document.getElementById("copy-milestonelink-url").addEventListener("click", function () {
+      var status = document.getElementById("milestonelink-link-status");
+      if (!lastMilestoneUrl) {
+        status.textContent = "Build a milestone plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Milestone plan link copied — send it to the client; it opens this page with the plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastMilestoneUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?payee=, total= and stages= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from a milestone plan link: a ?payee=…&total=…
+       &stages=… query (see milestoneLink) fills the milestone
+       form and builds the plan, with the fee recomputed by this
+       page, never taken from the link. Milestone-shaped queries
+       are claimed here, not by the single-seller block above
+       (which excludes them explicitly, in the same shape as the
+       other seven formats); a milestone-shaped query that does
+       not validate is reported, not silently ignored, and an
+       unrelated query string is left alone. --- */
+    if (linkSearch && /(^|[?&])(payee|total|stages|labels)=/.test(linkSearch)) {
+      var linkedMilestone = parseMilestoneLink(linkSearch);
+      if (!linkedMilestone) {
+        document.getElementById("milestonelink-result").textContent = "That milestone plan link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum, a total project amount above 0 ADA and 2 to 5 stage percentages adding up to exactly 100, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("mil-payee").value = linkedMilestone.seller;
+        document.getElementById("mil-total").value = linkedMilestone.total;
+        document.getElementById("mil-stages").value = linkedMilestone.stages;
+        document.getElementById("mil-labels").value = linkedMilestone.labels;
+        document.getElementById("mil-project").value = linkedMilestone.project;
+        var linkedMilestonePlan = milestonePlan(linkedMilestone.seller, linkedMilestone.total, linkedMilestone.stages, linkedMilestone.labels, linkedMilestone.project);
+        lastMilestoneText = milestonePlanText(linkedMilestonePlan);
+        lastMilestoneUrl = milestoneLink(linkedMilestone.seller, linkedMilestone.total, linkedMilestone.stages, linkedMilestone.labels, linkedMilestone.project);
+        document.getElementById("milestonelink-result").textContent = "Opened from a milestone plan link — this plan is not a contract and the page does not enforce the stages; agree the stages and the project terms in writing before the first payment, and double-check the seller address in full.\n\n" + lastMilestoneText;
       }
     }
 
