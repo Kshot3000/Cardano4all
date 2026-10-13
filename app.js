@@ -2041,6 +2041,184 @@ function parseGroupLink(searchRaw) {
   return { merchant: plan.merchant, bill: lovelaceToAda(plan.totalLovelace), payers: plan.payers, occasion: plan.occasion };
 }
 
+/* installmentPlan(dealerRaw, priceStr, partsRaw, itemRaw) ->
+   { dealer, item, parts, partLovelace, feeLovelace,
+   partTotalLovelace, priceLovelace, feesTotalLovelace,
+   grandTotalLovelace, feeAddress, feeBps } (amounts as decimal
+   strings, parts and feeBps as Numbers) or null for an invalid
+   dealer, price, part count or item note. The installment shape
+   is distinct from the retainer (a recurring service amount with
+   no total price) and from the milestone plan (custom stage
+   percentages tied to work): here ONE buyer pays ONE seller a
+   fixed total price in EQUAL parts over time. Parts are exact:
+   every part but the last is the floored equal part and the last
+   part takes the remainder, so the parts always add up to the
+   price exactly — no lovelace lost to rounding. The disclosed
+   1% fee is charged on EACH part, floored per part, because
+   each part is a separate payment the buyer actually makes; a
+   part that is never paid was never charged a fee. A part that
+   would floor to 0 lovelace refuses the plan. The part count is
+   a whole number from 2 to 12, parsed strictly (no decimals, no
+   signs, no words). */
+function installmentPlan(dealerRaw, priceStr, partsRaw, itemRaw) {
+  var dealer = (dealerRaw || "").trim();
+  var check = verifyBech32(dealer);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var priceStrL = adaToLovelace(priceStr);
+  if (priceStrL === null) return null;
+  var price = BigInt(priceStrL);
+  if (price <= 0n) return null;
+  var partsStr = String(partsRaw === null || partsRaw === undefined ? "" : partsRaw).trim();
+  if (!/^\d+$/.test(partsStr)) return null;
+  var n = Number(partsStr);
+  if (n < 2 || n > 12) return null;
+  var item = (itemRaw || "").trim();
+  if (item.length > 128 || /[\x00-\x1f\x7f]/.test(item)) return null;
+  var base = price / BigInt(n);
+  if (base <= 0n) return null;
+  var remainder = price - base * BigInt(n);
+  var parts = [], fees = [], partTotals = [];
+  var feesTotal = 0n;
+  for (var i = 0; i < n; i++) {
+    var part = (i === n - 1) ? base + remainder : base;
+    var fee = (part * PAYLINK_FEE_BPS) / 10000n;
+    parts.push(part);
+    fees.push(fee);
+    partTotals.push(part + fee);
+    feesTotal += fee;
+  }
+  return {
+    dealer: dealer,
+    item: item,
+    parts: n,
+    partLovelace: parts.map(function (a) { return a.toString(); }),
+    feeLovelace: fees.map(function (f) { return f.toString(); }),
+    partTotalLovelace: partTotals.map(function (t) { return t.toString(); }),
+    priceLovelace: price.toString(),
+    feesTotalLovelace: feesTotal.toString(),
+    grandTotalLovelace: (price + feesTotal).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* installmentPlanText(plan) -> the copyable installment plan
+   text. The not-credit warning leads, before any payment step,
+   for the same reason the escrow warning leads its plan: a
+   forwarded plan must not be able to trim the warning off the
+   top without the steps visibly following it. Each part is
+   written out in full — part amount, seller address, that
+   part's fee and that part's total — because the parts are paid
+   at different times, and the buyer must be able to pay any one
+   part from this text alone. A sub-1-ADA output (a part, or a
+   positive fee) is named in a minimum-UTxO note, as in the
+   plans above. */
+function installmentPlanText(plan) {
+  var lines = [];
+  var n = plan.parts;
+  lines.push("Cardano installment plan — one price paid in " + n + " parts");
+  lines.push("IMPORTANT: this is NOT credit, a loan or financing. This page does not lend anything, does not check or affect anyone's credit, cannot enforce a part payment, charge interest or late fees, or repossess anything, and holds no funds — each part is a separate manual payment the buyer makes in their own wallet. The seller should not hand over the item until the final part is paid, unless they choose to in writing. When each part falls due (weekly, monthly, on dates) is whatever the buyer and the seller agree in writing; this page sets no schedule and sends no reminders.");
+  if (plan.item) {
+    lines.push("What is being bought: " + plan.item);
+  } else {
+    lines.push("What is being bought: not stated — agree what is being bought, and when each part falls due, in writing with the seller before the first part is paid.");
+  }
+  lines.push("Total price: " + lovelaceToAda(plan.priceLovelace) + " ADA (" + plan.priceLovelace + " lovelace), paid in " + n + " equal parts to the seller " + plan.dealer + ":");
+  var smallOutput = false;
+  for (var i = 0; i < n; i++) {
+    if (BigInt(plan.partLovelace[i]) < 1000000n) smallOutput = true;
+    if (plan.feeLovelace[i] !== "0" && BigInt(plan.feeLovelace[i]) < 1000000n) smallOutput = true;
+    lines.push("Part " + (i + 1) + " of " + n + ": pay the seller " + lovelaceToAda(plan.partLovelace[i]) + " ADA (" + plan.partLovelace[i] + " lovelace) to " + plan.dealer);
+    if (plan.feeLovelace[i] === "0") {
+      lines.push("Cardano4All service fee for part " + (i + 1) + " (1% of this part, disclosed): 0 lovelace — the 1% of this part floors to 0, so no fee output is due with this part.");
+    } else {
+      lines.push("Pay the Cardano4All service fee for part " + (i + 1) + " (1% of this part, disclosed): " + lovelaceToAda(plan.feeLovelace[i]) + " ADA (" + plan.feeLovelace[i] + " lovelace) to " + plan.feeAddress);
+    }
+    lines.push("Part " + (i + 1) + " totals: " + lovelaceToAda(plan.partTotalLovelace[i]) + " ADA (" + plan.partTotalLovelace[i] + " lovelace), plus the network transaction fee your wallet adds.");
+  }
+  lines.push("Across all " + n + " parts: the seller receives " + lovelaceToAda(plan.priceLovelace) + " ADA (" + plan.priceLovelace + " lovelace) in total, the service fees total " + lovelaceToAda(plan.feesTotalLovelace) + " ADA (" + plan.feesTotalLovelace + " lovelace) — 1% of each part, charged per part payment, never deducted from a part — and the buyer pays " + lovelaceToAda(plan.grandTotalLovelace) + " ADA (" + plan.grandTotalLovelace + " lovelace) in total, plus one network fee per part payment. A part that is never paid was never charged a fee.");
+  if (smallOutput) {
+    lines.push("Note: an output in this plan is under 1 ADA, below the minimum a single output must carry — send a small fee together with that part's seller payment in one transaction with both outputs, and never try to send a part that small on its own. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is an installment payment plan to paste into your own wallet, one part at a time. Double-check the seller address in full before sending.");
+  return lines.join("\n");
+}
+
+/* Shareable installment link — the installment plan above as a
+   link the seller can send the buyer (profit mandate,
+   2026-10-13). The link carries ONLY the seller's address, the
+   total price (as a canonical ADA string), the part count and
+   the optional note of what is being bought — each
+   percent-encoded. Like the other links it carries NO fee field
+   and no fee address: the disclosed 1% fee is recomputed by
+   installmentPlan when the page opens, every time, so a link
+   cannot be edited to raise the fee or reroute it — a query that
+   smuggles in an extra field (fee=, or anything unknown),
+   repeats a field, or fails the installmentPlan gates is
+   refused whole. The parser is the same deliberately manual one
+   as parsePaymentLink: "+" is data, never a space, decoding
+   failures refuse the link, and exactly the four known fields
+   are admitted. The field names (dealer, price, parts, item)
+   keep an installment link distinct from a single-seller link
+   (to, amount), a split link (toA, toB, share), an escrow link
+   (buyer, seller, arbiter, release), a listing link (vendor,
+   title, desc), a rental link (landlord, rent, deposit, term),
+   an invoice link (issuer, invoice, work), a retainer link
+   (provider, monthly, months, service), a milestone link
+   (payee, total, stages, labels, project) and a group link
+   (merchant, bill, payers, occasion) on sight and in the
+   open-from-link wiring below. An installment link carries no
+   amount=, so no earlier block can claim it; the single-seller
+   block below still excludes installment-shaped queries
+   explicitly, in the same shape as the other nine exclusions.
+   Nothing is fetched or sent; the query is read locally from
+   the page's own address bar. */
+
+/* installmentLink(dealerRaw, priceStr, partsRaw, itemRaw) ->
+   the shareable URL string, or null when installmentPlan
+   refuses the inputs. */
+function installmentLink(dealerRaw, priceStr, partsRaw, itemRaw) {
+  var plan = installmentPlan(dealerRaw, priceStr, partsRaw, itemRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?dealer=" + encodeURIComponent(plan.dealer) +
+    "&price=" + encodeURIComponent(lovelaceToAda(plan.priceLovelace)) +
+    "&parts=" + encodeURIComponent(String(plan.parts));
+  if (plan.item) url += "&item=" + encodeURIComponent(plan.item);
+  return url + "#instlink";
+}
+
+/* parseInstallmentLink(searchRaw) -> { dealer, price, parts,
+   item } with price as a canonical ADA string and parts as a
+   Number, ready to refill the form, or null for anything that
+   is not exactly a well-formed, valid installment link (empty,
+   unknown/repeated/missing fields, malformed percent-encoding,
+   or inputs installmentPlan refuses). Accepts the query with or
+   without its leading "?". */
+function parseInstallmentLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "dealer" && key !== "price" && key !== "parts" && key !== "item") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.dealer || !seen.price || !seen.parts) return null;
+  var plan = installmentPlan(values.dealer, values.price, values.parts, seen.item ? values.item : "");
+  if (!plan) return null;
+  return { dealer: plan.dealer, price: lovelaceToAda(plan.priceLovelace), parts: plan.parts, item: plan.item };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -6580,7 +6758,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, groupPlan, groupPlanText, groupLink, parseGroupLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, groupPlan, groupPlanText, groupLink, parseGroupLink, installmentPlan, installmentPlanText, installmentLink, parseInstallmentLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -6856,7 +7034,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch) && !/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch) && !/(^|[?&])(payee|total|stages|labels)=/.test(linkSearch) && !/(^|[?&])(merchant|bill|payers|occasion)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch) && !/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch) && !/(^|[?&])(payee|total|stages|labels)=/.test(linkSearch) && !/(^|[?&])(merchant|bill|payers|occasion)=/.test(linkSearch) && !/(^|[?&])(dealer|price|parts|item)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -7572,6 +7750,95 @@ if (typeof document !== "undefined") {
         lastGroupText = groupPlanText(linkedGroupPlan);
         lastGroupUrl = groupLink(linkedGroup.merchant, linkedGroup.bill, linkedGroup.payers, linkedGroup.occasion);
         document.getElementById("grouplink-result").textContent = "Opened from a group plan link — this plan is not a collection service and the page does not track who has paid; agree what the bill is for in writing before anyone pays, and double-check the seller address in full.\n\n" + lastGroupText;
+      }
+    }
+
+    /* --- installment payment plan builder (one price paid in
+       equal parts over time, with the disclosed 1% service fee,
+       offline — same stale-plan guard as the other plan copy
+       buttons: only the last successfully built installment plan
+       is copyable) --- */
+    var lastInstallmentText = "";
+    var lastInstallmentUrl = "";
+    document.getElementById("instlink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = installmentPlan(
+        document.getElementById("ins-dealer").value,
+        document.getElementById("ins-price").value,
+        document.getElementById("ins-parts").value,
+        document.getElementById("ins-item").value);
+      var out = document.getElementById("instlink-result");
+      document.getElementById("instlink-copy-status").textContent = "";
+      document.getElementById("instlink-link-status").textContent = "";
+      if (!res) {
+        lastInstallmentText = "";
+        lastInstallmentUrl = "";
+        out.textContent = "Enter the seller's mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive these payments), a total price above 0 ADA (up to 6 decimals), a whole number of parts from 2 to 12 (every part must come to at least 1 lovelace of the price), and an optional note of what is being bought of at most 128 characters.";
+        return;
+      }
+      lastInstallmentText = installmentPlanText(res);
+      lastInstallmentUrl = installmentLink(res.dealer, lovelaceToAda(res.priceLovelace), res.parts, res.item);
+      out.textContent = lastInstallmentText;
+    });
+    document.getElementById("copy-instlink").addEventListener("click", function () {
+      var status = document.getElementById("instlink-copy-status");
+      if (!lastInstallmentText) {
+        status.textContent = "Build an installment plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Installment plan copied — send it to the buyer."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastInstallmentText).then(done, function () {
+          status.textContent = "Copy failed — select the installment plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the installment plan text to copy it.";
+      }
+    });
+
+    /* --- copy installment plan link (same stale-plan guard as
+       the installment plan copy above: only the link for the last
+       successfully built installment plan can be copied, and a
+       failed build clears it) --- */
+    document.getElementById("copy-instlink-url").addEventListener("click", function () {
+      var status = document.getElementById("instlink-link-status");
+      if (!lastInstallmentUrl) {
+        status.textContent = "Build an installment plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Installment plan link copied — send it to the buyer; it opens this page with the plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastInstallmentUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?dealer=, price= and parts= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from an installment plan link: a ?dealer=…
+       &price=…&parts=… query (see installmentLink) fills the
+       installment form and builds the plan, with the fee
+       recomputed by this page, never taken from the link.
+       Installment-shaped queries are claimed here, not by the
+       single-seller block above (which excludes them explicitly,
+       in the same shape as the other nine formats); an
+       installment-shaped query that does not validate is
+       reported, not silently ignored, and an unrelated query
+       string is left alone. --- */
+    if (linkSearch && /(^|[?&])(dealer|price|parts|item)=/.test(linkSearch)) {
+      var linkedInstallment = parseInstallmentLink(linkSearch);
+      if (!linkedInstallment) {
+        document.getElementById("instlink-result").textContent = "That installment plan link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum, a total price above 0 ADA and a whole number of parts from 2 to 12, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("ins-dealer").value = linkedInstallment.dealer;
+        document.getElementById("ins-price").value = linkedInstallment.price;
+        document.getElementById("ins-parts").value = String(linkedInstallment.parts);
+        document.getElementById("ins-item").value = linkedInstallment.item;
+        var linkedInstallmentPlan = installmentPlan(linkedInstallment.dealer, linkedInstallment.price, linkedInstallment.parts, linkedInstallment.item);
+        lastInstallmentText = installmentPlanText(linkedInstallmentPlan);
+        lastInstallmentUrl = installmentLink(linkedInstallment.dealer, linkedInstallment.price, linkedInstallment.parts, linkedInstallment.item);
+        document.getElementById("instlink-result").textContent = "Opened from an installment plan link — this plan is not credit or financing and the page does not enforce the parts; agree what is being bought and when each part falls due in writing before the first payment, and double-check the seller address in full.\n\n" + lastInstallmentText;
       }
     }
 

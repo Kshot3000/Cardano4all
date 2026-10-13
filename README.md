@@ -333,14 +333,48 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   repeated field, malformed encoding, a bad payer count, or a
   tampered, stake or testnet address is refused and reported on
   the page. The page builds no transaction and signs nothing.
+- **Installment payment plan builder (one price paid in equal
+  parts over time, disclosed 1% service fee)** — the installment
+  variant, distinct from the retainer (a recurring service
+  amount with no total price) and the milestone plan (custom
+  stage percentages tied to work): ONE buyer pays ONE seller a
+  fixed total price in equal parts. A seller writes the plan
+  itself (their mainnet payment address, the total price, a
+  whole number of parts from 2 to 12, and an optional note of
+  what is being bought of at most 128 characters) and the tool
+  writes it as copyable text the buyer pays from part by part —
+  each part in full to the seller plus the same disclosed 1%
+  service fee, charged on each part (floored to whole lovelace
+  per part, exact BigInt maths), to the same Cardano4All fee
+  address above. Parts are exact: every part but the last is
+  the floored equal part and the last part takes the remainder,
+  so the parts always add up to the price — and a part that is
+  never paid was never charged a fee. The plan text leads with
+  the honesty line: this is not credit, a loan or financing —
+  the page does not lend anything, does not check or affect
+  anyone's credit, cannot enforce a part payment, charge
+  interest or late fees, or repossess anything, and holds no
+  funds; the seller should not hand over the item until the
+  final part is paid unless they choose to in writing, and when
+  each part falls due is whatever both parties agree in
+  writing. Sub-1-ADA outputs are named in a minimum-UTxO
+  warning, and Copy buttons copy only the last successfully
+  built plan or its shareable link. The link carries only the
+  seller address, the price, the part count and the note — no
+  fee field at all — and the page recomputes the disclosed 1%
+  fee on open, so a link cannot be edited to raise or reroute
+  the fee; a link with an extra or repeated field, malformed
+  encoding, a bad part count, or a tampered, stake or testnet
+  address is refused and reported on the page. The page builds
+  no transaction and signs nothing.
 - **Cardano4All Pay landing page (`pay.html`)** — a standalone,
-  shareable page for the nine payment plan builders above: what each
+  shareable page for the ten payment plan builders above: what each
   plan is for, how a plan is used, and the disclosed 1% service fee
   explained in full with the fee address printed on the page. It
   carries the same attribution and the same honesty lines (no
   transaction built or signed; the escrow-style plan is not a
   smart-contract escrow) and links straight into each builder.
-- **Per-tool Pay share pages** — each of the nine builders also has
+- **Per-tool Pay share pages** — each of the ten builders also has
   its own share page with its own canonical, Open Graph and Twitter
   card naming that one plan, the full 1% fee disclosure with the fee
   address, and that tool's own honesty line, deep-linking into the
@@ -349,9 +383,10 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   (for-sale listing), `pay-rental.html` (rent + deposit),
   `pay-invoice.html` (freelance/service invoice) and
   `pay-retainer.html` (recurring monthly retainer),
-  `pay-milestone.html` (staged project payments) and
-  `pay-group.html` (several payers split one bill). Sharing the hub
-  alone would render one generic card for all nine plans; sharing a
+  `pay-milestone.html` (staged project payments),
+  `pay-group.html` (several payers split one bill) and
+  `pay-installment.html` (one price paid in equal parts). Sharing the hub
+  alone would render one generic card for all ten plans; sharing a
   plan's own page renders that plan.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
