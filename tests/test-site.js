@@ -26,9 +26,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label", "split-recipient-a", "split-recipient-b", "split-amount", "split-share", "split-label", "mkt-vendor", "mkt-amount", "mkt-title", "mkt-desc", "rent-landlord", "rent-rent", "rent-deposit", "rent-term", "rent-label", "inv-issuer", "inv-amount", "inv-invoice", "inv-work"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label", "split-recipient-a", "split-recipient-b", "split-amount", "split-share", "split-label", "mkt-vendor", "mkt-amount", "mkt-title", "mkt-desc", "rent-landlord", "rent-rent", "rent-deposit", "rent-term", "rent-label", "inv-issuer", "inv-amount", "inv-invoice", "inv-work", "ret-provider", "ret-monthly", "ret-months", "ret-service"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=58"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=59"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -68,17 +68,18 @@ check("pay.html title names the disclosed 1% fee", /1% service fee/i.test(payHtm
 check("pay.html discloses the 1% fee in the body copy", (payHtml.match(/1% service fee/g) || []).length >= 3);
 check("pay.html states no transaction is built or signed", /no transaction and sign nothing/i.test(payHtml));
 check("pay.html leads the escrow card with the not-an-escrow honesty line", /not a smart-contract escrow/i.test(payHtml) && /cannot hold funds in escrow/i.test(payHtml));
-check("pay.html links into all six payment builders", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink"].every(a => payHtml.includes(`href="./#${a}"`)));
-check("pay.html builder anchors are real form ids on the hub", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink"].every(a => html.includes(`id="${a}"`)));
+check("pay.html links into all seven payment builders", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink"].every(a => payHtml.includes(`href="./#${a}"`)));
+check("pay.html builder anchors are real form ids on the hub", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink"].every(a => html.includes(`id="${a}"`)));
 const payLdBlocks = [...payHtml.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
 let payLd = null;
 try { payLd = JSON.parse(payLdBlocks[0]); } catch (e) { payLd = null; }
-check("pay.html JSON-LD is one valid ItemList of the six plans", payLdBlocks.length === 1 && !!payLd && payLd["@type"] === "ItemList" && payLd.itemListElement.length === 6 && payLd.itemListElement.every(it => ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink"].includes((it.url || "").split("#")[1])));
+check("pay.html JSON-LD is one valid ItemList of the seven plans", payLdBlocks.length === 1 && !!payLd && payLd["@type"] === "ItemList" && payLd.itemListElement.length === 7 && payLd.itemListElement.every(it => ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink"].includes((it.url || "").split("#")[1])));
 check("sitemap lists the hub and pay.html", fs.readFileSync(path.join(root, "sitemap.xml"), "utf8").includes("https://kshot3000.github.io/Cardano4all/pay.html"));
 check("README documents the Pay landing page", readme.includes("pay.html"));
 check("pay.html no longer understates the shareable-link count as five", !payHtml.includes("all five can"));
+check("pay.html no longer understates the plan count as six", !payHtml.includes("all six can") && !payHtml.includes("The six plans") && !payHtml.includes("Six payment-plan builders"));
 
-/* Per-tool Pay share pages: each of the six builders gets its own page
+/* Per-tool Pay share pages: each of the seven builders gets its own page
    with its OWN canonical / og / twitter card naming that one plan —
    a link shared to the hub renders one generic card for all six, so
    per-tool sharing needs per-tool pages. Every page must carry the
@@ -91,6 +92,7 @@ const SHARE_PAGES = [
   { file: "pay-marketplace.html", anchor: "marketlink", key: /for-sale listing/i, honesty: /not a marketplace/i },
   { file: "pay-rental.html", anchor: "rentlink", key: /rent \+ refundable deposit/i, honesty: /not a lease/i },
   { file: "pay-invoice.html", anchor: "invoicelink", key: /invoice/i, honesty: /not an accounting or tax system/i },
+  { file: "pay-retainer.html", anchor: "retainerlink", key: /retainer/i, honesty: /not a subscription/i },
 ];
 const sitemap = fs.readFileSync(path.join(root, "sitemap.xml"), "utf8");
 const shareOgTitles = [];
@@ -126,8 +128,8 @@ for (const sp of SHARE_PAGES) {
   check(sp.file + " is in the sitemap", sitemap.includes(url));
   check(sp.file + " is documented in the README", readme.includes(sp.file));
 }
-check("the six share pages have six distinct og:titles, none equal to pay.html's generic card",
-  shareOgTitles.length === 6 && new Set(shareOgTitles).size === 6 &&
+check("the seven share pages have seven distinct og:titles, none equal to pay.html's generic card",
+  shareOgTitles.length === 7 && new Set(shareOgTitles).size === 7 &&
   !shareOgTitles.includes((payHtml.match(/property="og:title" content="([^"]+)"/) || [])[1] || ""));
 
 /* flagship links */
@@ -633,6 +635,56 @@ check("invoicelink parse refuses a smuggled fee field or any unknown field", app
 check("invoicelink parse refuses payment, split, escrow, listing and rental links, repeated, missing and empty fields", app.parseInvoiceLink("?to=" + ADA + "&amount=10") === null && app.parseInvoiceLink("?toA=" + ADA + "&toB=" + syntheticPayB + "&amount=10&share=50") === null && app.parseInvoiceLink("?buyer=" + ADA + "&seller=" + syntheticPayB + "&arbiter=" + syntheticPayC + "&amount=10") === null && app.parseInvoiceLink("?vendor=" + ADA + "&amount=10&title=Camera") === null && app.parseInvoiceLink("?landlord=" + ADA + "&rent=800&deposit=800") === null && app.parseInvoiceLink("?issuer=" + ADA + "&amount=450&invoice=INV-1&invoice=INV-2") === null && app.parseInvoiceLink("?issuer=" + ADA + "&amount=450") === null && app.parseInvoiceLink("?issuer=" + ADA + "&invoice=INV-1") === null && app.parseInvoiceLink("") === null && app.parseInvoiceLink("?") === null);
 check("invoicelink parse refuses malformed percent-encoding", app.parseInvoiceLink("?issuer=%zz&amount=450&invoice=INV-1") === null && app.parseInvoiceLink("?issuer=" + ADA + "&amount=%E0%A4%A&invoice=INV-1") === null);
 check("invoicelink parse refuses tampered, stake and testnet issuers and bad amounts or invoice numbers via the plan gates", app.parseInvoiceLink("?issuer=" + ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v") + "&amount=450&invoice=INV-1") === null && app.parseInvoiceLink("?issuer=" + syntheticStake + "&amount=450&invoice=INV-1") === null && app.parseInvoiceLink("?issuer=" + syntheticTest + "&amount=450&invoice=INV-1") === null && app.parseInvoiceLink("?issuer=" + ADA + "&amount=0&invoice=INV-1") === null && app.parseInvoiceLink("?issuer=" + ADA + "&amount=450&invoice=INV%201") === null);
+
+/* retainer payment plan builder (retainerlink) — the recurring
+   variant of the payment plan builders: the same monthly amount
+   paid manually each month for 1 to 24 months, the full monthly
+   amount to the provider plus the same disclosed 1% fee charged
+   per monthly payment. The honesty lead is that this page is not
+   a subscription and nothing charges automatically; the fee base
+   (per payment, not once on the term) is stated in the plan with
+   the per-payment and full-term totals both written out. */
+check("retainerlink form present", html.includes('id="retainerlink"') && html.includes('id="retainerlink-result"'));
+check("retainerlink copy button and status present", html.includes('id="copy-retainerlink"') && html.includes('id="retainerlink-copy-status"') && html.includes("Copy retainer plan"));
+check("retainerlink copy handler wired with a stale-plan guard", appSrc.includes('getElementById("copy-retainerlink")') && appSrc.includes("navigator.clipboard.writeText(lastRetainerText)") && appSrc.includes("Build a retainer plan first, then copy it."));
+check("retainerlink failed build clears the copyable plan", appSrc.includes('lastRetainerText = "";') && appSrc.includes("Retainer plan copied"));
+check("retainerlink page is honest: not a subscription, nothing charges automatically, discloses the 1% fee", html.includes("Retainer payment plan builder") && html.includes("not a subscription") && html.includes("nothing charges automatically"));
+const ret1 = app.retainerPlan(ADA, "300", "6", "Community management, monthly");
+check("retainerlink 300 ADA x 6 months: per-payment fee 3 ADA, payment total 303, provider total 1800, fees total 18, grand total 1818 ADA", ret1 && ret1.monthlyLovelace === "300000000" && ret1.feePerPaymentLovelace === "3000000" && ret1.paymentTotalLovelace === "303000000" && ret1.providerTotalLovelace === "1800000000" && ret1.feesTotalLovelace === "18000000" && ret1.grandTotalLovelace === "1818000000" && ret1.months === 6 && ret1.service === "Community management, monthly");
+check("retainerlink fee routes only to Kyle's ADA address at 1%", ret1 && ret1.feeAddress === ADA && ret1.feeBps === 100 && ret1.provider === ADA);
+check("retainerlink totals are exact on assorted inputs: fee floored per payment, totals are per-payment x months", [["300", "6"], ["100", "12"], ["1", "1"], ["0.01", "24"], ["1234.567891", "3"]].every(function (pair) {
+  var t = app.retainerPlan(ADA, pair[0], pair[1], "");
+  return t && t.feePerPaymentLovelace === ((BigInt(t.monthlyLovelace) * 100n) / 10000n).toString() && t.providerTotalLovelace === (BigInt(t.monthlyLovelace) * BigInt(t.months)).toString() && t.feesTotalLovelace === (BigInt(t.feePerPaymentLovelace) * BigInt(t.months)).toString() && t.grandTotalLovelace === ((BigInt(t.monthlyLovelace) + BigInt(t.feePerPaymentLovelace)) * BigInt(t.months)).toString();
+}));
+check("retainerlink dust monthly amount floors the per-payment fee to 0", app.retainerPlan(ADA, "0.000001", "6", "").feePerPaymentLovelace === "0" && app.retainerPlan(ADA, "0.000001", "6", "").grandTotalLovelace === "6");
+check("retainerlink refuses a zero or bad monthly amount", app.retainerPlan(ADA, "0", "6", "") === null && app.retainerPlan(ADA, "abc", "6", "") === null && app.retainerPlan(ADA, "-5", "6", "") === null);
+check("retainerlink month count is a whole number from 1 to 24", app.retainerPlan(ADA, "300", "1", "") !== null && app.retainerPlan(ADA, "300", "24", "") !== null && app.retainerPlan(ADA, "300", "0", "") === null && app.retainerPlan(ADA, "300", "25", "") === null && app.retainerPlan(ADA, "300", "6.5", "") === null && app.retainerPlan(ADA, "300", "abc", "") === null && app.retainerPlan(ADA, "300", "", "") === null && app.retainerPlan(ADA, "300", "  ", "") === null && app.retainerPlan(ADA, "300", 6, "").months === 6);
+check("retainerlink rejects stake, testnet, tampered and garbage providers", app.retainerPlan(syntheticStake, "300", "6", "") === null && app.retainerPlan(syntheticTest, "300", "6", "") === null && app.retainerPlan(ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v"), "300", "6", "") === null && app.retainerPlan("hello", "300", "6", "") === null);
+check("retainerlink rejects an over-long or control-char service note, accepts the limit", app.retainerPlan(ADA, "300", "6", "x".repeat(129)) === null && app.retainerPlan(ADA, "300", "6", "a\nb") === null && app.retainerPlan(ADA, "300", "6", "x".repeat(128)) !== null);
+const retText = app.retainerPlanText(ret1);
+check("retainerlink plan text leads with the not-a-subscription warning before any payment", retText.includes("NOT a subscription") && retText.includes("nothing here charges automatically") && retText.indexOf("NOT a subscription") < retText.indexOf("Pay the provider"));
+check("retainerlink plan text carries the service, monthly amount, provider, per-payment fee and both totals", retText.includes("Community management, monthly") && retText.includes("300000000 lovelace") && retText.includes(ADA) && retText.includes("1% of each monthly payment") && retText.includes("303000000 lovelace") && retText.includes("1818000000 lovelace"));
+check("retainerlink plan text is honest: no transaction built or signed", retText.includes("No transaction was built or signed"));
+check("retainerlink singular month reads correctly", app.retainerPlanText(app.retainerPlan(ADA, "300", "1", "")).includes("1 monthly payment") && app.retainerPlanText(app.retainerPlan(ADA, "300", "1", "")).includes("for 1 month:"));
+check("retainerlink without a service note says to agree the service in writing", app.retainerPlanText(app.retainerPlan(ADA, "300", "6", "")).includes("agree the service in writing"));
+check("retainerlink zero-fee plan text says the fee floors to 0", app.retainerPlanText(app.retainerPlan(ADA, "0.000001", "6", "")).includes("floors to 0"));
+check("retainerlink sub-1-ADA per-payment fee carries the minimum-UTxO warning; a clean 300 plan has none", app.retainerPlanText(app.retainerPlan(ADA, "10", "6", "")).includes("below the minimum") && !retText.includes("below the minimum"));
+check("retainerlink link button and status present", html.includes('id="copy-retainerlink-url"') && html.includes('id="retainerlink-link-status"') && html.includes("Copy retainer plan link"));
+check("retainerlink link copy handler wired with a stale-plan guard", appSrc.includes('getElementById("copy-retainerlink-url")') && appSrc.includes("navigator.clipboard.writeText(lastRetainerUrl)") && appSrc.includes("Build a retainer plan first, then copy its link."));
+check("retainerlink failed build clears the copyable link", appSrc.includes('lastRetainerUrl = "";') && appSrc.includes("Retainer plan link copied"));
+check("retainerlink open-from-link wiring present and the paylink block excludes retainer queries", appSrc.includes("parseRetainerLink(linkSearch)") && appSrc.includes("Opened from a retainer plan link") && appSrc.includes("That retainer plan link is not valid") && appSrc.includes("!/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch)"));
+check("retainerlink link for 300 ADA x 6 is the exact canonical URL", app.retainerLink(ADA, "300", "6", "") === "https://kshot3000.github.io/Cardano4all/?provider=" + ADA + "&monthly=300&months=6#retainerlink");
+check("retainerlink link canonicalises the monthly amount and encodes the service note", (() => { const u = app.retainerLink(ADA, "300.500000", 6, "A & B = C"); return u.includes("&monthly=300.5") && u.includes("&months=6") && u.includes("&service=A%20%26%20B%20%3D%20C") && u.endsWith("#retainerlink"); })());
+check("retainerlink link carries no fee field and no fee address beyond the provider itself", (() => { const u = app.retainerLink(syntheticPayB, "300", "6", ""); return u !== null && !u.includes("fee") && !u.includes(ADA); })());
+check("retainerlink link refuses the same inputs the retainer plan refuses", app.retainerLink(ADA, "0", "6", "") === null && app.retainerLink(syntheticStake, "300", "6", "") === null && app.retainerLink(ADA, "300", "0", "") === null && app.retainerLink(ADA, "300", "25", "") === null && app.retainerLink(ADA, "300", "6.5", "") === null);
+const retParsed = app.parseRetainerLink("?provider=" + ADA + "&monthly=300&months=6&service=Community%20management");
+check("retainerlink parse returns the provider, canonical monthly amount, months and service", retParsed && retParsed.provider === ADA && retParsed.monthly === "300" && retParsed.months === 6 && retParsed.service === "Community management");
+check("retainerlink parse accepts a query without the leading ? and no service note", (() => { const p = app.parseRetainerLink("provider=" + ADA + "&monthly=100&months=12"); return p && p.monthly === "100" && p.months === 12 && p.service === ""; })());
+check("retainerlink round trip: a built link parses back to the same retainer inputs, fee recomputed locally", (() => { const u = app.retainerLink(ADA, "300", "6", "A & B = C"); const p = app.parseRetainerLink(u.slice(u.indexOf("?"), u.indexOf("#"))); const plan = p && app.retainerPlan(p.provider, p.monthly, p.months, p.service); return p && p.service === "A & B = C" && plan && plan.feePerPaymentLovelace === "3000000" && plan.grandTotalLovelace === "1818000000" && plan.feeAddress === ADA; })());
+check("retainerlink parse refuses a smuggled fee field or any unknown field", app.parseRetainerLink("?provider=" + ADA + "&monthly=300&months=6&fee=999") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=300&months=6&x=1") === null);
+check("retainerlink parse refuses payment, split, escrow, listing, rental and invoice links, repeated, missing and empty fields", app.parseRetainerLink("?to=" + ADA + "&amount=10") === null && app.parseRetainerLink("?toA=" + ADA + "&toB=" + syntheticPayB + "&amount=10&share=50") === null && app.parseRetainerLink("?buyer=" + ADA + "&seller=" + syntheticPayB + "&arbiter=" + syntheticPayC + "&amount=10") === null && app.parseRetainerLink("?vendor=" + ADA + "&amount=10&title=Camera") === null && app.parseRetainerLink("?landlord=" + ADA + "&rent=800&deposit=800") === null && app.parseRetainerLink("?issuer=" + ADA + "&amount=450&invoice=INV-1") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=300&months=6&months=7") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=300") === null && app.parseRetainerLink("?provider=" + ADA + "&months=6") === null && app.parseRetainerLink("") === null && app.parseRetainerLink("?") === null);
+check("retainerlink parse refuses malformed percent-encoding", app.parseRetainerLink("?provider=%zz&monthly=300&months=6") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=%E0%A4%A&months=6") === null);
+check("retainerlink parse refuses tampered, stake and testnet providers and bad amounts or month counts via the plan gates", app.parseRetainerLink("?provider=" + ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v") + "&monthly=300&months=6") === null && app.parseRetainerLink("?provider=" + syntheticStake + "&monthly=300&months=6") === null && app.parseRetainerLink("?provider=" + syntheticTest + "&monthly=300&months=6") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=0&months=6") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=300&months=0") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=300&months=25") === null && app.parseRetainerLink("?provider=" + ADA + "&monthly=300&months=6.5") === null);
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core
    (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the

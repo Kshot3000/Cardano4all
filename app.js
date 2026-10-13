@@ -1458,6 +1458,172 @@ function parseInvoiceLink(searchRaw) {
   return { issuer: plan.issuer, amount: lovelaceToAda(plan.amountLovelace), invoice: plan.invoice, work: plan.work };
 }
 
+/* Retainer payment plan builder — the recurring variant of the
+   payment plan builders (profit mandate, 2026-10-12). The payment
+   shape is genuinely different from the six one-off plans above:
+   the same monthly amount, paid again every month for an agreed
+   number of months (1 to 24) — a freelancer's or service
+   provider's retainer. Each monthly payment is the full monthly
+   amount to the provider plus exactly 1% of that monthly payment,
+   floored to whole lovelace in exact BigInt maths, to the same
+   Cardano4All fee address as the plans above (PAYLINK_FEE_ADDRESS),
+   paid by the client on top and printed in the plan itself. The
+   fee is charged PER PAYMENT, not once on the whole term, because
+   each month's payment is a separate payment the client actually
+   makes — the plan states that plainly, with the per-payment fee,
+   the per-payment total and the full-term totals all written out,
+   so nothing about the fee base is a surprise in month 7. The
+   provider faces the paymentPlan gates (mainnet payment address,
+   verifying checksum). The service note is plain text (at most
+   128 characters, no control characters). Same boundary as the
+   plans above: no transaction is built or signed; the plan is
+   text. The honesty lead is the one this shape needs most: this
+   is NOT a subscription and nothing charges automatically — the
+   plan cannot pull a payment, hold funds, or stop itself. */
+
+/* retainerPlan(providerRaw, monthlyStr, monthsRaw, serviceRaw) ->
+   { provider, service, months, monthlyLovelace,
+   feePerPaymentLovelace, paymentTotalLovelace,
+   providerTotalLovelace, feesTotalLovelace, grandTotalLovelace,
+   feeAddress, feeBps } (amounts as decimal strings, months and
+   feeBps as Numbers) or null for an invalid provider, monthly
+   amount, month count or service note. The service note is
+   optional; the month count is required, a whole number of
+   months from 1 to 24. */
+function retainerPlan(providerRaw, monthlyStr, monthsRaw, serviceRaw) {
+  var provider = (providerRaw || "").trim();
+  var check = verifyBech32(provider);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var monthlyStrL = adaToLovelace(monthlyStr);
+  if (monthlyStrL === null) return null;
+  var monthly = BigInt(monthlyStrL);
+  if (monthly <= 0n) return null;
+  var monthsStr = String(monthsRaw === null || monthsRaw === undefined ? "" : monthsRaw).trim();
+  if (!/^[0-9]+$/.test(monthsStr)) return null;
+  var months = Number(monthsStr);
+  if (!Number.isSafeInteger(months) || months < 1 || months > 24) return null;
+  var service = (serviceRaw || "").trim();
+  if (service.length > 128 || /[\x00-\x1f\x7f]/.test(service)) return null;
+  var feePer = (monthly * PAYLINK_FEE_BPS) / 10000n;
+  var m = BigInt(months);
+  return {
+    provider: provider,
+    service: service,
+    months: months,
+    monthlyLovelace: monthly.toString(),
+    feePerPaymentLovelace: feePer.toString(),
+    paymentTotalLovelace: (monthly + feePer).toString(),
+    providerTotalLovelace: (monthly * m).toString(),
+    feesTotalLovelace: (feePer * m).toString(),
+    grandTotalLovelace: ((monthly + feePer) * m).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* retainerPlanText(plan) -> the copyable retainer plan text. The
+   not-a-subscription warning leads, before any payment step, for
+   the same reason the escrow warning leads its plan: a forwarded
+   plan must not be able to trim the warning off the top without
+   the steps visibly following it. A sub-1-ADA per-payment fee
+   output is named in a minimum-UTxO note, as in the plans above. */
+function retainerPlanText(plan) {
+  var lines = [];
+  lines.push("Cardano retainer — payment plan for " + plan.months + (plan.months === 1 ? " monthly payment" : " monthly payments"));
+  lines.push("IMPORTANT: this is NOT a subscription and nothing here charges automatically. Cardano payments from this plan are manual — one payment per month, made by the client in their own wallet. This page sets up no recurring payment, holds no funds, cannot pull a payment and cannot stop or change the arrangement. The retainer terms — the service, the term, the notice period and how it ends — are whatever the provider and the client agree in writing; agree them before the first payment.");
+  if (plan.service) {
+    lines.push("Service: " + plan.service);
+  } else {
+    lines.push("Service: not stated — agree the service in writing with the provider before the first payment.");
+  }
+  lines.push("Each month, for " + plan.months + (plan.months === 1 ? " month:" : " months:"));
+  lines.push("Pay the provider: " + lovelaceToAda(plan.monthlyLovelace) + " ADA (" + plan.monthlyLovelace + " lovelace) to " + plan.provider);
+  if (plan.feePerPaymentLovelace === "0") {
+    lines.push("Cardano4All service fee (1% of each monthly payment, disclosed): 0 lovelace — the 1% of this monthly amount floors to 0, so no fee output is due.");
+  } else {
+    lines.push("Pay the Cardano4All service fee (1% of each monthly payment, disclosed): " + lovelaceToAda(plan.feePerPaymentLovelace) + " ADA (" + plan.feePerPaymentLovelace + " lovelace) to " + plan.feeAddress);
+  }
+  lines.push("Each monthly payment totals: " + lovelaceToAda(plan.paymentTotalLovelace) + " ADA (" + plan.paymentTotalLovelace + " lovelace), plus the network transaction fee your wallet adds.");
+  lines.push("Over the full " + plan.months + (plan.months === 1 ? " month" : " months") + ": the provider receives " + lovelaceToAda(plan.providerTotalLovelace) + " ADA (" + plan.providerTotalLovelace + " lovelace) in total, the service fees total " + lovelaceToAda(plan.feesTotalLovelace) + " ADA (" + plan.feesTotalLovelace + " lovelace), and the client pays " + lovelaceToAda(plan.grandTotalLovelace) + " ADA (" + plan.grandTotalLovelace + " lovelace) in total, plus one network fee per monthly payment.");
+  if (plan.feePerPaymentLovelace !== "0" && BigInt(plan.feePerPaymentLovelace) < 1000000n) {
+    lines.push("Note: each month's fee output is under 1 ADA, below the minimum a single output must carry — send it together with that month's provider payment in one transaction with both outputs. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a retainer payment plan to paste into your own wallet each month. Double-check the provider address in full before sending.");
+  return lines.join("\n");
+}
+
+/* Shareable retainer link — the retainer above as a link the
+   provider can send a client (profit mandate, 2026-10-12). The
+   link carries ONLY the provider's address, the monthly amount
+   (as a canonical ADA string), the number of months and the
+   optional service note — each percent-encoded. Like the other
+   links it carries NO fee field and no fee address: the disclosed
+   1% fee is recomputed by retainerPlan when the page opens, every
+   time, so a link cannot be edited to raise the fee or reroute
+   it — a query that smuggles in an extra field (fee=, or anything
+   unknown), repeats a field, or fails the retainerPlan gates is
+   refused whole. The parser is the same deliberately manual one
+   as parsePaymentLink: "+" is data, never a space, decoding
+   failures refuse the link, and exactly the four known fields are
+   admitted. The field names (provider, monthly, months, service)
+   keep a retainer link distinct from a single-seller link (to), a
+   split link (toA, toB, share), an escrow link (buyer, seller,
+   arbiter, release), a listing link (vendor, title, desc), a
+   rental link (landlord, rent, deposit, term) and an invoice link
+   (issuer, invoice, work) on sight and in the open-from-link
+   wiring below — service was chosen over desc precisely so a
+   listing link's desc= can never be mistaken for a retainer's
+   note, and vice versa. A retainer link carries no amount=, so no
+   earlier block can claim it; the single-seller block below still
+   excludes retainer-shaped queries explicitly, in the same shape
+   as the other six exclusions. Nothing is fetched or sent; the
+   query is read locally from the page's own address bar. */
+
+/* retainerLink(providerRaw, monthlyStr, monthsRaw, serviceRaw) ->
+   the shareable URL string, or null when retainerPlan refuses the
+   inputs. */
+function retainerLink(providerRaw, monthlyStr, monthsRaw, serviceRaw) {
+  var plan = retainerPlan(providerRaw, monthlyStr, monthsRaw, serviceRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?provider=" + encodeURIComponent(plan.provider) +
+    "&monthly=" + encodeURIComponent(lovelaceToAda(plan.monthlyLovelace)) +
+    "&months=" + encodeURIComponent(String(plan.months));
+  if (plan.service) url += "&service=" + encodeURIComponent(plan.service);
+  return url + "#retainerlink";
+}
+
+/* parseRetainerLink(searchRaw) -> { provider, monthly, months,
+   service } with monthly as a canonical ADA string and months as
+   a Number ready to refill the form, or null for anything that
+   is not exactly a well-formed, valid retainer link (empty,
+   unknown/repeated/missing fields, malformed percent-encoding,
+   or inputs retainerPlan refuses). Accepts the query with or
+   without its leading "?". */
+function parseRetainerLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "provider" && key !== "monthly" && key !== "months" && key !== "service") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.provider || !seen.monthly || !seen.months) return null;
+  var plan = retainerPlan(values.provider, values.monthly, values.months, seen.service ? values.service : "");
+  if (!plan) return null;
+  return { provider: plan.provider, monthly: lovelaceToAda(plan.monthlyLovelace), months: plan.months, service: plan.service };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -5997,7 +6163,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -6273,7 +6439,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch) && !/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -6725,6 +6891,93 @@ if (typeof document !== "undefined") {
         lastInvoiceText = invoicePlanText(linkedInvoicePlan);
         lastInvoiceUrl = invoiceLink(linkedInvoice.issuer, linkedInvoice.amount, linkedInvoice.invoice, linkedInvoice.work);
         document.getElementById("invoicelink-result").textContent = "Opened from an invoice link — this invoice was written by the issuer and the work has not been verified here. Double-check the issuer address in full before paying.\n\n" + lastInvoiceText;
+      }
+    }
+
+    /* --- retainer payment plan builder (recurring monthly
+       payments with the disclosed 1% service fee, offline — same
+       stale-plan guard as the other plan copy buttons: only the
+       last successfully built retainer plan is copyable) --- */
+    var lastRetainerText = "";
+    var lastRetainerUrl = "";
+    document.getElementById("retainerlink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = retainerPlan(
+        document.getElementById("ret-provider").value,
+        document.getElementById("ret-monthly").value,
+        document.getElementById("ret-months").value,
+        document.getElementById("ret-service").value);
+      var out = document.getElementById("retainerlink-result");
+      document.getElementById("retainerlink-copy-status").textContent = "";
+      document.getElementById("retainerlink-link-status").textContent = "";
+      if (!res) {
+        lastRetainerText = "";
+        lastRetainerUrl = "";
+        out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive these payments), a monthly amount above 0 ADA (up to 6 decimals), a whole number of months from 1 to 24, and an optional note of the service of at most 128 characters.";
+        return;
+      }
+      lastRetainerText = retainerPlanText(res);
+      lastRetainerUrl = retainerLink(res.provider, lovelaceToAda(res.monthlyLovelace), res.months, res.service);
+      out.textContent = lastRetainerText;
+    });
+    document.getElementById("copy-retainerlink").addEventListener("click", function () {
+      var status = document.getElementById("retainerlink-copy-status");
+      if (!lastRetainerText) {
+        status.textContent = "Build a retainer plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Retainer plan copied — send it to the client."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastRetainerText).then(done, function () {
+          status.textContent = "Copy failed — select the retainer plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the retainer plan text to copy it.";
+      }
+    });
+
+    /* --- copy retainer plan link (same stale-plan guard as the
+       retainer plan copy above: only the link for the last
+       successfully built retainer plan can be copied, and a
+       failed build clears it) --- */
+    document.getElementById("copy-retainerlink-url").addEventListener("click", function () {
+      var status = document.getElementById("retainerlink-link-status");
+      if (!lastRetainerUrl) {
+        status.textContent = "Build a retainer plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Retainer plan link copied — send it to the client; it opens this page with the plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastRetainerUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?provider=, monthly= and months= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from a retainer plan link: a ?provider=…&monthly=…
+       &months=… query (see retainerLink) fills the retainer form
+       and builds the plan, with the fee recomputed by this page,
+       never taken from the link. Retainer-shaped queries are
+       claimed here, not by the single-seller block above (which
+       excludes them explicitly, in the same shape as the other
+       six formats); a retainer-shaped query that does not
+       validate is reported, not silently ignored, and an
+       unrelated query string is left alone. --- */
+    if (linkSearch && /(^|[?&])(provider|monthly|months|service)=/.test(linkSearch)) {
+      var linkedRetainer = parseRetainerLink(linkSearch);
+      if (!linkedRetainer) {
+        document.getElementById("retainerlink-result").textContent = "That retainer plan link is not valid — check it with the provider before paying anything. A valid link names a mainnet payment address with a verifying checksum, a monthly amount above 0 ADA and a whole number of months from 1 to 24, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("ret-provider").value = linkedRetainer.provider;
+        document.getElementById("ret-monthly").value = linkedRetainer.monthly;
+        document.getElementById("ret-months").value = String(linkedRetainer.months);
+        document.getElementById("ret-service").value = linkedRetainer.service;
+        var linkedRetainerPlan = retainerPlan(linkedRetainer.provider, linkedRetainer.monthly, linkedRetainer.months, linkedRetainer.service);
+        lastRetainerText = retainerPlanText(linkedRetainerPlan);
+        lastRetainerUrl = retainerLink(linkedRetainer.provider, linkedRetainer.monthly, linkedRetainer.months, linkedRetainer.service);
+        document.getElementById("retainerlink-result").textContent = "Opened from a retainer plan link — this plan is not a subscription and nothing charges automatically; agree the retainer terms in writing before the first payment, and double-check the provider address in full.\n\n" + lastRetainerText;
       }
     }
 

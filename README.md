@@ -247,22 +247,51 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   repeated field, malformed encoding, a bad invoice number, or a
   tampered, stake or testnet address is refused and reported on
   the page. The page builds no transaction and signs nothing.
+- **Retainer payment plan builder (recurring monthly payments,
+  disclosed 1% service fee)** — the recurring variant: a provider
+  on a monthly retainer writes the plan itself (their mainnet
+  payment address, the monthly amount, a whole number of months
+  from 1 to 24, and an optional note of the service of at most
+  128 characters) and the tool writes it as copyable text the
+  client pays from each month — the full monthly amount to the
+  provider plus the same disclosed 1% service fee, charged on
+  each monthly payment (floored to whole lovelace per payment,
+  exact BigInt maths), to the same Cardano4All fee address above.
+  The plan writes out the per-payment fee, the per-payment total
+  and the full-term totals, so the fee base — per payment, not
+  once on the whole term — is stated plainly. The plan text leads
+  with the honesty line: this is not a subscription and nothing
+  charges automatically — payments are manual, one per month, in
+  the client's own wallet; the page sets up no recurring payment,
+  holds no funds, cannot pull a payment and cannot stop or change
+  the arrangement, and the retainer terms are whatever both
+  parties agree in writing. Sub-1-ADA per-payment fee outputs are
+  named in a minimum-UTxO warning, and Copy buttons copy only the
+  last successfully built plan or its shareable link. The link
+  carries only the provider address, the monthly amount, the
+  months and the service note — no fee field at all — and the
+  page recomputes the disclosed 1% fee on open, so a link cannot
+  be edited to raise or reroute the fee; a link with an extra or
+  repeated field, malformed encoding, a bad month count, or a
+  tampered, stake or testnet address is refused and reported on
+  the page. The page builds no transaction and signs nothing.
 - **Cardano4All Pay landing page (`pay.html`)** — a standalone,
-  shareable page for the six payment plan builders above: what each
+  shareable page for the seven payment plan builders above: what each
   plan is for, how a plan is used, and the disclosed 1% service fee
   explained in full with the fee address printed on the page. It
   carries the same attribution and the same honesty lines (no
   transaction built or signed; the escrow-style plan is not a
   smart-contract escrow) and links straight into each builder.
-- **Per-tool Pay share pages** — each of the six builders also has
+- **Per-tool Pay share pages** — each of the seven builders also has
   its own share page with its own canonical, Open Graph and Twitter
   card naming that one plan, the full 1% fee disclosure with the fee
   address, and that tool's own honesty line, deep-linking into the
   builder: `pay-payment.html` (one seller), `pay-split.html` (two
   sellers), `pay-escrow.html` (trusted arbiter), `pay-marketplace.html`
-  (for-sale listing), `pay-rental.html` (rent + deposit) and
-  `pay-invoice.html` (freelance/service invoice). Sharing the hub
-  alone would render one generic card for all six plans; sharing a
+  (for-sale listing), `pay-rental.html` (rent + deposit),
+  `pay-invoice.html` (freelance/service invoice) and
+  `pay-retainer.html` (recurring monthly retainer). Sharing the hub
+  alone would render one generic card for all seven plans; sharing a
   plan's own page renders that plan.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
