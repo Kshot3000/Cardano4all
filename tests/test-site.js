@@ -26,9 +26,9 @@ check("Cardano team tagged in index.html", html.includes("@cardano-foundation") 
 /* document structure */
 check("exactly one <h1>", (html.match(/<h1[ >]/g) || []).length === 1);
 check("has <main> landmark", /<main[\s>]/.test(html));
-check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label", "split-recipient-a", "split-recipient-b", "split-amount", "split-share", "split-label", "mkt-vendor", "mkt-amount", "mkt-title", "mkt-desc", "rent-landlord", "rent-rent", "rent-deposit", "rent-term", "rent-label", "inv-issuer", "inv-amount", "inv-invoice", "inv-work", "ret-provider", "ret-monthly", "ret-months", "ret-service", "mil-payee", "mil-total", "mil-stages", "mil-labels", "mil-project"].every(id =>
+check("all form controls labelled", ["addr", "ada", "lovelace", "q", "slot", "epoch", "stake-ada", "stake-rate", "stake-epochs", "pool-rewards", "pool-cost", "pool-margin", "pool-owner-stake", "pool-total-stake", "pool-member-stake", "fee-size", "exunit-mem", "exunit-steps", "refscript-size", "total-size", "total-mem", "total-steps", "total-ref", "pool-hex", "pool-bech32", "asset-policy", "asset-name", "unit-input", "hash-kind", "hash-bytes", "key-pay", "key-stake", "key-network", "decode-addr", "addrhex-bech32", "addrhex-hex", "gov-input", "cred-pay", "cred-pay-kind", "cred-stake", "cred-stake-kind", "cred-network", "cbor-input", "data-input", "txoutdecode-input", "outputsdecode-input", "mintdecode-input", "withdrawdecode-input", "inputsdecode-input", "signersdecode-input", "refinputsdecode-input", "collateraldecode-input", "certsdecode-input", "votingdecode-input", "proposalsdecode-input", "auxdecode-input", "witnessdecode-input", "redeemersdecode-input", "datumsdecode-input", "vkeywitnessdecode-input", "nativescriptsdecode-input", "bootstrapdecode-input", "plutusscriptsdecode-input", "plutusscriptsdecode-lang", "fulltxdecode-input", "sdh-redeemers", "sdh-datums", "sdh-lang-v1", "sdh-lang-v2", "sdh-lang-v3", "minutxo-addr", "minutxo-assets", "minutxo-datum-kind", "minutxo-datum-hex", "minutxo-script-kind", "minutxo-script-hex", "native-input", "pay-recipient", "pay-amount", "pay-label", "split-recipient-a", "split-recipient-b", "split-amount", "split-share", "split-label", "mkt-vendor", "mkt-amount", "mkt-title", "mkt-desc", "rent-landlord", "rent-rent", "rent-deposit", "rent-term", "rent-label", "inv-issuer", "inv-amount", "inv-invoice", "inv-work", "ret-provider", "ret-monthly", "ret-months", "ret-service", "mil-payee", "mil-total", "mil-stages", "mil-labels", "mil-project", "grp-merchant", "grp-bill", "grp-payers", "grp-occasion"].every(id =>
   html.includes(`for="${id}"`) || html.includes(`aria-label`)));
-check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=60"));
+check("cache keys present", html.includes("styles.css?v=1") && html.includes("app.js?v=61"));
 check("visual-upgrade theme linked with cache key", html.includes("visual-upgrade/theme.css?v=20261007"));
 check("visual-upgrade theme attribute on body", html.includes('data-vu-theme="network"'));
 check("visual-upgrade files exist", fs.existsSync(path.join(root, "visual-upgrade", "theme.css")) && fs.existsSync(path.join(root, "visual-upgrade", "scene.svg")));
@@ -68,19 +68,20 @@ check("pay.html title names the disclosed 1% fee", /1% service fee/i.test(payHtm
 check("pay.html discloses the 1% fee in the body copy", (payHtml.match(/1% service fee/g) || []).length >= 3);
 check("pay.html states no transaction is built or signed", /no transaction and sign nothing/i.test(payHtml));
 check("pay.html leads the escrow card with the not-an-escrow honesty line", /not a smart-contract escrow/i.test(payHtml) && /cannot hold funds in escrow/i.test(payHtml));
-check("pay.html links into all eight payment builders", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink", "milestonelink"].every(a => payHtml.includes(`href="./#${a}"`)));
-check("pay.html builder anchors are real form ids on the hub", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink", "milestonelink"].every(a => html.includes(`id="${a}"`)));
+check("pay.html links into all nine payment builders", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink", "milestonelink", "grouplink"].every(a => payHtml.includes(`href="./#${a}"`)));
+check("pay.html builder anchors are real form ids on the hub", ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink", "milestonelink", "grouplink"].every(a => html.includes(`id="${a}"`)));
 const payLdBlocks = [...payHtml.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
 let payLd = null;
 try { payLd = JSON.parse(payLdBlocks[0]); } catch (e) { payLd = null; }
-check("pay.html JSON-LD is one valid ItemList of the eight plans", payLdBlocks.length === 1 && !!payLd && payLd["@type"] === "ItemList" && payLd.itemListElement.length === 8 && payLd.itemListElement.every(it => ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink", "milestonelink"].includes((it.url || "").split("#")[1])));
+check("pay.html JSON-LD is one valid ItemList of the nine plans", payLdBlocks.length === 1 && !!payLd && payLd["@type"] === "ItemList" && payLd.itemListElement.length === 9 && payLd.itemListElement.every(it => ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink", "retainerlink", "milestonelink", "grouplink"].includes((it.url || "").split("#")[1])));
 check("sitemap lists the hub and pay.html", fs.readFileSync(path.join(root, "sitemap.xml"), "utf8").includes("https://kshot3000.github.io/Cardano4all/pay.html"));
 check("README documents the Pay landing page", readme.includes("pay.html"));
 check("pay.html no longer understates the shareable-link count as five", !payHtml.includes("all five can"));
 check("pay.html no longer understates the plan count as six", !payHtml.includes("all six can") && !payHtml.includes("The six plans") && !payHtml.includes("Six payment-plan builders"));
 check("pay.html no longer understates the plan count as seven", !payHtml.includes("all seven can") && !payHtml.includes("The seven plans") && !payHtml.includes("Seven payment-plan builders"));
+check("pay.html no longer understates the plan count as eight", !payHtml.includes("all eight can") && !payHtml.includes("The eight plans") && !payHtml.includes("Eight payment-plan builders"));
 
-/* Per-tool Pay share pages: each of the eight builders gets its own page
+/* Per-tool Pay share pages: each of the nine builders gets its own page
    with its OWN canonical / og / twitter card naming that one plan —
    a link shared to the hub renders one generic card for all six, so
    per-tool sharing needs per-tool pages. Every page must carry the
@@ -95,6 +96,7 @@ const SHARE_PAGES = [
   { file: "pay-invoice.html", anchor: "invoicelink", key: /invoice/i, honesty: /not an accounting or tax system/i },
   { file: "pay-retainer.html", anchor: "retainerlink", key: /retainer/i, honesty: /not a subscription/i },
   { file: "pay-milestone.html", anchor: "milestonelink", key: /milestone/i, honesty: /does not enforce/i },
+  { file: "pay-group.html", anchor: "grouplink", key: /group/i, honesty: /does not collect/i },
 ];
 const sitemap = fs.readFileSync(path.join(root, "sitemap.xml"), "utf8");
 const shareOgTitles = [];
@@ -130,8 +132,8 @@ for (const sp of SHARE_PAGES) {
   check(sp.file + " is in the sitemap", sitemap.includes(url));
   check(sp.file + " is documented in the README", readme.includes(sp.file));
 }
-check("the eight share pages have eight distinct og:titles, none equal to pay.html's generic card",
-  shareOgTitles.length === 8 && new Set(shareOgTitles).size === 8 &&
+check("the nine share pages have nine distinct og:titles, none equal to pay.html's generic card",
+  shareOgTitles.length === 9 && new Set(shareOgTitles).size === 9 &&
   !shareOgTitles.includes((payHtml.match(/property="og:title" content="([^"]+)"/) || [])[1] || ""));
 
 /* flagship links */
@@ -740,6 +742,62 @@ check("milestonelink parse refuses a smuggled fee field or any unknown field", a
 check("milestonelink parse refuses payment, split, escrow, listing, rental, invoice and retainer links, repeated, missing and empty fields", app.parseMilestoneLink("?to=" + ADA + "&amount=10") === null && app.parseMilestoneLink("?toA=" + ADA + "&toB=" + syntheticPayB + "&amount=10&share=50") === null && app.parseMilestoneLink("?buyer=" + ADA + "&seller=" + syntheticPayB + "&arbiter=" + syntheticPayC + "&amount=10") === null && app.parseMilestoneLink("?vendor=" + ADA + "&amount=10&title=Camera") === null && app.parseMilestoneLink("?landlord=" + ADA + "&rent=800&deposit=800") === null && app.parseMilestoneLink("?issuer=" + ADA + "&amount=450&invoice=INV-1") === null && app.parseMilestoneLink("?provider=" + ADA + "&monthly=300&months=6") === null && app.parseMilestoneLink("?payee=" + ADA + "&total=100&stages=50,50&stages=25,75") === null && app.parseMilestoneLink("?payee=" + ADA + "&total=100") === null && app.parseMilestoneLink("?payee=" + ADA + "&stages=50,50") === null && app.parseMilestoneLink("") === null && app.parseMilestoneLink("?") === null);
 check("milestonelink parse refuses malformed percent-encoding", app.parseMilestoneLink("?payee=%zz&total=100&stages=50,50") === null && app.parseMilestoneLink("?payee=" + ADA + "&total=%E0%A4%A&stages=50,50") === null);
 check("milestonelink parse refuses tampered, stake and testnet sellers and bad totals or stage lists via the plan gates", app.parseMilestoneLink("?payee=" + ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v") + "&total=100&stages=50,50") === null && app.parseMilestoneLink("?payee=" + syntheticStake + "&total=100&stages=50,50") === null && app.parseMilestoneLink("?payee=" + syntheticTest + "&total=100&stages=50,50") === null && app.parseMilestoneLink("?payee=" + ADA + "&total=0&stages=50,50") === null && app.parseMilestoneLink("?payee=" + ADA + "&total=100&stages=30,30,30") === null && app.parseMilestoneLink("?payee=" + ADA + "&total=100&stages=100") === null);
+
+/* group payment plan builder (grouplink) — the group variant, the
+   inverse of the split plan: ONE seller, SEVERAL payers splitting
+   one bill equally. Shares floor except the last payer, who takes
+   the remainder, so shares always sum to the bill exactly; the
+   disclosed 1% fee is charged per payer on that payer's share.
+   The plan text must lead with the not-a-collection-service
+   warning. */
+check("grouplink form present", html.includes('id="grouplink"') && html.includes('id="grouplink-result"'));
+check("grouplink copy button and status present", html.includes('id="copy-grouplink"') && html.includes('id="grouplink-copy-status"') && html.includes("Copy group plan"));
+check("grouplink copy handler wired with a stale-plan guard", appSrc.includes('getElementById("copy-grouplink")') && appSrc.includes("navigator.clipboard.writeText(lastGroupText)") && appSrc.includes("Build a group plan first, then copy it."));
+check("grouplink failed build clears the copyable plan", appSrc.includes('lastGroupText = "";') && appSrc.includes("Group plan copied"));
+check("grouplink page is honest: not a collection service, does not track who has paid, discloses the 1% fee", html.includes("Group payment plan builder") && html.includes("not a crowdfunding or collection service") && html.includes("does not track who has paid"));
+const gp1 = app.groupPlan(ADA, "100", "3", "Team dinner");
+check("grouplink 100 ADA split 3 ways: shares 33333333/33333333/33333334, fees 333333 each, fees total 999999, grand total 100999999", gp1 && gp1.shareLovelace.join(",") === "33333333,33333333,33333334" && gp1.feeLovelace.join(",") === "333333,333333,333333" && gp1.payerTotalLovelace.join(",") === "33666666,33666666,33666667" && gp1.totalLovelace === "100000000" && gp1.feesTotalLovelace === "999999" && gp1.grandTotalLovelace === "100999999" && gp1.payers === 3 && gp1.occasion === "Team dinner");
+check("grouplink fee routes only to Kyle's ADA address at 1%", gp1 && gp1.feeAddress === ADA && gp1.feeBps === 100 && gp1.merchant === ADA);
+check("grouplink last payer takes the remainder: 0.01 ADA split 3 ways is 3333/3333/3334 lovelace, summing exactly", (() => { const t = app.groupPlan(ADA, "0.01", "3", ""); return t && t.shareLovelace.join(",") === "3333,3333,3334" && t.shareLovelace.reduce((a, b) => a + BigInt(b), 0n) === 10000n; })());
+check("grouplink shares always sum to the bill and fees are the per-share floors, on assorted inputs", [["100", "3"], ["123.456789", "7"], ["0.009999", "2"], ["77.7", "10"], ["5", "4"], ["0.000010", "10"]].every(function (pair) {
+  var t = app.groupPlan(ADA, pair[0], pair[1], "");
+  if (!t) return false;
+  var sum = t.shareLovelace.reduce((a, b) => a + BigInt(b), 0n);
+  var feeSum = t.feeLovelace.reduce((a, b) => a + BigInt(b), 0n);
+  return sum === BigInt(t.totalLovelace) && feeSum === BigInt(t.feesTotalLovelace) &&
+    BigInt(t.grandTotalLovelace) === sum + feeSum &&
+    t.shareLovelace.every(function (sh, i) { return BigInt(t.feeLovelace[i]) === (BigInt(sh) * 100n) / 10000n; }) &&
+    t.shareLovelace.slice(0, -1).every(function (sh) { return sh === t.shareLovelace[0]; });
+}));
+check("grouplink refuses payer counts of 1, 11 and 0, decimals, words and empty", app.groupPlan(ADA, "100", "1", "") === null && app.groupPlan(ADA, "100", "11", "") === null && app.groupPlan(ADA, "100", "0", "") === null && app.groupPlan(ADA, "100", "2.5", "") === null && app.groupPlan(ADA, "100", "three", "") === null && app.groupPlan(ADA, "100", "", "") === null && app.groupPlan(ADA, "100", "-3", "") === null);
+check("grouplink accepts payer counts of 2 and 10 and a numeric payer count", app.groupPlan(ADA, "100", "2", "") !== null && app.groupPlan(ADA, "100", "10", "") !== null && app.groupPlan(ADA, "100", 3, "") !== null);
+check("grouplink refuses a share that would floor to 0 lovelace", app.groupPlan(ADA, "0.000005", "10", "") === null && app.groupPlan(ADA, "0.000001", "2", "") === null);
+check("grouplink refuses a zero or bad bill", app.groupPlan(ADA, "0", "3", "") === null && app.groupPlan(ADA, "abc", "3", "") === null && app.groupPlan(ADA, "-5", "3", "") === null);
+check("grouplink rejects stake, testnet, tampered and garbage merchants", app.groupPlan(syntheticStake, "100", "3", "") === null && app.groupPlan(syntheticTest, "100", "3", "") === null && app.groupPlan(ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v"), "100", "3", "") === null && app.groupPlan("hello", "100", "3", "") === null);
+check("grouplink rejects an over-long or control-char occasion note, accepts the limit", app.groupPlan(ADA, "100", "3", "x".repeat(129)) === null && app.groupPlan(ADA, "100", "3", "a\nb") === null && app.groupPlan(ADA, "100", "3", "x".repeat(128)) !== null);
+const gpText = app.groupPlanText(gp1);
+check("grouplink plan text leads with the not-a-collection-service warning before any payment step", gpText.includes("NOT a crowdfunding or collection service") && gpText.includes("does not track who has paid") && gpText.indexOf("NOT a crowdfunding") < gpText.indexOf("Payer 1 of"));
+check("grouplink plan text carries the occasion, per-payer shares, seller, per-payer fee and totals", gpText.includes("Team dinner") && gpText.includes("Payer 2 of 3") && gpText.includes("33333334 lovelace") && gpText.includes(ADA) && gpText.includes("1% of this payer's share") && gpText.includes("100999999 lovelace"));
+check("grouplink plan text is honest: no transaction built or signed", gpText.includes("No transaction was built or signed"));
+check("grouplink without an occasion note says to agree what the bill is for in writing", app.groupPlanText(app.groupPlan(ADA, "100", "2", "")).includes("agree what the bill is for in writing"));
+check("grouplink zero-fee share text says the fee floors to 0", app.groupPlanText(app.groupPlan(ADA, "0.000150", "2", "")).includes("floors to 0"));
+check("grouplink sub-1-ADA outputs carry the minimum-UTxO warning; a clean 1000 plan has none", app.groupPlanText(app.groupPlan(ADA, "10", "2", "")).includes("below the minimum") && !app.groupPlanText(app.groupPlan(ADA, "1000", "2", "")).includes("below the minimum"));
+check("grouplink link button and status present", html.includes('id="copy-grouplink-url"') && html.includes('id="grouplink-link-status"') && html.includes("Copy group plan link"));
+check("grouplink link copy handler wired with a stale-plan guard", appSrc.includes('getElementById("copy-grouplink-url")') && appSrc.includes("navigator.clipboard.writeText(lastGroupUrl)") && appSrc.includes("Build a group plan first, then copy its link."));
+check("grouplink failed build clears the copyable link", appSrc.includes('lastGroupUrl = "";') && appSrc.includes("Group plan link copied"));
+check("grouplink open-from-link wiring present and the paylink block excludes group queries", appSrc.includes("parseGroupLink(linkSearch)") && appSrc.includes("Opened from a group plan link") && appSrc.includes("That group plan link is not valid") && appSrc.includes("!/(^|[?&])(merchant|bill|payers|occasion)=/.test(linkSearch)"));
+check("grouplink link for 100 ADA split 3 ways is the exact canonical URL", app.groupLink(ADA, "100", "3", "") === "https://kshot3000.github.io/Cardano4all/?merchant=" + ADA + "&bill=100&payers=3#grouplink");
+check("grouplink link canonicalises the bill and encodes the occasion", (() => { const u = app.groupLink(ADA, "100.500000", "4", "Dinner & drinks"); return u.includes("&bill=100.5") && u.includes("&payers=4") && u.includes("&occasion=Dinner%20%26%20drinks") && u.endsWith("#grouplink"); })());
+check("grouplink link carries no fee field and no fee address beyond the seller itself", (() => { const u = app.groupLink(syntheticPayB, "100", "3", ""); return u !== null && !u.includes("fee") && !u.includes(ADA); })());
+check("grouplink link refuses the same inputs the group plan refuses", app.groupLink(ADA, "0", "3", "") === null && app.groupLink(syntheticStake, "100", "3", "") === null && app.groupLink(ADA, "100", "1", "") === null && app.groupLink(ADA, "100", "11", "") === null);
+const gpParsed = app.parseGroupLink("?merchant=" + ADA + "&bill=100&payers=3&occasion=Team%20dinner");
+check("grouplink parse returns the merchant, canonical bill, payers and occasion", gpParsed && gpParsed.merchant === ADA && gpParsed.bill === "100" && gpParsed.payers === 3 && gpParsed.occasion === "Team dinner");
+check("grouplink parse accepts a query without the leading ? and no occasion", (() => { const p = app.parseGroupLink("merchant=" + ADA + "&bill=100&payers=2"); return p && p.bill === "100" && p.payers === 2 && p.occasion === ""; })());
+check("grouplink round trip: a built link parses back to the same group inputs, fee recomputed locally", (() => { const u = app.groupLink(ADA, "100", "3", "Team dinner"); const p = app.parseGroupLink(u.slice(u.indexOf("?"), u.indexOf("#"))); const plan = p && app.groupPlan(p.merchant, p.bill, p.payers, p.occasion); return p && p.occasion === "Team dinner" && plan && plan.feesTotalLovelace === "999999" && plan.grandTotalLovelace === "100999999" && plan.feeAddress === ADA; })());
+check("grouplink parse refuses a smuggled fee field or any unknown field", app.parseGroupLink("?merchant=" + ADA + "&bill=100&payers=3&fee=999") === null && app.parseGroupLink("?merchant=" + ADA + "&bill=100&payers=3&x=1") === null);
+check("grouplink parse refuses payment, split, escrow, listing, rental, invoice, retainer and milestone links, repeated, missing and empty fields", app.parseGroupLink("?to=" + ADA + "&amount=10") === null && app.parseGroupLink("?toA=" + ADA + "&toB=" + syntheticPayB + "&amount=10&share=50") === null && app.parseGroupLink("?buyer=" + ADA + "&seller=" + syntheticPayB + "&arbiter=" + syntheticPayC + "&amount=10") === null && app.parseGroupLink("?vendor=" + ADA + "&amount=10&title=Camera") === null && app.parseGroupLink("?landlord=" + ADA + "&rent=800&deposit=800") === null && app.parseGroupLink("?issuer=" + ADA + "&amount=450&invoice=INV-1") === null && app.parseGroupLink("?provider=" + ADA + "&monthly=300&months=6") === null && app.parseGroupLink("?payee=" + ADA + "&total=100&stages=50,50") === null && app.parseGroupLink("?merchant=" + ADA + "&bill=100&payers=3&payers=4") === null && app.parseGroupLink("?merchant=" + ADA + "&bill=100") === null && app.parseGroupLink("?merchant=" + ADA + "&payers=3") === null && app.parseGroupLink("") === null && app.parseGroupLink("?") === null);
+check("grouplink parse refuses malformed percent-encoding", app.parseGroupLink("?merchant=%zz&bill=100&payers=3") === null && app.parseGroupLink("?merchant=" + ADA + "&bill=%E0%A4%A&payers=3") === null);
+check("grouplink parse refuses tampered, stake and testnet merchants and bad bills or payer counts via the plan gates", app.parseGroupLink("?merchant=" + ADA.slice(0, -1) + (ADA.endsWith("v") ? "u" : "v") + "&bill=100&payers=3") === null && app.parseGroupLink("?merchant=" + syntheticStake + "&bill=100&payers=3") === null && app.parseGroupLink("?merchant=" + syntheticTest + "&bill=100&payers=3") === null && app.parseGroupLink("?merchant=" + ADA + "&bill=0&payers=3") === null && app.parseGroupLink("?merchant=" + ADA + "&bill=100&payers=1") === null && app.parseGroupLink("?merchant=" + ADA + "&bill=100&payers=2.5") === null);
 
 /* pool ID converter — verified vector cross-checked against @cardano-sdk/core
    (Mesh #692 investigation, 2026-10-07): the pool id below decodes to the

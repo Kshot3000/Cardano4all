@@ -1869,6 +1869,178 @@ function parseMilestoneLink(searchRaw) {
   return { seller: plan.seller, total: lovelaceToAda(plan.totalLovelace), stages: plan.stagesCanonical, labels: plan.labelsGiven ? plan.stageLabels.join(";") : "", project: plan.project };
 }
 
+/* groupPlan(merchantRaw, billStr, payersRaw, occasionRaw) ->
+   { merchant, occasion, payers, shareLovelace, feeLovelace,
+   payerTotalLovelace, totalLovelace, feesTotalLovelace,
+   grandTotalLovelace, feeAddress, feeBps } (amounts as decimal
+   strings, payers and feeBps as Numbers) or null for an invalid
+   merchant, bill, payer count or occasion note. The group shape
+   is the inverse of the split plan: ONE seller and SEVERAL
+   payers splitting one bill equally. Shares are exact: every
+   payer but the last pays the floored equal share and the last
+   payer takes the remainder, so the shares always add up to the
+   bill exactly — no lovelace lost to rounding. The disclosed 1%
+   fee is charged on EACH payer's share, floored per payer,
+   because each payer makes a separate payment; a share that
+   would floor to 0 lovelace refuses the plan. The payer count
+   is a whole number from 2 to 10, parsed strictly (no decimals,
+   no signs, no words). */
+function groupPlan(merchantRaw, billStr, payersRaw, occasionRaw) {
+  var merchant = (merchantRaw || "").trim();
+  var check = verifyBech32(merchant);
+  if (!check.valid || check.hrp !== "addr") return null;
+  var billStrL = adaToLovelace(billStr);
+  if (billStrL === null) return null;
+  var total = BigInt(billStrL);
+  if (total <= 0n) return null;
+  var payersStr = String(payersRaw === null || payersRaw === undefined ? "" : payersRaw).trim();
+  if (!/^\d+$/.test(payersStr)) return null;
+  var n = Number(payersStr);
+  if (n < 2 || n > 10) return null;
+  var occasion = (occasionRaw || "").trim();
+  if (occasion.length > 128 || /[\x00-\x1f\x7f]/.test(occasion)) return null;
+  var base = total / BigInt(n);
+  if (base <= 0n) return null;
+  var remainder = total - base * BigInt(n);
+  var shares = [], fees = [], payerTotals = [];
+  var feesTotal = 0n;
+  for (var i = 0; i < n; i++) {
+    var share = (i === n - 1) ? base + remainder : base;
+    var fee = (share * PAYLINK_FEE_BPS) / 10000n;
+    shares.push(share);
+    fees.push(fee);
+    payerTotals.push(share + fee);
+    feesTotal += fee;
+  }
+  return {
+    merchant: merchant,
+    occasion: occasion,
+    payers: n,
+    shareLovelace: shares.map(function (a) { return a.toString(); }),
+    feeLovelace: fees.map(function (f) { return f.toString(); }),
+    payerTotalLovelace: payerTotals.map(function (t) { return t.toString(); }),
+    totalLovelace: total.toString(),
+    feesTotalLovelace: feesTotal.toString(),
+    grandTotalLovelace: (total + feesTotal).toString(),
+    feeAddress: PAYLINK_FEE_ADDRESS,
+    feeBps: 100
+  };
+}
+
+/* groupPlanText(plan) -> the copyable group plan text. The
+   not-a-collection-service warning leads, before any payment
+   step, for the same reason the escrow warning leads its plan:
+   a forwarded plan must not be able to trim the warning off the
+   top without the steps visibly following it. Each payer is
+   written out in full — share, seller address, that payer's fee
+   and that payer's total — because the payers are different
+   people paying separately, and each must be able to pay from
+   this text alone. A sub-1-ADA output (a share, or a positive
+   fee) is named in a minimum-UTxO note, as in the plans above. */
+function groupPlanText(plan) {
+  var lines = [];
+  var n = plan.payers;
+  lines.push("Cardano group plan — one bill split between " + n + " payers");
+  lines.push("IMPORTANT: this is NOT a crowdfunding or collection service. The page does not collect payments, does not track who has paid, cannot chase a payer who does not pay and holds no funds — each payer makes a separate manual payment in their own wallet, and the seller keeps their own record of which payers have paid. Agree what the bill is for, and that each payer covers their own share, in writing before anyone pays.");
+  if (plan.occasion) {
+    lines.push("What the bill is for: " + plan.occasion);
+  } else {
+    lines.push("What the bill is for: not stated — agree what the bill is for in writing with the seller before anyone pays.");
+  }
+  lines.push("Total bill: " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace), split equally between " + n + " payers, all paying the seller " + plan.merchant + ":");
+  var smallOutput = false;
+  for (var i = 0; i < n; i++) {
+    if (BigInt(plan.shareLovelace[i]) < 1000000n) smallOutput = true;
+    if (plan.feeLovelace[i] !== "0" && BigInt(plan.feeLovelace[i]) < 1000000n) smallOutput = true;
+    lines.push("Payer " + (i + 1) + " of " + n + ": pay the seller " + lovelaceToAda(plan.shareLovelace[i]) + " ADA (" + plan.shareLovelace[i] + " lovelace) to " + plan.merchant);
+    if (plan.feeLovelace[i] === "0") {
+      lines.push("Cardano4All service fee for payer " + (i + 1) + " (1% of this payer's share, disclosed): 0 lovelace — the 1% of this share floors to 0, so no fee output is due from this payer.");
+    } else {
+      lines.push("Pay the Cardano4All service fee for payer " + (i + 1) + " (1% of this payer's share, disclosed): " + lovelaceToAda(plan.feeLovelace[i]) + " ADA (" + plan.feeLovelace[i] + " lovelace) to " + plan.feeAddress);
+    }
+    lines.push("Payer " + (i + 1) + " totals: " + lovelaceToAda(plan.payerTotalLovelace[i]) + " ADA (" + plan.payerTotalLovelace[i] + " lovelace), plus the network transaction fee your wallet adds.");
+  }
+  lines.push("Across all " + n + " payers: the seller receives " + lovelaceToAda(plan.totalLovelace) + " ADA (" + plan.totalLovelace + " lovelace) in total, the service fees total " + lovelaceToAda(plan.feesTotalLovelace) + " ADA (" + plan.feesTotalLovelace + " lovelace) — 1% of each payer's share, charged per payer payment, never deducted from a share — and the payers together pay " + lovelaceToAda(plan.grandTotalLovelace) + " ADA (" + plan.grandTotalLovelace + " lovelace) in total, plus one network fee per payer payment.");
+  if (smallOutput) {
+    lines.push("Note: an output in this plan is under 1 ADA, below the minimum a single output must carry — send a small fee together with that payer's seller payment in one transaction with both outputs, and never try to send a share that small on its own. Never send an output below the ledger minimum; your wallet will refuse it.");
+  }
+  lines.push("No transaction was built or signed on this page — this is a group payment plan to paste into your own wallet, one payer at a time. Double-check the seller address in full before sending.");
+  return lines.join("\n");
+}
+
+/* Shareable group link — the group plan above as a link the
+   seller can send the payers (profit mandate, 2026-10-12). The
+   link carries ONLY the seller's address, the total bill (as a
+   canonical ADA string), the payer count and the optional note
+   of what the bill is for — each percent-encoded. Like the other
+   links it carries NO fee field and no fee address: the
+   disclosed 1% fee is recomputed by groupPlan when the page
+   opens, every time, so a link cannot be edited to raise the fee
+   or reroute it — a query that smuggles in an extra field (fee=,
+   or anything unknown), repeats a field, or fails the groupPlan
+   gates is refused whole. The parser is the same deliberately
+   manual one as parsePaymentLink: "+" is data, never a space,
+   decoding failures refuse the link, and exactly the four known
+   fields are admitted. The field names (merchant, bill, payers,
+   occasion) keep a group link distinct from a single-seller link
+   (to, amount), a split link (toA, toB, share), an escrow link
+   (buyer, seller, arbiter, release), a listing link (vendor,
+   title, desc), a rental link (landlord, rent, deposit, term),
+   an invoice link (issuer, invoice, work), a retainer link
+   (provider, monthly, months, service) and a milestone link
+   (payee, total, stages, labels, project) on sight and in the
+   open-from-link wiring below. A group link carries no amount=,
+   so no earlier block can claim it; the single-seller block
+   below still excludes group-shaped queries explicitly, in the
+   same shape as the other eight exclusions. Nothing is fetched
+   or sent; the query is read locally from the page's own
+   address bar. */
+
+/* groupLink(merchantRaw, billStr, payersRaw, occasionRaw) ->
+   the shareable URL string, or null when groupPlan refuses the
+   inputs. */
+function groupLink(merchantRaw, billStr, payersRaw, occasionRaw) {
+  var plan = groupPlan(merchantRaw, billStr, payersRaw, occasionRaw);
+  if (!plan) return null;
+  var url = PAYLINK_BASE_URL + "?merchant=" + encodeURIComponent(plan.merchant) +
+    "&bill=" + encodeURIComponent(lovelaceToAda(plan.totalLovelace)) +
+    "&payers=" + encodeURIComponent(String(plan.payers));
+  if (plan.occasion) url += "&occasion=" + encodeURIComponent(plan.occasion);
+  return url + "#grouplink";
+}
+
+/* parseGroupLink(searchRaw) -> { merchant, bill, payers,
+   occasion } with bill as a canonical ADA string and payers as a
+   Number, ready to refill the form, or null for anything that
+   is not exactly a well-formed, valid group link (empty,
+   unknown/repeated/missing fields, malformed percent-encoding,
+   or inputs groupPlan refuses). Accepts the query with or
+   without its leading "?". */
+function parseGroupLink(searchRaw) {
+  var s = searchRaw || "";
+  if (s.charAt(0) === "?") s = s.slice(1);
+  if (!s) return null;
+  var seen = {}, values = {};
+  var pairs = s.split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var eq = pairs[i].indexOf("=");
+    if (eq <= 0) return null;
+    var key, val;
+    try {
+      key = decodeURIComponent(pairs[i].slice(0, eq));
+      val = decodeURIComponent(pairs[i].slice(eq + 1));
+    } catch (e) { return null; }
+    if (key !== "merchant" && key !== "bill" && key !== "payers" && key !== "occasion") return null;
+    if (seen[key]) return null;
+    seen[key] = true;
+    values[key] = val;
+  }
+  if (!seen.merchant || !seen.bill || !seen.payers) return null;
+  var plan = groupPlan(values.merchant, values.bill, values.payers, seen.occasion ? values.occasion : "");
+  if (!plan) return null;
+  return { merchant: plan.merchant, bill: lovelaceToAda(plan.totalLovelace), payers: plan.payers, occasion: plan.occasion };
+}
+
 var COINS_PER_UTXO_BYTE = 4310n;
 var UTXO_ENTRY_OVERHEAD = 160n;
 
@@ -6408,7 +6580,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, groupPlan, groupPlanText, groupLink, parseGroupLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -6684,7 +6856,7 @@ if (typeof document !== "undefined") {
        silently ignored; an unrelated query string is left alone. --- */
     var linkSearch = "";
     try { if (typeof window !== "undefined" && window.location) linkSearch = window.location.search || ""; } catch (e) { linkSearch = ""; }
-    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch) && !/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch) && !/(^|[?&])(payee|total|stages|labels)=/.test(linkSearch)) {
+    if (linkSearch && /(^|[?&])(to|amount)=/.test(linkSearch) && !/(^|[?&])(toA|toB|share)=/.test(linkSearch) && !/(^|[?&])(buyer|seller|arbiter|release)=/.test(linkSearch) && !/(^|[?&])(vendor|title|desc)=/.test(linkSearch) && !/(^|[?&])(landlord|rent|deposit|term)=/.test(linkSearch) && !/(^|[?&])(issuer|invoice|work)=/.test(linkSearch) && !/(^|[?&])(provider|monthly|months|service)=/.test(linkSearch) && !/(^|[?&])(payee|total|stages|labels)=/.test(linkSearch) && !/(^|[?&])(merchant|bill|payers|occasion)=/.test(linkSearch)) {
       var linked = parsePaymentLink(linkSearch);
       if (!linked) {
         document.getElementById("paylink-result").textContent = "That payment link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum and an amount above 0 ADA, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
@@ -7312,6 +7484,94 @@ if (typeof document !== "undefined") {
         lastMilestoneText = milestonePlanText(linkedMilestonePlan);
         lastMilestoneUrl = milestoneLink(linkedMilestone.seller, linkedMilestone.total, linkedMilestone.stages, linkedMilestone.labels, linkedMilestone.project);
         document.getElementById("milestonelink-result").textContent = "Opened from a milestone plan link — this plan is not a contract and the page does not enforce the stages; agree the stages and the project terms in writing before the first payment, and double-check the seller address in full.\n\n" + lastMilestoneText;
+      }
+    }
+
+    /* --- group payment plan builder (one bill split between
+       several payers, with the disclosed 1% service fee, offline
+       — same stale-plan guard as the other plan copy buttons:
+       only the last successfully built group plan is copyable)
+       --- */
+    var lastGroupText = "";
+    var lastGroupUrl = "";
+    document.getElementById("grouplink").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = groupPlan(
+        document.getElementById("grp-merchant").value,
+        document.getElementById("grp-bill").value,
+        document.getElementById("grp-payers").value,
+        document.getElementById("grp-occasion").value);
+      var out = document.getElementById("grouplink-result");
+      document.getElementById("grouplink-copy-status").textContent = "";
+      document.getElementById("grouplink-link-status").textContent = "";
+      if (!res) {
+        lastGroupText = "";
+        lastGroupUrl = "";
+        out.textContent = "Enter your own mainnet payment address (addr1…, with a valid checksum — a stake or testnet address cannot receive these payments), a total bill above 0 ADA (up to 6 decimals), a whole number of payers from 2 to 10 (every payer's share must come to at least 1 lovelace of the bill), and an optional note of what the bill is for of at most 128 characters.";
+        return;
+      }
+      lastGroupText = groupPlanText(res);
+      lastGroupUrl = groupLink(res.merchant, lovelaceToAda(res.totalLovelace), res.payers, res.occasion);
+      out.textContent = lastGroupText;
+    });
+    document.getElementById("copy-grouplink").addEventListener("click", function () {
+      var status = document.getElementById("grouplink-copy-status");
+      if (!lastGroupText) {
+        status.textContent = "Build a group plan first, then copy it.";
+        return;
+      }
+      var done = function () { status.textContent = "Group plan copied — send it to the payers."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastGroupText).then(done, function () {
+          status.textContent = "Copy failed — select the group plan text manually.";
+        });
+      } else {
+        status.textContent = "Select the group plan text to copy it.";
+      }
+    });
+
+    /* --- copy group plan link (same stale-plan guard as the
+       group plan copy above: only the link for the last
+       successfully built group plan can be copied, and a failed
+       build clears it) --- */
+    document.getElementById("copy-grouplink-url").addEventListener("click", function () {
+      var status = document.getElementById("grouplink-link-status");
+      if (!lastGroupUrl) {
+        status.textContent = "Build a group plan first, then copy its link.";
+        return;
+      }
+      var done = function () { status.textContent = "Group plan link copied — send it to the payers; it opens this page with the plan filled in."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastGroupUrl).then(done, function () {
+          status.textContent = "Copy failed — the link is this page's address with ?merchant=, bill= and payers= from your built plan; copy the plan text instead.";
+        });
+      } else {
+        status.textContent = "Copy is unavailable here — copy the plan text instead.";
+      }
+    });
+
+    /* --- open from a group plan link: a ?merchant=…&bill=…
+       &payers=… query (see groupLink) fills the group form and
+       builds the plan, with the fee recomputed by this page,
+       never taken from the link. Group-shaped queries are
+       claimed here, not by the single-seller block above (which
+       excludes them explicitly, in the same shape as the other
+       eight formats); a group-shaped query that does not
+       validate is reported, not silently ignored, and an
+       unrelated query string is left alone. --- */
+    if (linkSearch && /(^|[?&])(merchant|bill|payers|occasion)=/.test(linkSearch)) {
+      var linkedGroup = parseGroupLink(linkSearch);
+      if (!linkedGroup) {
+        document.getElementById("grouplink-result").textContent = "That group plan link is not valid — check it with the seller before paying anything. A valid link names a mainnet payment address with a verifying checksum, a total bill above 0 ADA and a whole number of payers from 2 to 10, and carries no fee field: the disclosed 1% service fee is worked out by this page.";
+      } else {
+        document.getElementById("grp-merchant").value = linkedGroup.merchant;
+        document.getElementById("grp-bill").value = linkedGroup.bill;
+        document.getElementById("grp-payers").value = String(linkedGroup.payers);
+        document.getElementById("grp-occasion").value = linkedGroup.occasion;
+        var linkedGroupPlan = groupPlan(linkedGroup.merchant, linkedGroup.bill, linkedGroup.payers, linkedGroup.occasion);
+        lastGroupText = groupPlanText(linkedGroupPlan);
+        lastGroupUrl = groupLink(linkedGroup.merchant, linkedGroup.bill, linkedGroup.payers, linkedGroup.occasion);
+        document.getElementById("grouplink-result").textContent = "Opened from a group plan link — this plan is not a collection service and the page does not track who has paid; agree what the bill is for in writing before anyone pays, and double-check the seller address in full.\n\n" + lastGroupText;
       }
     }
 
