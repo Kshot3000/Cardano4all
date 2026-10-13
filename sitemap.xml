@@ -2,4 +2,10 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://kshot3000.github.io/Cardano4all/</loc></url>
   <url><loc>https://kshot3000.github.io/Cardano4all/pay.html</loc></url>
+  <url><loc>https://kshot3000.github.io/Cardano4all/pay-payment.html</loc></url>
+  <url><loc>https://kshot3000.github.io/Cardano4all/pay-split.html</loc></url>
+  <url><loc>https://kshot3000.github.io/Cardano4all/pay-escrow.html</loc></url>
+  <url><loc>https://kshot3000.github.io/Cardano4all/pay-marketplace.html</loc></url>
+  <url><loc>https://kshot3000.github.io/Cardano4all/pay-rental.html</loc></url>
+  <url><loc>https://kshot3000.github.io/Cardano4all/pay-invoice.html</loc></url>
 </urlset>

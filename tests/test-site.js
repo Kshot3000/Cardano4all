@@ -76,6 +76,59 @@ try { payLd = JSON.parse(payLdBlocks[0]); } catch (e) { payLd = null; }
 check("pay.html JSON-LD is one valid ItemList of the six plans", payLdBlocks.length === 1 && !!payLd && payLd["@type"] === "ItemList" && payLd.itemListElement.length === 6 && payLd.itemListElement.every(it => ["paylink", "splitlink", "escrowlink", "marketlink", "rentlink", "invoicelink"].includes((it.url || "").split("#")[1])));
 check("sitemap lists the hub and pay.html", fs.readFileSync(path.join(root, "sitemap.xml"), "utf8").includes("https://kshot3000.github.io/Cardano4all/pay.html"));
 check("README documents the Pay landing page", readme.includes("pay.html"));
+check("pay.html no longer understates the shareable-link count as five", !payHtml.includes("all five can"));
+
+/* Per-tool Pay share pages: each of the six builders gets its own page
+   with its OWN canonical / og / twitter card naming that one plan —
+   a link shared to the hub renders one generic card for all six, so
+   per-tool sharing needs per-tool pages. Every page must carry the
+   full fee disclosure and its tool's honesty line itself, and its
+   builder CTA must land on a real form id on the hub. */
+const SHARE_PAGES = [
+  { file: "pay-payment.html", anchor: "paylink", key: /one seller/i, honesty: /no transaction and signs nothing/i },
+  { file: "pay-split.html", anchor: "splitlink", key: /two sellers/i, honesty: /no transaction and signs nothing/i },
+  { file: "pay-escrow.html", anchor: "escrowlink", key: /arbiter/i, honesty: /not a smart-contract escrow/i },
+  { file: "pay-marketplace.html", anchor: "marketlink", key: /for-sale listing/i, honesty: /not a marketplace/i },
+  { file: "pay-rental.html", anchor: "rentlink", key: /rent \+ refundable deposit/i, honesty: /not a lease/i },
+  { file: "pay-invoice.html", anchor: "invoicelink", key: /invoice/i, honesty: /not an accounting or tax system/i },
+];
+const sitemap = fs.readFileSync(path.join(root, "sitemap.xml"), "utf8");
+const shareOgTitles = [];
+for (const sp of SHARE_PAGES) {
+  const url = "https://kshot3000.github.io/Cardano4all/" + sp.file;
+  const pagePath = path.join(root, sp.file);
+  check(sp.file + " exists", fs.existsSync(pagePath));
+  if (!fs.existsSync(pagePath)) continue;
+  const page = fs.readFileSync(pagePath, "utf8");
+  shareOgTitles.push((page.match(/property="og:title" content="([^"]+)"/) || [])[1] || "");
+  check(sp.file + " carries the ADA address", page.includes(ADA));
+  check(sp.file + " carries @kshot9000", page.includes("@kshot9000"));
+  check(sp.file + " tags the Cardano team", page.includes("@cardano-foundation") && page.includes("@IntersectMBO"));
+  check(sp.file + " keeps the not-affiliated line", page.includes("Not affiliated with the Cardano Foundation, IOG or Intersect"));
+  check(sp.file + " has exactly one <h1>", (page.match(/<h1[ >]/g) || []).length === 1);
+  check(sp.file + " has <main> landmark", /<main[\s>]/.test(page));
+  check(sp.file + " reuses the hub stylesheets with cache keys", page.includes("styles.css?v=1") && page.includes("visual-upgrade/theme.css?v=20261007"));
+  check(sp.file + " has no scripts of its own (static share page)", !/<script(?![^>]*application\/ld\+json)/.test(page.replace(/<script type="application\/ld\+json">/g, "")));
+  check(sp.file + " canonical is its own URL", page.includes('<link rel="canonical" href="' + url + '">'));
+  check(sp.file + " og:url is its own URL", page.includes('property="og:url" content="' + url + '"'));
+  check(sp.file + " og:title names its own plan", sp.key.test((page.match(/property="og:title" content="([^"]+)"/) || [])[1] || ""));
+  check(sp.file + " twitter card mirrors its og card", page.includes('name="twitter:creator" content="@kshot9000"') && page.includes('name="twitter:title" content="' + ((page.match(/property="og:title" content="([^"]+)"/) || [])[1] || " ") + '"'));
+  check(sp.file + " title names the disclosed 1% fee", /1% fee/i.test(page.split("</title>")[0]));
+  check(sp.file + " discloses the 1% fee in the body copy", (page.match(/1% service fee/g) || []).length >= 2);
+  check(sp.file + " carries its tool's honesty line", sp.honesty.test(page));
+  check(sp.file + " states no transaction is built or signed", /no transaction and signs nothing/i.test(page));
+  check(sp.file + " deep-links into its builder", page.includes('href="./#' + sp.anchor + '"') && html.includes('id="' + sp.anchor + '"'));
+  const spLdBlocks = [...page.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  let spLd = null;
+  try { spLd = JSON.parse(spLdBlocks[0]); } catch (e) { spLd = null; }
+  check(sp.file + " JSON-LD is one valid WebPage at its own URL", spLdBlocks.length === 1 && !!spLd && spLd["@type"] === "WebPage" && spLd.url === url);
+  check(sp.file + " is linked from its pay.html card", payHtml.includes('href="' + sp.file + '"'));
+  check(sp.file + " is in the sitemap", sitemap.includes(url));
+  check(sp.file + " is documented in the README", readme.includes(sp.file));
+}
+check("the six share pages have six distinct og:titles, none equal to pay.html's generic card",
+  shareOgTitles.length === 6 && new Set(shareOgTitles).size === 6 &&
+  !shareOgTitles.includes((payHtml.match(/property="og:title" content="([^"]+)"/) || [])[1] || ""));
 
 /* flagship links */
 for (const url of ["https://nightdream.xyz/", "https://kshot3000.github.io/Grok-CIP-113/",

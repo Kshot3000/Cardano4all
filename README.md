@@ -254,6 +254,16 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   carries the same attribution and the same honesty lines (no
   transaction built or signed; the escrow-style plan is not a
   smart-contract escrow) and links straight into each builder.
+- **Per-tool Pay share pages** — each of the six builders also has
+  its own share page with its own canonical, Open Graph and Twitter
+  card naming that one plan, the full 1% fee disclosure with the fee
+  address, and that tool's own honesty line, deep-linking into the
+  builder: `pay-payment.html` (one seller), `pay-split.html` (two
+  sellers), `pay-escrow.html` (trusted arbiter), `pay-marketplace.html`
+  (for-sale listing), `pay-rental.html` (rent + deposit) and
+  `pay-invoice.html` (freelance/service invoice). Sharing the hub
+  alone would render one generic card for all six plans; sharing a
+  plan's own page renders that plan.
 - **Transaction ID calculator** — a transaction's ID is blake2b-256 of
   its body's CBOR bytes and nothing else, so it is fixed before signing.
   Paste a body's CBOR hex, or a whole transaction's (the array
