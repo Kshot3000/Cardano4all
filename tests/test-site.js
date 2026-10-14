@@ -112,6 +112,36 @@ check("guide links into the btcloan modeler", btcGuide.includes('href="./#btcloa
 check("sitemap lists bitcoin-defi.html", fs.readFileSync(path.join(root, "sitemap.xml"), "utf8").includes("https://kshot3000.github.io/Cardano4all/bitcoin-defi.html"));
 check("README documents the trust-model guide", readme.includes("bitcoin-defi.html"));
 
+/* First wallet guide (first-wallet.html): standalone shareable beginner
+   guide for the Lace UX workstream (hub-side step d) — like the trust-
+   model guide it must carry its honesty content itself: independent
+   guide, not a wallet, the recovery-phrase and pre-signing guidance */
+const fwGuide = fs.readFileSync(path.join(root, "first-wallet.html"), "utf8");
+check("first-wallet.html linked from the hub guides list", html.includes('href="first-wallet.html"'));
+check("first-wallet guide carries the ADA address", fwGuide.includes(ADA));
+check("first-wallet guide carries @kshot9000", fwGuide.includes("@kshot9000"));
+check("first-wallet guide tags the Cardano team", fwGuide.includes("@cardano-foundation") && fwGuide.includes("@IntersectMBO"));
+check("first-wallet guide keeps the not-affiliated line", fwGuide.includes("Not affiliated with the Cardano Foundation, IOG or Intersect"));
+check("first-wallet guide has exactly one <h1>", (fwGuide.match(/<h1[ >]/g) || []).length === 1);
+check("first-wallet guide has <main> landmark", /<main[\s>]/.test(fwGuide));
+check("first-wallet guide reuses the hub stylesheets with cache keys", fwGuide.includes("styles.css?v=1") && fwGuide.includes("visual-upgrade/theme.css?v=20261007"));
+check("first-wallet guide has no scripts of its own (static guide)", !/<script(?![^>]*application\/ld\+json)/.test(fwGuide.replace(/<script type="application\/ld\+json">/g, "")));
+check("first-wallet guide canonical is its own URL", fwGuide.includes('<link rel="canonical" href="https://kshot3000.github.io/Cardano4all/first-wallet.html">'));
+const fwLdBlocks = [...fwGuide.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
+let fwLd = null;
+try { fwLd = JSON.parse(fwLdBlocks[0]); } catch (e) { fwLd = null; }
+check("first-wallet guide JSON-LD is one valid Article by Kyle", fwLdBlocks.length === 1 && !!fwLd && fwLd["@type"] === "Article" && fwLd.author && fwLd.author.url === "https://x.com/kshot9000");
+check("first-wallet guide is labelled an independent guide", /independent guide/i.test(fwGuide) && /not\s+on the Lace or Input Output team/.test(fwGuide));
+check("first-wallet guide is not a wallet and downloads nothing", fwGuide.includes("not a wallet") && fwGuide.includes("nothing to download"));
+check("first-wallet guide points to lace.io as the only download source", fwGuide.includes('href="https://www.lace.io/"'));
+check("first-wallet guide teaches the recovery phrase honestly", fwGuide.includes("recovery phrase") && fwGuide.includes("theft attempt"));
+check("first-wallet guide gives satoshis in plain units", fwGuide.includes("100,000,000 sats"));
+check("first-wallet guide names the five pre-signing checks", ["What is leaving?", "Where is it going?", "What is the network fee", "What is the total leaving my wallet?", "Do I understand what happens next?"].every(q => fwGuide.includes(q)));
+check("first-wallet guide staking keeps ADA in the user's wallet", fwGuide.includes("never hands your coins to the pool"));
+check("first-wallet guide links the trust-model guide and the modeler", fwGuide.includes('href="bitcoin-defi.html"') && fwGuide.includes('href="./#btcloan"'));
+check("sitemap lists first-wallet.html", fs.readFileSync(path.join(root, "sitemap.xml"), "utf8").includes("https://kshot3000.github.io/Cardano4all/first-wallet.html"));
+check("README documents the first-wallet guide", readme.includes("first-wallet.html"));
+
 
 /* Per-tool Pay share pages: each of the ten builders gets its own page
    with its OWN canonical / og / twitter card naming that one plan —

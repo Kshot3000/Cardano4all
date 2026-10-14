@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your first wallet — BTC and ADA in one app, in plain words | Cardano4All</title>
+<meta name="description" content="A beginner's plain-words guide to a first crypto wallet with Lace: what a recovery phrase really is, holding Bitcoin and ADA in one app, the five checks to read before signing anything, your first DeFi action, and the scams to expect. An independent guide — not affiliated with Input Output or the Lace team.">
+<link rel="canonical" href="https://kshot3000.github.io/Cardano4all/first-wallet.html">
+<meta name="theme-color" content="#0033ad">
+<meta property="og:title" content="Your first wallet — BTC and ADA in one app, in plain words">
+<meta property="og:description" content="Recovery phrases without the fear, Bitcoin and ADA in one wallet, five checks before you sign, and a first DeFi action explained step by step. An independent beginner's guide by Kyle Cox (@kshot9000).">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://kshot3000.github.io/Cardano4all/first-wallet.html">
+<meta property="og:image" content="https://kshot3000.github.io/Cardano4all/visual-upgrade/scene.svg">
+<meta property="og:image:alt" content="Cardano4All — first wallet guide by Kyle Cox (@kshot9000)">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@kshot9000">
+<meta name="twitter:creator" content="@kshot9000">
+<meta name="twitter:title" content="Your first wallet — BTC and ADA in one app, in plain words">
+<meta name="twitter:description" content="What a recovery phrase really is, five checks before signing, and a first DeFi action in plain words. An independent guide by @kshot9000.">
+<meta name="twitter:image" content="https://kshot3000.github.io/Cardano4all/visual-upgrade/scene.svg">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"Your first wallet — BTC and ADA in one app, in plain words","url":"https://kshot3000.github.io/Cardano4all/first-wallet.html","author":{"@type":"Person","name":"Kyle Cox","url":"https://x.com/kshot9000"},"description":"A plain-words beginner's guide to a first wallet holding Bitcoin and ADA: recovery phrases, the five checks before signing, a first DeFi action, and common scams. An independent guide, not affiliated with Input Output or the Lace team."}
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=1">
+<link rel="stylesheet" href="visual-upgrade/theme.css?v=20261007">
+</head>
+<body data-vu-theme="network">
+<a class="skip" href="#main">Skip to main content</a>
+<header class="site-head">
+  <a class="brand" href="./" aria-label="Cardano4All home">
+    <span class="brand-mark" aria-hidden="true">₳</span>
+    <span>Cardano<strong>4All</strong></span>
+  </a>
+  <nav aria-label="Main">
+    <a href="#start">Getting set up</a>
+    <a href="#signing">Before you sign</a>
+    <a href="#first-defi">First DeFi action</a>
+    <a href="#scams">Scams to expect</a>
+    <a href="./#tools">All tools</a>
+    <a href="https://github.com/Kshot3000/Cardano4all">GitHub</a>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
+  <section class="hero">
+    <p class="eyebrow">Lace wallet UX workstream · A Cardano4All beginner guide · By <a href="https://x.com/kshot9000">@kshot9000</a></p>
+    <h1>Your first wallet — one app for your BTC and your ADA.</h1>
+    <p class="lede">A wallet is not a place your coins are stored — the coins stay on their
+    blockchains. A wallet is the app that holds your <strong>keys</strong>: the proof that the
+    coins are yours and the pen that signs when you spend them. Lace, Input Output's wallet,
+    holds <strong>Bitcoin and Cardano (ADA) in one app</strong> — you can store, manage and
+    transfer BTC alongside ADA instead of learning two wallets at once. This guide walks the
+    parts beginners actually stumble on: the recovery phrase, reading a transaction before
+    signing it, and a first DeFi action. It is an <strong>independent guide</strong> — I am not
+    on the Lace or Input Output team — and this page is <strong>not a wallet</strong>: there is
+    <strong>nothing to download</strong> here and nothing to connect. Get Lace itself only from
+    its official site, <a href="https://www.lace.io/">lace.io</a>.</p>
+    <div class="hero-cta">
+      <a class="btn primary" href="#start">Start with the recovery phrase</a>
+      <a class="btn" href="#signing">The five checks before signing</a>
+    </div>
+    <dl class="stats">
+      <div><dt>One app, two chains</dt><dd>BTC and ADA, side by side</dd></div>
+      <div><dt>The one thing to protect</dt><dd>Your recovery phrase — offline, never shared</dd></div>
+      <div><dt>Before every signature</dt><dd>Five checks, thirty seconds</dd></div>
+    </dl>
+  </section>
+
+  <section id="start" aria-labelledby="start-h">
+    <h2 id="start-h">Getting set up — the recovery phrase is the wallet</h2>
+    <p>When you create a wallet, the app shows you a list of words — your
+    <strong>recovery phrase</strong>. Those words are not a password hint and there is no
+    &ldquo;forgot my phrase&rdquo; button: anyone with the words can rebuild your wallet on any
+    device and spend everything in it, and if you lose them and your device breaks, no company —
+    not Lace, not Input Output, not anyone — can get your funds back. That sounds frightening
+    because it is the one genuinely serious step. Treat it like the deed to a house:</p>
+    <ul class="guide-list">
+      <li><strong>Write it on paper, by hand, during setup.</strong> Not a screenshot, not a photo, not a note in your email or cloud drive — anything digital can be copied without you ever knowing.</li>
+      <li><strong>Check it the way the app asks.</strong> When the wallet asks you to confirm words, it is teaching, not testing: it is making sure the paper copy is right before real money depends on it.</li>
+      <li><strong>Store the paper somewhere only you can reach</strong>, and tell nobody the words — no support agent, no website, no &ldquo;verification&rdquo; form will ever legitimately ask for them. A request for your phrase is a theft attempt, every time.</li>
+      <li><strong>Start small.</strong> Send a tiny amount first, confirm it arrives, and only then move larger amounts. A first transfer is a rehearsal, not a race.</li>
+    </ul>
+    <p>Bitcoin amounts in the wallet are counted in <strong>satoshis</strong> as well as BTC:
+    1 BTC is 100,000,000 sats, so a small balance like 0.001 BTC is 100,000 sats. Same money,
+    friendlier numbers — when a screen switches units, check which one you are reading before
+    you judge the amount.</p>
+  </section>
+
+  <section id="signing" aria-labelledby="signing-h">
+    <h2 id="signing-h">Before you sign — five checks, thirty seconds</h2>
+    <p>Signing is the point of no return: a signed blockchain transaction cannot be cancelled,
+    refunded or reversed by anyone. The review screen before you confirm is the whole safety
+    system, so read it as five separate questions — for a BTC send, an ADA send, or a dApp
+    asking your wallet to sign:</p>
+    <ul class="guide-list">
+      <li><strong>What is leaving?</strong> The exact amount and which asset — ADA, BTC, or a token. If a token, is it the real one? Check its name and policy ID against the project's own site: lookalike tokens with a famous name are the oldest trick in DeFi.</li>
+      <li><strong>Where is it going?</strong> Read the first and last characters of the recipient address and compare them with where you copied it from. Sending to your own address or wallet is normal (change comes back to you); sending to a stranger's is forever.</li>
+      <li><strong>What is the network fee, on its own line?</strong> The fee is what the blockchain charges to process the transaction. It should be visible separately — not folded into a total where you cannot see it.</li>
+      <li><strong>What is the total leaving my wallet?</strong> Amount plus fee, in the native coin <em>and</em> in your own currency. If the screen shows one but not the other, do the conversion yourself before signing — this hub's tools work in exact numbers for exactly this reason.</li>
+      <li><strong>Do I understand what happens next?</strong> A plain send is simple. A dApp transaction can also approve spending, stake, swap or lock funds — if the screen's words do not match what the site promised you, stop. Closing the tab costs nothing; a signature can cost everything.</li>
+    </ul>
+    <p>If any check cannot be answered from the screen in front of you, that is the answer:
+    do not sign yet. No legitimate transaction expires because you took a minute to read.</p>
+  </section>
+
+  <section id="first-defi" aria-labelledby="first-defi-h">
+    <h2 id="first-defi-h">A first DeFi action — staking ADA</h2>
+    <p>The gentlest first step in Cardano DeFi is <strong>staking</strong>: you delegate your
+    ADA to a stake pool and earn rewards, while your ADA stays in your own wallet — staking on
+    Cardano never hands your coins to the pool, and you can spend or move them at any time.
+    In plain steps:</p>
+    <ul class="guide-list">
+      <li><strong>Pick a pool like you would pick a bank:</strong> look for one that is not over-saturated (a pool past 100% saturation earns less for everyone in it), does not charge a 100% variable fee, and has a real website you can check.</li>
+      <li><strong>Delegate, then sign</strong> — run the five checks above on the review screen first. Delegation is a transaction too, with a small fee and a refundable deposit.</li>
+      <li><strong>Expect rewards after a few epochs</strong> (an epoch is five days), not instantly — and remember rewards are a return <em>on</em> your ADA, never a reason to buy more than you can afford to hold.</li>
+      <li><strong>Bitcoin DeFi comes later and reads differently:</strong> using BTC inside Cardano apps means trusting one of several very different designs for holding the BTC — read the hub's <a href="bitcoin-defi.html">Bitcoin on Cardano trust-model guide</a> before your first bridged satoshi, and model any loan with the <a href="./#btcloan">collateral modeler</a> before a protocol sees it.</li>
+    </ul>
+  </section>
+
+  <section id="scams" aria-labelledby="scams-h">
+    <h2 id="scams-h">Scams to expect — they are not personal, they are constant</h2>
+    <ul class="guide-list">
+      <li><strong>&ldquo;Support&rdquo; asking for your recovery phrase</strong> — in a DM, a form, or a fake help site. Real support never needs it. Whoever asks is stealing.</li>
+      <li><strong>A lookalike wallet or download link</strong> — an ad or a cloned site one letter different from lace.io. Type the address yourself or use a bookmark you made; never a link from a message.</li>
+      <li><strong>Free-money tokens arriving unasked</strong> — dust and scam tokens land in wallets constantly, often named after a prize or a website. Visiting the site they advertise is the trap. Ignore them; an asset you never bought needs no action.</li>
+      <li><strong>Pressure and countdowns</strong> — &ldquo;verify now or lose your funds&rdquo; is always a lie. Blockchains do not expire wallets, and no real deadline survives you sleeping on it.</li>
+    </ul>
+  </section>
+
+  <section id="support" aria-labelledby="support-h">
+    <h2 id="support-h">Support this work</h2>
+    <p>Cardano4All is free and open source. This guide carries no fee and sells nothing; it
+    exists so a first wallet is less frightening and a first signature is better read. Tips in
+    ADA are welcome at:</p>
+    <p class="donate">
+      <code>addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</code>
+    </p>
+    <p>Built by Kyle Cox — <a href="https://x.com/kshot9000">@kshot9000 on X</a> · <a href="https://github.com/Kshot3000">github.com/Kshot3000</a> · <a href="./">All Cardano4All tools and projects</a></p>
+    <p class="team-tag">For the Cardano team — <a href="https://github.com/cardano-foundation">@cardano-foundation</a> and
+    <a href="https://github.com/IntersectMBO">@IntersectMBO</a>: this is an independent community builder hub.
+    Feedback and corrections are welcome in the <a href="https://github.com/Kshot3000/Cardano4all/issues">issues</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
+  <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
+</footer>
+</body>
+</html>

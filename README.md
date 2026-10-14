@@ -139,6 +139,21 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   same trust-model honesty line — a cheap bridge is not a safe
   bridge, and no protocol is endorsed. No bridge is operated, no
   transaction is built or signed, and no fee is charged by this tool.
+- **Your first wallet — beginner guide (`first-wallet.html`)** — a
+  standalone, shareable plain-words guide for the Lace wallet UX
+  workstream: a first wallet holding Bitcoin and ADA in one app
+  (Lace, Input Output's multichain wallet), the recovery phrase
+  explained as the wallet itself (paper, offline, never shared —
+  a request for it is always a theft attempt), satoshis in plain
+  units (1 BTC = 100,000,000 sats), the five checks to read before
+  signing anything (what leaves, where it goes, the fee on its own
+  line, the total in native and fiat, and whether you understand
+  what happens next), a first DeFi action (staking ADA, which never
+  hands coins to the pool), and the scams to expect (fake support,
+  lookalike downloads, free-money tokens, pressure deadlines). An
+  independent guide — not affiliated with Input Output or the Lace
+  team — and the page is not a wallet: nothing to download or
+  connect, no fee charged.
 - **Bitcoin on Cardano — trust-model guide (`bitcoin-defi.html`)** —
   a standalone, shareable guide page for the Native Bitcoin DeFi on
   Cardano workstream: the four trust models by which BTC reaches
