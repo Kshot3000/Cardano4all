@@ -120,6 +120,22 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   designs (Cardinal) are different trust models, a custodial or
   watcher-held asset is not trustless or native, and no protocol is
   endorsed. No loan is offered, no transaction is built or signed.
+- **Bitcoin on Cardano — trust-model guide (`bitcoin-defi.html`)** —
+  a standalone, shareable guide page for the Native Bitcoin DeFi on
+  Cardano workstream: the four trust models by which BTC reaches
+  Cardano DeFi, separated honestly — custodial wrapped BTC (a claim
+  on a custodian), watcher bridges such as Rosen (watcher/guard
+  operator sets), ZK bridgeless designs such as BitcoinOS Grail /
+  xBTC and Charms (proof-verifiable locks; BitSNARK open-sourced
+  March 2025 and the first bridgeless round trip already executed),
+  and MuSig2 / BitVMX designs such as Input Output's Cardinal
+  Protocol (a Bitcoin multisig policed by BitVMX verification;
+  public as a specification). For each model the guide states who
+  holds the BTC, what getting it back needs, and what you are
+  trusting; a side-by-side comparison and a six-question checklist
+  follow, ending at the collateral modeler above. A custodial or
+  watcher-held asset is stated not trustless or native, no protocol
+  is endorsed, and the page operates no bridge and holds no BTC.
 - **Payment plan builder (disclosed 1% service fee)** — the hub's first
   fee-earning tool: a seller enters their own mainnet payment address
   and an item amount, and the tool writes a two-output payment plan as

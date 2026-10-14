@@ -82,6 +82,37 @@ check("pay.html no longer understates the plan count as seven", !payHtml.include
 check("pay.html no longer understates the plan count as eight", !payHtml.includes("all eight can") && !payHtml.includes("The eight plans") && !payHtml.includes("Eight payment-plan builders"));
 check("pay.html no longer understates the plan count as nine", !payHtml.includes("all nine can") && !payHtml.includes("The nine plans") && !payHtml.includes("Nine payment-plan builders"));
 
+/* Bitcoin on Cardano trust-model guide (bitcoin-defi.html): standalone
+   shareable guide page for the Native Bitcoin DeFi workstream — like
+   pay.html it must carry the full honesty content itself, because most
+   readers of a shared link never click through: all four trust models
+   named, the custodial/watcher not-trustless line, and no endorsement */
+const btcGuide = fs.readFileSync(path.join(root, "bitcoin-defi.html"), "utf8");
+check("bitcoin-defi.html linked from the hub guides list", html.includes('href="bitcoin-defi.html"'));
+check("bitcoin-defi.html linked from the btcloan tool copy", html.includes('href="bitcoin-defi.html">Bitcoin on Cardano trust-model guide</a>'));
+check("guide carries the ADA address", btcGuide.includes(ADA));
+check("guide carries @kshot9000", btcGuide.includes("@kshot9000"));
+check("guide tags the Cardano team", btcGuide.includes("@cardano-foundation") && btcGuide.includes("@IntersectMBO"));
+check("guide keeps the not-affiliated line", btcGuide.includes("Not affiliated with the Cardano Foundation, IOG or Intersect"));
+check("guide has exactly one <h1>", (btcGuide.match(/<h1[ >]/g) || []).length === 1);
+check("guide has <main> landmark", /<main[\s>]/.test(btcGuide));
+check("guide reuses the hub stylesheets with cache keys", btcGuide.includes("styles.css?v=1") && btcGuide.includes("visual-upgrade/theme.css?v=20261007"));
+check("guide has no scripts of its own (static guide)", !/<script(?![^>]*application\/ld\+json)/.test(btcGuide.replace(/<script type="application\/ld\+json">/g, "")));
+check("guide canonical is its own URL", btcGuide.includes('<link rel="canonical" href="https://kshot3000.github.io/Cardano4all/bitcoin-defi.html">'));
+const btcLdBlocks = [...btcGuide.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
+let btcLd = null;
+try { btcLd = JSON.parse(btcLdBlocks[0]); } catch (e) { btcLd = null; }
+check("guide JSON-LD is one valid Article by Kyle", btcLdBlocks.length === 1 && !!btcLd && btcLd["@type"] === "Article" && btcLd.author && btcLd.author.url === "https://x.com/kshot9000");
+check("guide names all four trust models", ["Custodial wrapped BTC", "Watcher bridges", "ZK bridgeless", "MuSig2 / BitVMX"].every(m => btcGuide.includes(m)));
+check("guide names the protocols for each model", ["Rosen", "BitcoinOS Grail", "Charms", "Cardinal"].every(m => btcGuide.includes(m)));
+check("guide states a custodial or watcher-held asset is not trustless or native", btcGuide.includes("not trustless or native"));
+check("guide endorses no protocol", /no protocol is endorsed/i.test(btcGuide));
+check("guide operates no bridge and holds no BTC", btcGuide.includes("no bridge") && btcGuide.includes("no BTC"));
+check("guide links into the btcloan modeler", btcGuide.includes('href="./#btcloan"') && html.includes('id="btcloan"'));
+check("sitemap lists bitcoin-defi.html", fs.readFileSync(path.join(root, "sitemap.xml"), "utf8").includes("https://kshot3000.github.io/Cardano4all/bitcoin-defi.html"));
+check("README documents the trust-model guide", readme.includes("bitcoin-defi.html"));
+
+
 /* Per-tool Pay share pages: each of the ten builders gets its own page
    with its OWN canonical / og / twitter card naming that one plan —
    a link shared to the hub renders one generic card for all six, so

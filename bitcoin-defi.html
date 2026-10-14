@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitcoin on Cardano — the trust models in plain words | Cardano4All</title>
+<meta name="description" content="How Bitcoin reaches Cardano DeFi, separated by trust model: custodial wrapped BTC, watcher bridges such as Rosen, ZK bridgeless designs such as BitcoinOS Grail / xBTC and Charms, and MuSig2 / BitVMX designs such as Cardinal — who holds the BTC, how you get it back, and what to check before trusting any of them. No protocol is endorsed.">
+<link rel="canonical" href="https://kshot3000.github.io/Cardano4all/bitcoin-defi.html">
+<meta name="theme-color" content="#0033ad">
+<meta property="og:title" content="Bitcoin on Cardano — the trust models, in plain words">
+<meta property="og:description" content="Custodial wrapped BTC, watcher bridges, ZK bridgeless designs and MuSig2 / BitVMX are four different trust models — not four spellings of the same thing. A plain-words guide to who holds the BTC and how you get it back, by Kyle Cox (@kshot9000). No protocol is endorsed.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://kshot3000.github.io/Cardano4all/bitcoin-defi.html">
+<meta property="og:image" content="https://kshot3000.github.io/Cardano4all/visual-upgrade/scene.svg">
+<meta property="og:image:alt" content="Cardano4All — Bitcoin on Cardano trust-model guide by Kyle Cox (@kshot9000)">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@kshot9000">
+<meta name="twitter:creator" content="@kshot9000">
+<meta name="twitter:title" content="Bitcoin on Cardano — the trust models, in plain words">
+<meta name="twitter:description" content="Custodial, watcher-bridge, ZK bridgeless and MuSig2 / BitVMX designs put your BTC in different hands. Who holds it, how you get it back, and the questions to ask first. By @kshot9000.">
+<meta name="twitter:image" content="https://kshot3000.github.io/Cardano4all/visual-upgrade/scene.svg">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"Bitcoin on Cardano — the trust models, in plain words","url":"https://kshot3000.github.io/Cardano4all/bitcoin-defi.html","author":{"@type":"Person","name":"Kyle Cox","url":"https://x.com/kshot9000"},"description":"A plain-words comparison of the four trust models by which Bitcoin reaches Cardano DeFi: custodial wrapped BTC, watcher bridges, ZK bridgeless designs, and MuSig2 / BitVMX designs. No protocol is endorsed."}
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230033ad'/%3E%3Ccircle cx='16' cy='11' r='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='19' r='2.4' fill='%23fff'/%3E%3Ccircle cx='22' cy='19' r='2.4' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=1">
+<link rel="stylesheet" href="visual-upgrade/theme.css?v=20261007">
+</head>
+<body data-vu-theme="network">
+<a class="skip" href="#main">Skip to main content</a>
+<header class="site-head">
+  <a class="brand" href="./" aria-label="Cardano4All home">
+    <span class="brand-mark" aria-hidden="true">₳</span>
+    <span>Cardano<strong>4All</strong></span>
+  </a>
+  <nav aria-label="Main">
+    <a href="#models">The four models</a>
+    <a href="#compare">Side by side</a>
+    <a href="#checklist">Questions to ask first</a>
+    <a href="./#btcloan">Collateral modeler</a>
+    <a href="./#tools">All tools</a>
+    <a href="https://github.com/Kshot3000/Cardano4all">GitHub</a>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
+  <section class="hero">
+    <p class="eyebrow">Native Bitcoin DeFi on Cardano · A Cardano4All guide · By <a href="https://x.com/kshot9000">@kshot9000</a></p>
+    <h1>Bitcoin on Cardano — first ask who holds the BTC.</h1>
+    <p class="lede">Bitcoin does not live on Cardano. When a Cardano app lets you lend, borrow
+    against or trade &ldquo;BTC&rdquo;, some design is standing between you and the real coins on the
+    Bitcoin chain — and the designs differ in the one way that matters most: <strong>who can stop
+    you getting your BTC back</strong>. This guide separates the four trust models honestly:
+    <strong>custodial wrapped BTC</strong>, <strong>watcher bridges</strong>, <strong>ZK bridgeless</strong>
+    designs, and <strong>MuSig2 / BitVMX</strong> designs. A custodial or watcher-held asset is
+    <strong>not trustless or native</strong> just because an app calls it Bitcoin, and
+    <strong>no protocol is endorsed</strong> on this page — it is a map of what to check, not a
+    recommendation. This page operates <strong>no bridge</strong>, holds <strong>no BTC</strong>,
+    and there is <strong>nothing to deposit</strong> here.</p>
+    <div class="hero-cta">
+      <a class="btn primary" href="#models">Compare the four models</a>
+      <a class="btn" href="./#btcloan">Model a BTC-collateral loan</a>
+    </div>
+    <dl class="stats">
+      <div><dt>Trust models</dt><dd>4 — custodial, watcher, ZK bridgeless, MuSig2 / BitVMX</dd></div>
+      <div><dt>The question that matters</dt><dd>Who can stop you getting your BTC back?</dd></div>
+      <div><dt>Endorsements</dt><dd>None — check the model, not the marketing</dd></div>
+    </dl>
+  </section>
+
+  <section id="models" aria-labelledby="models-h">
+    <h2 id="models-h">The four models</h2>
+    <p>Every way of using BTC in Cardano DeFi today fits one of these four shapes. The token in
+    your Cardano wallet may look the same in each case; what you actually hold — and who you are
+    trusting — is not the same at all.</p>
+    <ul class="cards">
+      <li class="card">
+        <h3>1. Custodial wrapped BTC</h3>
+        <p><strong>Who holds the BTC:</strong> a company or custodian. You send real BTC to the
+        custodian, and the custodian issues a token on Cardano that stands for it; sending the
+        token back to the custodian is how you redeem the BTC. Wrapped-BTC services in this shape
+        (the anetaBTC-style model) brought useful liquidity to Cardano early.</p>
+        <p><strong>What you are trusting:</strong> the custodian — that it holds the BTC it claims
+        to hold, stays solvent and honest, and honours redemptions. If the custodian fails or
+        freezes withdrawals, the token can lose its backing no matter how healthy any loan
+        against it looks. This model is <strong>not trustless</strong> and the token is
+        <strong>not native BTC</strong> — it is a claim on a custodian.</p>
+      </li>
+      <li class="card">
+        <h3>2. Watcher bridges — Rosen Bridge</h3>
+        <p><strong>Who holds the BTC:</strong> the bridge's guard set, under the watch of its
+        watchers. Watchers observe the Bitcoin chain and report deposits; a separate guard set
+        acts on those reports to release the bridged asset on Cardano, and the same machinery in
+        reverse releases BTC on the way back. Rosen Bridge, born in the Ergo ecosystem, has
+        bridged Bitcoin assets including Runes into Cardano this way.</p>
+        <p><strong>What you are trusting:</strong> the watcher and guard sets — that enough of
+        them stay honest and online for deposits to be reported truthfully and withdrawals to be
+        processed. That is a smaller, more distributed trust than a single custodian, but it is
+        still trust in identified operators: a watcher bridge is <strong>not trustless</strong>,
+        and its asset is not native BTC either.</p>
+      </li>
+      <li class="card">
+        <h3>3. ZK bridgeless — BitcoinOS Grail / xBTC and Charms</h3>
+        <p><strong>Who holds the BTC:</strong> no custodian and no operator set, by design. In the
+        Grail design from BitcoinOS, BTC is locked on Bitcoin under conditions a zero-knowledge
+        proof (BitSNARK, open-sourced in March 2025) can verify, and the Cardano-side token —
+        xBTC — can be returned and the BTC withdrawn without asking a validator set for
+        permission; the first bridgeless BTC round trip to Cardano mainnet and back has already
+        been executed this way. Charms takes a related route, &ldquo;beaming&rdquo; Bitcoin-native
+        assets such as eBTC to Cardano as native tokens.</p>
+        <p><strong>What you are trusting:</strong> the proof system and the code that implements
+        it — mathematics and audits instead of operators. That is a genuinely different trust
+        model, and &ldquo;bridgeless&rdquo; describes the design honestly; it does not make any
+        given deployment risk-free. The code is young, so the questions shift from &ldquo;who is
+        the operator?&rdquo; to &ldquo;has this exact implementation been audited, and is the
+        version I am using the audited one?&rdquo;</p>
+      </li>
+      <li class="card">
+        <h3>4. MuSig2 / BitVMX — Cardinal Protocol</h3>
+        <p><strong>Who holds the BTC:</strong> a multisignature arrangement on Bitcoin itself.
+        Input Output's Cardinal Protocol (announced June 2025) wraps BTC UTXOs using MuSig2
+        multisignatures, with BitVMX providing the verification path that lets Cardano-side
+        lending and borrowing react if a signer misbehaves — the aim is BTC in Cardano DeFi
+        without handing the coins to a custodian.</p>
+        <p><strong>What you are trusting:</strong> the signer set and the verification game —
+        that the required signers stay available, and that the challenge-and-proof machinery
+        would in practice be run if it were ever needed. It sits between the watcher model and
+        the ZK model: no single custodian, but not operator-free either. In public, Cardinal is
+        a published protocol specification; treat any product claiming to be Cardinal as its own
+        implementation to check, not as the spec itself.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section id="compare" aria-labelledby="compare-h">
+    <h2 id="compare-h">Side by side</h2>
+    <ul class="guide-list">
+      <li><strong>Custodial wrapped BTC</strong> — BTC held by: one custodian. Getting it back needs: the custodian to process your redemption. Main way it fails: the custodian.</li>
+      <li><strong>Watcher bridge (Rosen)</strong> — BTC held by: the bridge's guard set. Getting it back needs: watchers to report and guards to act. Main way it fails: the operator sets collude, fail, or stall.</li>
+      <li><strong>ZK bridgeless (Grail / xBTC, Charms)</strong> — BTC held by: no operator — locked under proof-verifiable conditions. Getting it back needs: a valid proof, by design without validator consent. Main way it fails: a bug in young proof or contract code.</li>
+      <li><strong>MuSig2 / BitVMX (Cardinal)</strong> — BTC held by: a Bitcoin multisig. Getting it back needs: the signer set, policed by BitVMX verification. Main way it fails: signers unavailable, or the verification path never exercised in practice.</li>
+    </ul>
+    <p>None of the four puts actual BTC inside a Cardano wallet — Cardano tokens are claims,
+    locks or representations whose value rests on the row above. When two apps both say
+    &ldquo;BTC&rdquo;, check whether they are even using the same row before comparing their
+    rates.</p>
+  </section>
+
+  <section id="checklist" aria-labelledby="checklist-h">
+    <h2 id="checklist-h">Questions to ask before trusting any of them</h2>
+    <ul class="guide-list">
+      <li><strong>Which model is this, in the protocol's own words?</strong> If the documentation will not say plainly who holds the BTC, that is your answer.</li>
+      <li><strong>How do I get BTC back to the Bitcoin chain, step by step?</strong> Whose action does each step need — a company's, a guard set's, a signer set's, or only a proof's?</li>
+      <li><strong>What happens if that party stops?</strong> A custodian freezing withdrawals, watchers going offline and signers going missing are different failures with different recoveries — look for the written answer, not the reassuring one.</li>
+      <li><strong>Has this exact code been audited, and is what I am using the audited version?</strong> This matters most for the youngest designs, the ZK and BitVMX ones.</li>
+      <li><strong>Is the asset I receive the asset I think it is?</strong> Check the token's policy ID in your wallet against the protocol's published one — lookalike tokens are the oldest trick in DeFi.</li>
+      <li><strong>Do the loan numbers still make sense?</strong> Only after the trust question: model the collateral, the LTV and the liquidation price with the hub's <a href="./#btcloan">Bitcoin DeFi collateral modeler</a> — with a price you assume yourself, because a healthy LTV on an asset you cannot redeem is not safety.</li>
+    </ul>
+  </section>
+
+  <section id="support" aria-labelledby="support-h">
+    <h2 id="support-h">Support this work</h2>
+    <p>Cardano4All is free and open source. This guide carries no fee and endorses no protocol;
+    it exists so the trust question gets asked before the deposit, not after. Tips in ADA are
+    welcome at:</p>
+    <p class="donate">
+      <code>addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</code>
+    </p>
+    <p>Built by Kyle Cox — <a href="https://x.com/kshot9000">@kshot9000 on X</a> · <a href="https://github.com/Kshot3000">github.com/Kshot3000</a> · <a href="./">All Cardano4All tools and projects</a></p>
+    <p class="team-tag">For the Cardano team — <a href="https://github.com/cardano-foundation">@cardano-foundation</a> and
+    <a href="https://github.com/IntersectMBO">@IntersectMBO</a>: this is an independent community builder hub.
+    Feedback and corrections are welcome in the <a href="https://github.com/Kshot3000/Cardano4all/issues">issues</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Cardano4All · Open source by Kyle Cox (@kshot9000) · Not affiliated with the Cardano Foundation, IOG or Intersect — an independent builder project.</p>
+  <p>ADA donations: addr1q8hnl6vl5a6k3rw3n5g3jtte696zcl76kfatzv7gpswa9r0dj7fma6klq55y4ffm7tf0em09udnyhuk4ah92pl5x9jpqjae44v</p>
+</footer>
+</body>
+</html>
