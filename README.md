@@ -120,6 +120,25 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   designs (Cardinal) are different trust models, a custodial or
   watcher-held asset is not trustless or native, and no protocol is
   endorsed. No loan is offered, no transaction is built or signed.
+- **Bitcoin bridge cost estimator (round-trip BTC ⇄ Cardano cost,
+  estimated)** — the workstream's second tool (`bridgeCostEstimate`):
+  the three costs of bridging BTC to Cardano and back, added up from
+  estimates the user enters — the page fetches no live fee rate, no
+  live price and no protocol's live fee schedule. The Bitcoin network
+  fee uses a fee rate in sat/vB the user expects (parsed exactly to
+  hundredths) over stated assumed sizes (250 vB lock, 200 vB unlock),
+  each leg ceiled to whole satoshis; the protocol fee percentage
+  (parsed exactly to basis points) is floored and taken out of the
+  amount in the model, so the received amount is stated; the
+  Cardano-side fee in ADA is converted to satoshis at a BTC price in
+  ADA the user assumes and ceiled, so no part of the cost is ever
+  understated. The total cost percentage is ceiled to basis points.
+  Hand-derived vector: 1 BTC at 10 sat/vB with a 2 ADA Cardano fee and
+  a 0.3% protocol fee at an assumed 150,000 ADA per BTC costs 305,834
+  sats round trip and delivers 99,700,000 sats. The copy carries the
+  same trust-model honesty line — a cheap bridge is not a safe
+  bridge, and no protocol is endorsed. No bridge is operated, no
+  transaction is built or signed, and no fee is charged by this tool.
 - **Bitcoin on Cardano — trust-model guide (`bitcoin-defi.html`)** —
   a standalone, shareable guide page for the Native Bitcoin DeFi on
   Cardano workstream: the four trust models by which BTC reaches

@@ -616,6 +616,118 @@ function btcLoanHealth(satsStr, priceStr, loanStr, liqStr) {
   };
 }
 
+/* Bitcoin bridge cost estimator — the second tool for the Native
+   Bitcoin DeFi on Cardano workstream (step c). Moving BTC to Cardano
+   and back costs three things, and this estimator adds them up from
+   ESTIMATES THE USER ENTERS — it fetches no live fee rate, no live
+   price and no protocol's live fee schedule, and presents nothing as
+   market data:
+     1. the Bitcoin network fee for the lock transaction and for the
+        unlock transaction, at a fee rate in sat/vB the user enters
+        (up to 2 decimals, parsed exactly to hundredths). The sizes
+        are stated assumptions — 250 vB to lock, 200 vB to unlock,
+        typical single-UTXO sizes — and the real size is whatever the
+        user's wallet shows before signing. Each leg's fee is CEILED
+        to whole satoshis so the estimate never understates it.
+     2. a protocol fee as a percentage of the amount (up to 2
+        decimals, parsed exactly to basis points, FLOORED to whole
+        satoshis) — the model takes it out of the bridged amount, so
+        "received" is the amount minus this fee; a fee that would
+        leave less than 1 satoshi is refused rather than modelled.
+     3. a Cardano-side fee in ADA the user enters, converted to
+        satoshis at a BTC price in ADA the user assumes and CEILED,
+        so its sats equivalent never understates it either.
+   The network fees are paid ON TOP from the user's Bitcoin wallet,
+   not deducted from the amount — the result text says so. The total
+   cost percentage is CEILED to basis points for the same reason.
+   Caps are sanity bounds, not protocol limits: amount at most the
+   whole 21,000,000 BTC supply in sats, fee rate at most 100,000
+   sat/vB, Cardano fee at most 1,000,000 ADA, price at most
+   100,000,000 ADA per BTC (the btcloan bounds). TRUST-MODEL HONESTY,
+   as in the collateral modeler: the protocols this cost applies to
+   use very different trust models (custodial wrapped BTC, watcher
+   bridges such as Rosen, ZK bridgeless designs such as BitcoinOS
+   Grail/xBTC and Charms, MuSig2/BitVMX designs such as Cardinal), a
+   cheap bridge is not a safe bridge, and no protocol is endorsed
+   here. No bridge is operated, no transaction is built or signed,
+   and no fee is charged by this tool. */
+var BRIDGE_LOCK_VBYTES = 250;
+var BRIDGE_UNLOCK_VBYTES = 200;
+var MAX_BTC_FEE_RATE_H = 10000000n; /* 100,000.00 sat/vB, in hundredths */
+var MAX_ADA_FEE_LOVELACE = 1000000000000n; /* 1,000,000 ADA */
+
+/* parseBridgeFeeBps(raw) -> basis points (BigInt, 0 to 10000) or null.
+   Like parseLiqBps but 0% is a real protocol fee, so it is allowed. */
+function parseBridgeFeeBps(raw) {
+  var s = (raw || "").trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  var parts = s.split(".");
+  var bps = BigInt(parts[0]) * 100n + (parts.length > 1 ? BigInt(parts[1].padEnd(2, "0")) : 0n);
+  return bps <= 10000n ? bps : null;
+}
+
+/* parseFeeRateH(raw) -> fee rate in hundredths of a sat/vB (BigInt) or null */
+function parseFeeRateH(raw) {
+  var s = (raw || "").trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  var parts = s.split(".");
+  var h = BigInt(parts[0]) * 100n + (parts.length > 1 ? BigInt(parts[1].padEnd(2, "0")) : 0n);
+  return h <= MAX_BTC_FEE_RATE_H ? h : null;
+}
+
+/* bridgeCostEstimate(amountSatsStr, feeRateStr, adaFeeAdaStr,
+   protocolPercentStr, priceAdaStr) ->
+   { amountSats, amountBtc, lockFeeSats, unlockFeeSats, btcFeeSats,
+     protocolFeeSats, protocolBps, adaFeeLovelace, adaFeeSats,
+     totalCostSats, totalCostBtc, receivedSats, receivedBtc,
+     effectiveBps, lockVbytes, unlockVbytes }
+   (amounts as decimal strings, protocolBps a Number) or null. */
+function bridgeCostEstimate(amountStr, rateStr, adaFeeStr, protoStr, priceStr) {
+  var a = (amountStr || "").trim();
+  if (!/^\d+$/.test(a)) return null;
+  var amount = BigInt(a);
+  if (amount < 1n || amount > MAX_SATS) return null;
+  var rateH = parseFeeRateH(rateStr);
+  if (rateH === null) return null;
+  var adaFeeStrL = adaToLovelace(adaFeeStr);
+  if (adaFeeStrL === null) return null;
+  var adaFee = BigInt(adaFeeStrL);
+  if (adaFee > MAX_ADA_FEE_LOVELACE) return null;
+  var protoBps = parseBridgeFeeBps(protoStr);
+  if (protoBps === null) return null;
+  var priceStrL = adaToLovelace(priceStr);
+  if (priceStrL === null) return null;
+  var price = BigInt(priceStrL);
+  if (price < 1n || price > MAX_BTC_PRICE_LOVELACE) return null;
+  var lockFee = (rateH * BigInt(BRIDGE_LOCK_VBYTES) + 99n) / 100n;
+  var unlockFee = (rateH * BigInt(BRIDGE_UNLOCK_VBYTES) + 99n) / 100n;
+  var btcFee = lockFee + unlockFee;
+  var protocolFee = (amount * protoBps) / 10000n;
+  var received = amount - protocolFee;
+  if (received < 1n) return null;
+  var adaFeeSats = adaFee === 0n ? 0n : (adaFee * SATS_PER_BTC + price - 1n) / price;
+  var total = btcFee + protocolFee + adaFeeSats;
+  var effBps = total === 0n ? 0n : (total * 10000n + amount - 1n) / amount;
+  return {
+    amountSats: amount.toString(),
+    amountBtc: satsToBtc(amount.toString()),
+    lockFeeSats: lockFee.toString(),
+    unlockFeeSats: unlockFee.toString(),
+    btcFeeSats: btcFee.toString(),
+    protocolFeeSats: protocolFee.toString(),
+    protocolBps: Number(protoBps),
+    adaFeeLovelace: adaFee.toString(),
+    adaFeeSats: adaFeeSats.toString(),
+    totalCostSats: total.toString(),
+    totalCostBtc: satsToBtc(total.toString()),
+    receivedSats: received.toString(),
+    receivedBtc: satsToBtc(received.toString()),
+    effectiveBps: effBps.toString(),
+    lockVbytes: BRIDGE_LOCK_VBYTES,
+    unlockVbytes: BRIDGE_UNLOCK_VBYTES
+  };
+}
+
 /* Payment plan builder — the hub's first fee-earning tool (profit
    mandate, 2026-10-11). A seller enters their own mainnet payment
    address and an item amount; the plan is a TWO-output payment the
@@ -6865,7 +6977,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, satsToBtc, btcToSats, btcLoanHealth, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, groupPlan, groupPlanText, groupLink, parseGroupLink, installmentPlan, installmentPlanText, installmentLink, parseInstallmentLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, satsToBtc, btcToSats, btcLoanHealth, bridgeCostEstimate, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, groupPlan, groupPlanText, groupLink, parseGroupLink, installmentPlan, installmentPlanText, installmentLink, parseInstallmentLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -7096,6 +7208,29 @@ if (typeof document !== "undefined") {
         " ADA · further borrowable = " + lovelaceToAda(res.borrowableLovelace) + " ADA" +
         (res.loanLovelace === "0" ? "." : " · liquidation BTC price = " + lovelaceToAda(res.liquidationPriceLovelace) + " ADA per BTC.") +
         " " + statusText + " Modelled from the price YOU entered — not live market data, not a loan offer, and no protocol is endorsed: a real position's safety also depends on its bridge or protocol trust model.";
+    });
+
+    /* --- Bitcoin bridge cost estimator (estimates the user enters) --- */
+    document.getElementById("bridgecost").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = bridgeCostEstimate(
+        document.getElementById("bc-amount").value,
+        document.getElementById("bc-rate").value,
+        document.getElementById("bc-adafee").value,
+        document.getElementById("bc-proto").value,
+        document.getElementById("bc-price").value);
+      var out = document.getElementById("bc-cost-result");
+      if (!res) {
+        out.textContent = "Enter the amount in whole satoshis (1 up to the whole 21,000,000 BTC supply in sats), a Bitcoin fee rate in sat/vB (0 or more, up to 2 decimals, at most 100,000), a Cardano-side fee in ADA (0 or more, up to 6 decimals, at most 1,000,000), a protocol fee percentage (0 to 100%, up to 2 decimals) that leaves at least 1 satoshi of the amount, and a BTC price you assume in ADA (up to 6 decimals, at most 100,000,000 ADA).";
+        return;
+      }
+      out.textContent = "Bridging " + res.amountSats + " sats (" + res.amountBtc + " BTC) and back: Bitcoin network fees at your rate = " +
+        res.btcFeeSats + " sats (lock " + res.lockFeeSats + " sats for an assumed " + res.lockVbytes + " vB + unlock " + res.unlockFeeSats +
+        " sats for an assumed " + res.unlockVbytes + " vB — paid ON TOP from your Bitcoin wallet, not taken from the amount) · protocol fee " +
+        (res.protocolBps / 100) + "% = " + res.protocolFeeSats + " sats, taken from the amount in this model, so " + res.receivedSats +
+        " sats (" + res.receivedBtc + " BTC) arrive · Cardano-side fee " + lovelaceToAda(res.adaFeeLovelace) + " ADA = " + res.adaFeeSats +
+        " sats at your assumed price. Total round-trip cost = " + res.totalCostSats + " sats (" + res.totalCostBtc + " BTC), " +
+        (res.effectiveBps / 100) + "% of the amount. Every figure comes from estimates YOU entered — no live fee rate, price or protocol fee was fetched, no bridge is operated here and no protocol is endorsed: a cheap bridge is not a safe bridge, so check its trust model in the guide before its price.";
     });
 
     /* --- payment plan builder (disclosed 1% service fee, offline) --- */
