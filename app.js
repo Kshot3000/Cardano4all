@@ -509,6 +509,113 @@ function depositTotal(stakeStr, poolStr, drepStr, govStr) {
   };
 }
 
+/* Bitcoin DeFi collateral modeler — Native Bitcoin DeFi on Cardano
+   workstream (2026-10-13). MODELLED maths only, in the staking
+   estimator's tradition: the user supplies EVERY number, including
+   the BTC price in ADA — this page fetches no price and presents no
+   figure as live market or chain data. A borrower posts BTC
+   collateral (counted exactly in satoshis: 1 BTC = 100,000,000 sats,
+   never through a float) and borrows ADA against it; the model is
+     collateralLovelace = floor(sats x priceLovelacePerBtc / 10^8)
+     ltvBps             = floor(loanLovelace x 10000 / collateral)
+     maxLoanLovelace    = floor(collateral x liqBps / 10000)
+     borrowable         = max(0, maxLoan - loan)
+     liquidationPrice   = ceil(loan x 10^8 x 10000 / (liqBps x sats))
+   lovelace — the BTC price (in lovelace per BTC) at which the loan
+   exactly reaches the liquidation LTV, rounded UP so the stated
+   price never understates the danger point by a fraction of a
+   lovelace. Status compares exactly (cross-multiplied, no floats):
+   "liquidatable" when the loan is above the max, "near-liquidation"
+   at or above 90% of the liquidation LTV, "healthy" below that, and
+   "no-loan" for a zero loan. Caps are sanity bounds, not protocol
+   limits: collateral at most the whole 21,000,000 BTC supply in sats,
+   price at most 100,000,000 ADA per BTC. A collateral value flooring
+   to 0 lovelace is refused rather than modelled. TRUST-MODEL HONESTY:
+   this models NUMBERS ONLY — BTC reaches Cardano DeFi through very
+   different trust models (custodial wrapped BTC, watcher bridges such
+   as Rosen, ZK bridgeless designs such as BitcoinOS Grail/xBTC and
+   Charms, MuSig2/BitVMX designs such as Cardinal), a real position's
+   safety depends on its protocol's model as well as its LTV, and no
+   protocol is endorsed here. No loan is offered, no transaction is
+   built or signed. */
+var SATS_PER_BTC = 100000000n;
+var MAX_SATS = 2100000000000000n; /* 21,000,000 BTC — the whole supply */
+var MAX_BTC_PRICE_LOVELACE = 100000000000000n; /* 100,000,000 ADA per BTC */
+
+/* satsToBtc(satsStr) -> BTC decimal string (exact, up to 8 dp) or null */
+function satsToBtc(satsStr) {
+  var s = (satsStr || "").trim();
+  if (!/^\d+$/.test(s)) return null;
+  var v = BigInt(s);
+  if (v > MAX_SATS) return null;
+  var whole = v / SATS_PER_BTC;
+  var frac = (v % SATS_PER_BTC).toString().padStart(8, "0").replace(/0+$/, "");
+  return frac ? whole.toString() + "." + frac : whole.toString();
+}
+
+/* btcToSats(btcStr) -> satoshi string (exact, up to 8 dp) or null */
+function btcToSats(btcStr) {
+  var s = (btcStr || "").trim();
+  if (!/^\d+(\.\d{1,8})?$/.test(s)) return null;
+  var parts = s.split(".");
+  var v = BigInt(parts[0]) * SATS_PER_BTC + BigInt(((parts[1] || "") + "00000000").slice(0, 8));
+  return v > MAX_SATS ? null : v.toString();
+}
+
+function parseLiqBps(raw) {
+  var s = (raw || "").trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  var parts = s.split(".");
+  var bps = BigInt(parts[0]) * 100n + (parts.length > 1 ? BigInt(parts[1].padEnd(2, "0")) : 0n);
+  return (bps >= 1n && bps <= 10000n) ? bps : null;
+}
+
+/* btcLoanHealth(satsStr, priceAdaStr, loanAdaStr, liqPercentStr) ->
+   { sats, btc, priceLovelacePerBtc, collateralLovelace, loanLovelace,
+     ltvBps, liqBps, maxLoanLovelace, borrowableLovelace,
+     liquidationPriceLovelace, status } (amounts and ltvBps as decimal
+   strings, liqBps as a Number) or null. */
+function btcLoanHealth(satsStr, priceStr, loanStr, liqStr) {
+  var s = (satsStr || "").trim();
+  if (!/^\d+$/.test(s)) return null;
+  var sats = BigInt(s);
+  if (sats < 1n || sats > MAX_SATS) return null;
+  var priceStrL = adaToLovelace(priceStr);
+  if (priceStrL === null) return null;
+  var price = BigInt(priceStrL);
+  if (price < 1n || price > MAX_BTC_PRICE_LOVELACE) return null;
+  var loanStrL = adaToLovelace(loanStr);
+  if (loanStrL === null) return null;
+  var loan = BigInt(loanStrL);
+  if (loan > 45000000000000000n) return null; /* 45B ADA — the max supply */
+  var liqBps = parseLiqBps(liqStr);
+  if (liqBps === null) return null;
+  var collateral = (sats * price) / SATS_PER_BTC;
+  if (collateral < 1n) return null;
+  var ltvBps = (loan * 10000n) / collateral;
+  var maxLoan = (collateral * liqBps) / 10000n;
+  var borrowable = maxLoan > loan ? maxLoan - loan : 0n;
+  var liqPriceNum = loan * SATS_PER_BTC * 10000n;
+  var liqPriceDen = liqBps * sats;
+  var liqPrice = loan === 0n ? 0n : (liqPriceNum + liqPriceDen - 1n) / liqPriceDen;
+  var status = loan === 0n ? "no-loan"
+    : (loan * 10000n > collateral * liqBps) ? "liquidatable"
+    : (loan * 10000n * 10n >= collateral * liqBps * 9n) ? "near-liquidation" : "healthy";
+  return {
+    sats: sats.toString(),
+    btc: satsToBtc(sats.toString()),
+    priceLovelacePerBtc: price.toString(),
+    collateralLovelace: collateral.toString(),
+    loanLovelace: loan.toString(),
+    ltvBps: ltvBps.toString(),
+    liqBps: Number(liqBps),
+    maxLoanLovelace: maxLoan.toString(),
+    borrowableLovelace: borrowable.toString(),
+    liquidationPriceLovelace: liqPrice.toString(),
+    status: status
+  };
+}
+
 /* Payment plan builder — the hub's first fee-earning tool (profit
    mandate, 2026-10-11). A seller enters their own mainnet payment
    address and an item amount; the plan is a TWO-output payment the
@@ -6758,7 +6865,7 @@ function scriptDataHash(redRaw, datRaw, langs) {
            partBytes: { redeemers: redBytes.length, datums: datBytes.length, views: views.length } };
 }
 
-  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, groupPlan, groupPlanText, groupLink, parseGroupLink, installmentPlan, installmentPlanText, installmentLink, parseInstallmentLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
+  module.exports = { verifyBech32, inspectAddress, adaToLovelace, lovelaceToAda, bech32Encode, slotToEpoch, epochStart, nowSlotEpoch, stakingEstimate, poolRewardSplit, minFee, exunitCost, refScriptFee, totalTxFee, depositTotal, satsToBtc, btcToSats, btcLoanHealth, paymentPlan, paymentPlanText, paymentLink, parsePaymentLink, splitPaymentPlan, splitPaymentPlanText, splitPaymentLink, parseSplitPaymentLink, escrowPlan, escrowPlanText, escrowLink, parseEscrowLink, marketplacePlan, marketplacePlanText, marketplaceLink, parseMarketplaceLink, rentalPlan, rentalPlanText, rentalLink, parseRentalLink, invoicePlan, invoicePlanText, invoiceLink, parseInvoiceLink, retainerPlan, retainerPlanText, retainerLink, parseRetainerLink, milestonePlan, milestonePlanText, milestoneLink, parseMilestoneLink, groupPlan, groupPlanText, groupLink, parseGroupLink, installmentPlan, installmentPlanText, installmentLink, parseInstallmentLink, minUtxo, poolIdFromHex, poolIdToHex, blake2b160, blake2b, assetFingerprint, assetUnit, assetNameText, parseAssetUnit, datumHash, scriptHash, keyHash, buildAddress, decodeAddress, addressToHex, addressFromHex, govCredBech32, govCredLegacyBech32, govActionBech32, parseGovId, decodeCbor, encodePlutusData, nativeScript, txId, inspectTx, parseValueCbor, parseTxOutCbor, parseOutputsCbor, parseMintCbor, parseWithdrawalsCbor, parseInputsCbor, parseSignersCbor, parseRefInputsCbor, parseCollateralCbor, parseCertificatesCbor, parseVotingCbor, parseProposalsCbor, parseAuxDataCbor, parseWitnessSetCbor, parseRedeemersCbor, parseDatumsCbor, parseVkeyWitnessesCbor, parseNativeScriptsCbor, parseBootstrapWitnessesCbor, parsePlutusScriptsCbor, decodeFullTx, scriptDataHash, bech32DecodeBytes, convertBits, hexToBytes, parseMetadataView, parseCip68, cip67Label, cip67PrefixHex };
 }
 
 if (typeof document !== "undefined") {
@@ -6963,6 +7070,32 @@ if (typeof document !== "undefined") {
         " ADA): stake registrations " + res.stakeLovelace + " + new pools " + res.poolLovelace +
         " + DReps " + res.drepLovelace + " + governance actions " + res.govLovelace +
         " lovelace. Deposits are refundable — they come back on deregistration, pool retirement, or when a governance action is enacted or expires; they are not fees. Updating an existing pool charges no new pool deposit.";
+    });
+
+    /* --- Bitcoin DeFi collateral modeler (modelled, user-supplied price) --- */
+    document.getElementById("btcloan").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var res = btcLoanHealth(
+        document.getElementById("btc-sats").value,
+        document.getElementById("btc-price").value,
+        document.getElementById("btc-loan").value,
+        document.getElementById("btc-liq").value);
+      var out = document.getElementById("btc-loan-result");
+      if (!res) {
+        out.textContent = "Enter collateral in whole satoshis (1 up to the whole 21,000,000 BTC supply in sats), a BTC price you assume in ADA (up to 6 decimals, at most 100,000,000 ADA), a loan in ADA (0 or more, up to 6 decimals), and a liquidation LTV above 0 and at most 100% (up to 2 decimals) — and the collateral must be worth at least 1 lovelace at the price you enter.";
+        return;
+      }
+      var statusText = res.status === "no-loan" ? "No loan — nothing can be liquidated."
+        : res.status === "liquidatable" ? "LIQUIDATABLE at these figures — the loan is above the maximum the liquidation LTV allows."
+        : res.status === "near-liquidation" ? "Near liquidation — the loan is at or above 90% of the liquidation LTV."
+        : "Healthy at these figures — the loan is below 90% of the liquidation LTV.";
+      out.textContent = "Collateral " + res.sats + " sats (" + res.btc + " BTC) at your assumed " +
+        lovelaceToAda(res.priceLovelacePerBtc) + " ADA per BTC is worth " + lovelaceToAda(res.collateralLovelace) +
+        " ADA. Loan " + lovelaceToAda(res.loanLovelace) + " ADA · current LTV " + (res.ltvBps / 100) +
+        "% · maximum loan at the " + (res.liqBps / 100) + "% liquidation LTV = " + lovelaceToAda(res.maxLoanLovelace) +
+        " ADA · further borrowable = " + lovelaceToAda(res.borrowableLovelace) + " ADA" +
+        (res.loanLovelace === "0" ? "." : " · liquidation BTC price = " + lovelaceToAda(res.liquidationPriceLovelace) + " ADA per BTC.") +
+        " " + statusText + " Modelled from the price YOU entered — not live market data, not a loan offer, and no protocol is endorsed: a real position's safety also depends on its bridge or protocol trust model.";
     });
 
     /* --- payment plan builder (disclosed 1% service fee, offline) --- */

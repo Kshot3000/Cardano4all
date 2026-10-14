@@ -104,6 +104,22 @@ is on-chain under CIP-1694, and Midnight is its privacy partner chain.
   fees: they return on deregistration, pool retirement, or when a
   governance action is enacted or expires; updating an existing pool
   charges no new pool deposit.
+- **Bitcoin DeFi collateral modeler (BTC collateral, ADA loan,
+  modelled)** — the hub's first tool for the Native Bitcoin DeFi on
+  Cardano workstream: collateral entered exactly in satoshis
+  (1 BTC = 100,000,000 sats, with exact `satsToBtc` / `btcToSats`
+  conversion), valued at a BTC price in ADA the user assumes — the
+  page fetches no live price and presents nothing as market data —
+  with the current LTV, maximum loan and further borrowable at the
+  liquidation LTV, and the liquidation BTC price (ceiled to whole
+  lovelace so it never understates the danger point), all in exact
+  BigInt maths with healthy / near-liquidation / liquidatable status
+  compared exactly. The copy carries the trust-model honesty line:
+  custodial wrapped BTC, watcher bridges (Rosen), ZK bridgeless
+  designs (BitcoinOS Grail / xBTC, Charms) and MuSig2 / BitVMX
+  designs (Cardinal) are different trust models, a custodial or
+  watcher-held asset is not trustless or native, and no protocol is
+  endorsed. No loan is offered, no transaction is built or signed.
 - **Payment plan builder (disclosed 1% service fee)** — the hub's first
   fee-earning tool: a seller enters their own mainnet payment address
   and an item amount, and the tool writes a two-output payment plan as
